@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+
+# Dados locais sensíveis / temporários
+data/
+tmp/
+workspace/
+*.db
+*.db-wal
+*.db-shm

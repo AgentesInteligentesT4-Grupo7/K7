@@ -1,0 +1,16 @@
+- pergunta: "Em JavaScript, qual é o resultado de [1, 2, 3].map(x => x * 2)? Responda só o array."
+  esperado: ["[2, 4, 6]", "[2,4,6]"]
+- pergunta: Em Python, qual função retorna o tamanho de uma lista?
+  esperado: ["len("," len "]
+- pergunta: Qual comando git cria um novo branch e já muda para ele (forma clássica com checkout)?
+  esperado: ["checkout -b"]
+- pergunta: "Em SQL, qual cláusula filtra grupos depois de um GROUP BY?"
+  esperado: [HAVING]
+- pergunta: "Em TypeScript, qual palavra-chave declara uma variável que não pode ser reatribuída?"
+  esperado: [const]
+- pergunta: "Qual é a complexidade de tempo da busca binária em um array ordenado? Use notação O."
+  esperado: ["O(log n)", "O(logn)", "O(log(n))"]
+- pergunta: "Em JavaScript, qual é o valor de typeof null?"
+  esperado: ['"object"', "'object'", object]
+- pergunta: Qual código de status HTTP indica "Não encontrado"?
+  esperado: ["404"]

@@ -1,0 +1,16 @@
+- pergunta: Se 3 canetas custam R$ 7,50, quanto custam 8 canetas? Responda só o valor.
+  esperado: ["20,00", "20.00", "R$ 20", "20 reais"]
+- pergunta: "Um trem sai às 14h40 e a viagem dura 2h35. A que horas chega? Responda no formato HH:MM."
+  esperado: ["17:15", "17h15"]
+- pergunta: Qual é o próximo número da sequência 2, 6, 12, 20, 30, ...?
+  esperado: ["42"]
+- pergunta: "Todos os gatos são mamíferos. Tom é um gato. Tom é mamífero? Responda sim ou não."
+  esperado: [sim]
+- pergunta: Quanto é 15% de 240?
+  esperado: ["36"]
+- pergunta: "Ana é mais velha que Bia, e Bia é mais velha que Carla. Quem é a mais nova?"
+  esperado: [Carla]
+- pergunta: Um retângulo tem 8 cm de comprimento e 5 cm de largura. Qual é a área em cm²?
+  esperado: ["40"]
+- pergunta: Se hoje é quarta-feira, que dia da semana será daqui a 10 dias?
+  esperado: [sábado, sabado]

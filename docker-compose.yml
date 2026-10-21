@@ -1,0 +1,38 @@
+# AgroMinds no Docker.
+#   Subir o bot:        docker compose up -d --build
+#   Logs:               docker compose logs -f
+#   Chat no terminal:   docker compose run --rm agrominds node dist/cli/chat.js
+#   Avaliar modelos:    docker compose run --rm agrominds node dist/cli/eval.js pesquisa
+#
+# ATENÇÃO: não rode o bot aqui e o `npm run dev` ao mesmo tempo (o Telegram aceita
+# uma única conexão por bot → erro 409).
+services:
+  agrominds:
+    build: .
+    image: agrominds:local
+    container_name: agrominds
+    env_file: .env
+    environment:
+      # Serviços que rodam no host (Ollama) ou em outros containers com porta publicada
+      # (Kokoro, Whisper, Chatterbox) são alcançados por host.docker.internal.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+      KOKORO_BASE_URL: http://host.docker.internal:8880/v1
+      WHISPER_BASE_URL: http://host.docker.internal:8890/v1
+      CHATTERBOX_BASE_URL: http://host.docker.internal:8004
+      # Banco SQLite num volume Docker (o modo WAL não é confiável em pasta do Windows montada).
+      DB_PATH: /app/state/agrominds.db
+      TZ: America/Sao_Paulo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - agrominds-state:/app/state      # banco + backups diários
+      - ./data:/app/data                   # vozes clonadas, cache do catálogo, saídas do terminal
+      - ./workspace:/app/workspace         # arquivos criados pelas ferramentas do agente
+      - ./.agents/skills:/app/.agents/skills   # skills com hot-reload: edite no Windows
+      - ./evals:/app/evals                 # conjuntos de avaliação dos modelos
+    restart: unless-stopped
+    stdin_open: true                       # permite o chat no terminal via `docker compose run`
+    tty: true
+
+volumes:
+  agrominds-state:

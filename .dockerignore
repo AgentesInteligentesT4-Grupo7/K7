@@ -1,0 +1,11 @@
+# Nada de segredos, dados locais ou artefatos no contexto do build
+.env
+.git
+node_modules
+dist
+data
+tmp
+workspace
+tests
+specs
+*.log

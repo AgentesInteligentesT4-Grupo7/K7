@@ -1,0 +1,36 @@
+{
+  "name": "agrominds",
+  "version": "1.0.0",
+  "description": "Agente pessoal de IA local controlado via Telegram (ReAct + Skills + SQLite).",
+  "type": "module",
+  "main": "dist/main.js",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "nodemon",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "chat": "tsx src/cli/chat.ts",
+    "eval": "tsx src/cli/eval.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^18.0.8",
+    "edge-tts-universal": "^1.4.0",
+    "grammy": "^1.46.0",
+    "js-yaml": "^5.5.0",
+    "ogg-opus-decoder": "^1.7.5",
+    "pdf-parse": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

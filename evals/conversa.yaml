@@ -1,0 +1,16 @@
+- pergunta: "Corrija a frase: 'Fazem dois anos que eu moro aqui.' Responda só a frase corrigida."
+  esperado: [Faz dois anos]
+- pergunta: Qual é o plural de "cidadão"?
+  esperado: [cidadãos, cidadaos]
+- pergunta: "Traduza para o inglês: 'Bom dia, tudo bem?'"
+  esperado: [good morning]
+- pergunta: Qual é o antônimo de "generoso"?
+  esperado: [egoísta, egoista, avarento, mesquinho, sovina]
+- pergunta: "Complete o ditado popular: 'Água mole em pedra dura...'"
+  esperado: [tanto bate até que fura]
+- pergunta: Quantos minutos tem um dia?
+  esperado: ["1440", "1.440"]
+- pergunta: "Reescreva de forma educada: 'Me manda o relatório agora.'"
+  esperado: [por favor, poderia, você pode, se possível]
+- pergunta: "Qual é a forma correta: 'a nível de' ou 'em nível de'?"
+  esperado: [em nível de]

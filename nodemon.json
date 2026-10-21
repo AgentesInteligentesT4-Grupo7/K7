@@ -1,0 +1,7 @@
+{
+  "watch": ["src", ".env"],
+  "ext": "ts,json",
+  "ignore": [".agents/**", "data/**", "tmp/**", "workspace/**", "tests/**", "dist/**"],
+  "exec": "tsx src/main.ts",
+  "signal": "SIGTERM"
+}
