@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { UserFacingError } from '../errors/AppErrors.js';
 import type { AudioSampleConverter, ReferenceAudio } from './AudioSampleConverter.js';
+import { type VoiceParams, sanitizeParams } from './VoiceParams.js';
 
 export interface VoiceSample {
   /** Nome da voz = nome do arquivo sem extensão (ex.: "parreira"). */
@@ -73,11 +74,41 @@ export class VoiceLibrary {
       throw new VoiceNotFoundError(`Voz "${name.trim()}" não encontrada.${available ? ` Disponíveis: ${available}.` : ' Nenhuma voz cadastrada.'}`);
     }
     for (const voice of matches) fs.rmSync(voice.filePath, { force: true });
+    fs.rmSync(this.paramsPath(matches[0]!.name), { force: true });
     return {
       removed: matches[0]!.name,
       wasDefault: VoiceLibrary.sanitizeName(this.options.defaultVoice ?? '') === key,
       remaining: this.list(),
     };
+  }
+
+  /** Ajustes de fala da voz (`<nome>.json` ao lado do áudio); sem arquivo = padrão do servidor. */
+  params(name: string): VoiceParams {
+    try {
+      return sanitizeParams(JSON.parse(fs.readFileSync(this.paramsPath(name), 'utf8')));
+    } catch {
+      return {};
+    }
+  }
+
+  saveParams(name: string, params: VoiceParams): void {
+    fs.mkdirSync(this.options.dir, { recursive: true });
+    fs.writeFileSync(this.paramsPath(name), `${JSON.stringify(sanitizeParams(params), null, 2)}\n`);
+  }
+
+  /** Grava uma amostra já convertida (ex.: a do teste espelho) como voz permanente. */
+  saveReference(name: string, reference: ReferenceAudio): VoiceSample {
+    const voiceName = VoiceLibrary.sanitizeName(name);
+    if (!voiceName) throw new UserFacingError('Nome de voz inválido. Use letras, números e hífen (ex.: minha-voz).');
+    fs.mkdirSync(this.options.dir, { recursive: true });
+    for (const existing of this.list().filter((voice) => voice.name.toLowerCase() === voiceName)) fs.rmSync(existing.filePath, { force: true });
+    const filePath = path.join(this.options.dir, `${voiceName}.${reference.extension}`);
+    fs.writeFileSync(filePath, reference.buffer);
+    return { name: voiceName, filePath };
+  }
+
+  private paramsPath(name: string): string {
+    return path.join(this.options.dir, `${VoiceLibrary.sanitizeName(name)}.json`);
   }
 
   /** Resolve a voz pelo nome (sem diferenciar maiúsculas); sem nome usa a padrão ou a única existente. */

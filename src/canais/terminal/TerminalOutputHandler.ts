@@ -5,7 +5,7 @@ import type { AgentResponse, IOutputHandler } from '../../agent/types.js';
 import { ModuleDisabledError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
 import { FileTagParser } from '../comum/FileTagParser.js';
 import { formatUserError } from '../comum/formatUserError.js';
-import type { IClonedVoiceProvider, ITextToSpeech } from '../../voice/tts/TextToSpeech.js';
+import type { IClonedVoiceProvider, ITextToSpeech, SynthesizedAudio } from '../../voice/tts/TextToSpeech.js';
 import { VoiceCloneTagParser } from '../comum/VoiceCloneTagParser.js';
 import { stripMarkdown } from '../../utils/text.js';
 
@@ -75,6 +75,11 @@ export class TerminalOutputHandler implements IOutputHandler {
       return;
     }
     await this.saveSpeech(text, tts, `voz-${tts.voice}`);
+  }
+
+  /** Salva um áudio já gerado (teste e ajuste da voz clonada). */
+  async sendPreparedVoice(_chatId: number, text: string, audio: SynthesizedAudio, label = 'teste-voz'): Promise<void> {
+    await this.saveSpeech(text, { name: 'voz-clonada', voice: 'ajuste', synthesize: async () => audio }, label);
   }
 
   async sendError(_chatId: number, error: unknown): Promise<void> {

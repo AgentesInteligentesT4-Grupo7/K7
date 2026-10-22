@@ -3,6 +3,7 @@ import { AudioSynthesisError, UserFacingError, errorMessage } from '../errors/Ap
 import { Logger } from '../utils/Logger.js';
 import type { SynthesizedAudio } from './tts/TextToSpeech.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
+import type { VoiceParams } from './VoiceParams.js';
 
 export interface ChatterboxOptions {
   /** Chatterbox-TTS-Server (ex.: http://localhost:8004). */
@@ -24,7 +25,7 @@ export class ChatterboxVoiceCloner {
 
   constructor(private readonly options: ChatterboxOptions) {}
 
-  async synthesize(text: string, voiceName: string, reference: ReferenceAudio): Promise<SynthesizedAudio> {
+  async synthesize(text: string, voiceName: string, reference: ReferenceAudio, params: VoiceParams = {}): Promise<SynthesizedAudio> {
     const referenceFile = await this.ensureUploaded(voiceName, reference);
     const response = await this.fetch('/tts', {
       method: 'POST',
@@ -36,6 +37,12 @@ export class ChatterboxVoiceCloner {
         language: this.options.language,
         output_format: 'opus',
         split_text: true,
+        // Só o que foi ajustado; o resto fica no padrão do servidor.
+        ...(params.exaggeration !== undefined ? { exaggeration: params.exaggeration } : {}),
+        ...(params.cfgWeight !== undefined ? { cfg_weight: params.cfgWeight } : {}),
+        ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
+        ...(params.speedFactor !== undefined ? { speed_factor: params.speedFactor } : {}),
+        ...(params.seed !== undefined ? { seed: params.seed } : {}),
       }),
     });
     const audio = Buffer.from(await response.arrayBuffer());

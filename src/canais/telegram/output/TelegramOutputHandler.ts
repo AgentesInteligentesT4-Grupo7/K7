@@ -4,7 +4,7 @@ import { BotBlockedError, UserFacingError, errorMessage } from '../../../errors/
 import { Logger } from '../../../utils/Logger.js';
 import { FileTagParser, type GeneratedFile } from '../../comum/FileTagParser.js';
 import type { IOutputStrategy } from './strategies/OutputStrategy.js';
-import type { IClonedVoiceProvider, ITextToSpeech } from '../../../voice/tts/TextToSpeech.js';
+import type { IClonedVoiceProvider, ITextToSpeech, SynthesizedAudio } from '../../../voice/tts/TextToSpeech.js';
 import { VoiceCloneTagParser } from '../../comum/VoiceCloneTagParser.js';
 
 /** Strategy de áudio que aceita trocar o motor de TTS por chamada (ex.: voz clonada). */
@@ -53,6 +53,11 @@ export class TelegramOutputHandler implements IOutputHandler {
         await this.strategies.text.send(chatId, '(resposta vazia)');
       }
     });
+  }
+
+  /** Entrega um áudio já gerado (teste e ajuste da voz clonada) como voice note. */
+  async sendPreparedVoice(chatId: number, text: string, audio: SynthesizedAudio): Promise<void> {
+    await this.deliver(chatId, () => this.strategies.audio.send(chatId, text, { name: 'voz-clonada', voice: 'ajuste', synthesize: async () => audio }));
   }
 
   /** Fala exatamente `text` com a voz clonada (comando /falar). */

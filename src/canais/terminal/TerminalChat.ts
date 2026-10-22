@@ -11,6 +11,7 @@ import type { ISpeechToText } from '../../voice/stt/WhisperTranscriber.js';
 import { Logger } from '../../utils/Logger.js';
 import { sanitizeText, truncate } from '../../utils/text.js';
 import type { VoiceCloneService } from '../../voice/VoiceCloneService.js';
+import type { VoiceTuner } from '../../voice/VoiceTuner.js';
 import type { TerminalOutputHandler } from './TerminalOutputHandler.js';
 
 export interface TerminalChatDeps {
@@ -20,6 +21,8 @@ export interface TerminalChatDeps {
   stt: ISpeechToText;
   /** Ausente quando o módulo "voz-clonada" está desligado. */
   voiceClone?: VoiceCloneService;
+  /** /testarvoz, /ajustar, /salvarvoz (exige voz-clonada e voz). */
+  voiceTuner?: VoiceTuner;
   /** Conversa usada no SQLite ("terminal" ou o ID de um usuário do Telegram). */
   userId: string;
   voiceId: string;
@@ -39,6 +42,8 @@ export const TERMINAL_HELP = [
   '  /audio <caminho> [legenda]      transcreve um áudio e envia como mensagem de voz',
   '  /falar [@voz] <texto>           gera um áudio com a voz clonada',
   '  /vozes   /apagarvoz <nome>      lista as vozes cadastradas / apaga uma',
+  '  /testarvoz [@voz] <arquivo>     transcreve o áudio e fala de novo com a voz clonada, para comparar',
+  '  /ajustar <pedido>  /salvarvoz   refaz o último teste ou /falar (mais emoção, igualar...) / guarda',
   '  /nova                           inicia uma nova conversa',
   '  /skills                         lista as skills',
   '  /memoria   /esquecer <n>|tudo   o que o agente lembra (resumo e fatos) / apagar',
@@ -93,6 +98,10 @@ export class TerminalChat {
             : `Nenhuma voz cadastrada. Coloque .wav/.mp3/.ogg em: ${voiceClone.voicesDir}`,
         );
       }
+      case '/testarvoz':
+      case '/ajustar':
+      case '/salvarvoz':
+        return this.voiceTuning(command, rest);
       case '/apagarvoz': {
         const { voiceClone } = this.deps;
         if (!voiceClone) return this.deps.output.sendError(0, new ModuleDisabledError('voz-clonada', 'A clonagem de voz'));
@@ -107,6 +116,11 @@ export class TerminalChat {
         const match = /^@(\S+)\s+([\s\S]+)$/.exec(rest);
         const text = (match ? match[2]! : rest).trim();
         if (!text) return this.say('Uso: /falar [@voz] <texto>');
+        try {
+          this.deps.voiceTuner?.remember(`terminal:${this.deps.userId}`, text, match?.[1]);
+        } catch {
+          // Voz inexistente: o /falar abaixo mostra o erro amigável.
+        }
         return this.deps.output.sendClonedVoice(0, text, match?.[1]);
       }
       case '/verbose':
@@ -158,6 +172,31 @@ export class TerminalChat {
           const requiresAudioReply = AudioIntentDetector.resolve(line, false);
           return this.input({ text: line, source: 'text', requiresAudioReply });
         });
+    }
+  }
+
+  /** /testarvoz [@voz] <arquivo>, /ajustar <pedido>, /salvarvoz [nome]: mesma lógica do Telegram (VoiceTuner). */
+  private async voiceTuning(command: string, rest: string): Promise<void> {
+    const { voiceTuner, output } = this.deps;
+    if (!voiceTuner) return output.sendError(0, new ModuleDisabledError('voz', 'O teste de voz (precisa de voz e voz-clonada)'));
+    const key = `terminal:${this.deps.userId}`;
+    try {
+      if (command === '/salvarvoz') return this.say(voiceTuner.save(key, rest.trim().replace(/^@/, '') || undefined));
+      if (command === '/ajustar') {
+        const { audio, report } = await voiceTuner.adjust(key, rest);
+        await output.sendPreparedVoice(0, 'ajuste', audio, 'ajuste-voz');
+        return this.say(report);
+      }
+      const voiceMatch = /^@(\S+)\s+/.exec(rest);
+      const { filePath } = TerminalChat.parsePathArgument(voiceMatch ? rest.slice(voiceMatch[0].length) : rest);
+      if (!filePath) return this.say('Uso: /testarvoz [@voz] <caminho do áudio>  (ex.: /testarvoz @minha-voz "C:\\Downloads\\audio.opus")');
+      TerminalChat.assertFile(filePath);
+      this.say('🧪 Transcrevendo e gerando de novo... (leva alguns segundos)');
+      const { audio, report } = await voiceTuner.test(key, filePath, path.extname(filePath), voiceMatch?.[1]);
+      await output.sendPreparedVoice(0, 'teste', audio, 'teste-voz');
+      return this.say(report);
+    } catch (error) {
+      return output.sendError(0, error);
     }
   }
 

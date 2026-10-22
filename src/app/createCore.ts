@@ -50,6 +50,8 @@ import { TempFileManager } from '../utils/TempFileManager.js';
 import { AudioSampleConverter } from '../voice/AudioSampleConverter.js';
 import { ChatterboxVoiceCloner } from '../voice/ChatterboxVoiceCloner.js';
 import { VoiceCloneService } from '../voice/VoiceCloneService.js';
+import { VoiceMirror } from '../voice/VoiceMirror.js';
+import { VoiceTuner } from '../voice/VoiceTuner.js';
 import { VoiceLibrary } from '../voice/VoiceLibrary.js';
 
 export interface CoreOptions {
@@ -84,6 +86,8 @@ export interface Core {
   ffmpeg: FfmpegConverter;
   /** Ausente quando o módulo "voz-clonada" está desligado. */
   voiceClone?: VoiceCloneService;
+  /** Teste e ajuste da voz clonada (/testarvoz, /ajustar, /salvarvoz): exige voz-clonada e voz (transcrição). */
+  voiceTuner?: VoiceTuner;
   /** Ausente quando o módulo "anexos" está desligado (imagens são recusadas e documentos vão inteiros). */
   attachments?: AttachmentService;
   documents: DocumentExtractor;
@@ -231,6 +235,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     stt,
     ffmpeg,
     voiceClone,
+    ...(voiceClone && voice ? { voiceTuner: new VoiceTuner(voiceClone, new VoiceMirror(voiceClone, stt, tmp)) } : {}),
     attachments,
     documents: new DocumentExtractor(),
     createController: (output) =>

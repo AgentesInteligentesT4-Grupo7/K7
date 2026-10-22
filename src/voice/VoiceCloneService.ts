@@ -1,7 +1,9 @@
 import type { ITextToSpeech, SynthesizedAudio } from './tts/TextToSpeech.js';
 import { Logger } from '../utils/Logger.js';
+import type { ReferenceAudio } from './AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from './ChatterboxVoiceCloner.js';
 import type { VoiceLibrary, VoiceSample } from './VoiceLibrary.js';
+import type { VoiceParams } from './VoiceParams.js';
 
 /** Facade da clonagem de voz: cadastra amostras e fala com a voz escolhida. */
 export class VoiceCloneService {
@@ -32,16 +34,47 @@ export class VoiceCloneService {
     return `🗑️ Voz "${removed}" apagada. ${left}${hint}`;
   }
 
-  enroll(name: string, audio: Buffer, extension: string):Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
+  enroll(name: string, audio: Buffer, extension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
     return this.library.save(name, audio, extension);
   }
 
-  async speak(text: string, voiceName?: string): Promise<SynthesizedAudio & { voice: string }> {
+  /** Nome canônico da voz (padrão ou única, se nenhum for dado). */
+  resolveName(voiceName?: string): string {
+    return this.library.resolve(voiceName).name;
+  }
+
+  /** Ajustes salvos da voz (`<nome>.json`). */
+  params(voiceName: string): VoiceParams {
+    return this.library.params(voiceName);
+  }
+
+  saveParams(voiceName: string, params: VoiceParams): void {
+    this.library.saveParams(voiceName, params);
+  }
+
+  /** Guarda uma amostra já preparada (ex.: do teste espelho) como voz, com os ajustes. */
+  saveVoice(name: string, reference: ReferenceAudio, params: VoiceParams): VoiceSample {
+    const sample = this.library.saveReference(name, reference);
+    this.library.saveParams(sample.name, params);
+    return sample;
+  }
+
+  /** Fala com a voz cadastrada; `override` vence os ajustes salvos dela (usado pelo /ajustar). */
+  async speak(text: string, voiceName?: string, override?: VoiceParams): Promise<SynthesizedAudio & { voice: string; params: VoiceParams }> {
     const sample = this.library.resolve(voiceName);
+    const params = { ...this.library.params(sample.name), ...override };
     const started = Date.now();
-    const result = await this.cloner.synthesize(text, sample.name, await this.library.load(sample));
+    const result = await this.cloner.synthesize(text, sample.name, await this.library.load(sample), params);
     this.logger.info(`🗣️ Voz clonada "${sample.name}" (${text.length} chars, ${Date.now() - started}ms)`);
-    return { ...result, voice: sample.name };
+    return { ...result, voice: sample.name, params };
+  }
+
+  /** Fala com uma amostra que não está na biblioteca (teste espelho). */
+  async speakWithReference(text: string, label: string, reference: ReferenceAudio, params: VoiceParams = {}): Promise<SynthesizedAudio> {
+    const started = Date.now();
+    const result = await this.cloner.synthesize(text, label, reference, params);
+    this.logger.info(`🗣️ Voz de teste "${label}" (${text.length} chars, ${Date.now() - started}ms)`);
+    return result;
   }
 
   /** Adaptador para a AudioOutputStrategy (Strategy de TTS com a voz clonada). */

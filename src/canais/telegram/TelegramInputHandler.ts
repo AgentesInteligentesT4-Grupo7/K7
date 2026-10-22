@@ -20,6 +20,7 @@ import type { TelegramFileDownloader } from './input/TelegramFileDownloader.js';
 import type { ISpeechToText } from '../../voice/stt/WhisperTranscriber.js';
 import type { ChatAction } from './output/TelegramSender.js';
 import type { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
+import { isAudioDocument } from './VoiceCloneCommands.js';
 
 export interface InputHandlerDeps {
   allowedUserIds: ReadonlySet<number>;
@@ -113,6 +114,8 @@ export class TelegramInputHandler {
         '/minhavoz — cadastra sua voz (envie um áudio de 10 a 30 s em seguida)',
         '/falar <texto> — devolve um áudio com a sua voz clonada',
         '/vozes — lista as vozes cadastradas;  /apagarvoz <nome> — apaga uma',
+        '/testarvoz [@voz] — envie um áudio: falo o mesmo texto com a voz clonada para comparar',
+        '/ajustar <pedido> — refaz o último teste ou /falar ("mais emoção", "mais lento", "igualar"); /salvarvoz guarda',
       ].join('\n'),
     );
   }
@@ -145,6 +148,8 @@ export class TelegramInputHandler {
 
   private async handleDocument(ctx: Context): Promise<void> {
     const document = ctx.message!.document!;
+    // Áudio anexado como arquivo (ex.: .opus do WhatsApp): mesmo tratamento de uma gravação.
+    if (isAudioDocument(document)) return this.handleAudio(ctx);
     const fileName = document.file_name ?? 'documento';
     const caption = ctx.message!.caption?.trim() ?? '';
     const base = this.baseInput(ctx);
@@ -189,11 +194,11 @@ export class TelegramInputHandler {
 
   private handleAudio(ctx: Context): void {
     const message = ctx.message!;
-    const media = message.voice ?? message.audio!;
+    const media = message.voice ?? message.audio ?? message.document!;
     const caption = message.caption?.trim() ?? '';
     const extension = message.voice
       ? '.ogg'
-      : AUDIO_EXTENSIONS[media.mime_type ?? ''] ?? (path.extname(message.audio?.file_name ?? '') || '.ogg');
+      : AUDIO_EXTENSIONS[media.mime_type ?? ''] ?? (path.extname((message.audio ?? message.document)?.file_name ?? '') || '.ogg');
     const base = this.baseInput(ctx);
 
     this.dispatch(base.chatId, 'record_voice', async () => {

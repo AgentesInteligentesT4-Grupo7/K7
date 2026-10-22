@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Bot, Context, NextFunction } from 'grammy';
+import type { Message } from 'grammy/types';
 import { errorMessage } from '../../errors/AppErrors.js';
 import type { ChatQueue } from '../../utils/ChatQueue.js';
 import { Logger } from '../../utils/Logger.js';
 import type { TempFileManager } from '../../utils/TempFileManager.js';
 import type { VoiceCloneService } from '../../voice/VoiceCloneService.js';
 import { VoiceLibrary } from '../../voice/VoiceLibrary.js';
+import type { VoiceTuner } from '../../voice/VoiceTuner.js';
 import type { ChatActionNotifier } from './ChatActionNotifier.js';
 import type { TelegramFileDownloader } from './input/TelegramFileDownloader.js';
 import type { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
@@ -19,49 +21,132 @@ export interface VoiceCloneCommandsDeps {
   notifier: ChatActionNotifier;
   tmp: TempFileManager;
   defaultVoiceName: string;
+  /** Teste e ajuste da voz (/testarvoz, /ajustar, /salvarvoz); ausente sem o módulo voz (sem transcrição). */
+  tuner?: VoiceTuner;
 }
 
 const PENDING_TTL_MS = 10 * 60 * 1000;
 const MAX_SAMPLE_BYTES = 20 * 1024 * 1024;
-const AUDIO_DOCUMENT = /\.(ogg|oga|opus|mp3|wav)$/i;
+/** Arquivo de áudio anexado (não gravado na hora): WhatsApp (.opus), gravadores, músicas. */
+export const AUDIO_FILE = /\.(ogg|oga|opus|mp3|wav|m4a|aac|flac|webm|amr)$/i;
+
+export function isAudioDocument(document: { file_name?: string; mime_type?: string } | undefined): boolean {
+  return Boolean(document && (AUDIO_FILE.test(document.file_name ?? '') || document.mime_type?.startsWith('audio/')));
+}
+
+/** Áudio gravado (voice), enviado como música (audio) ou anexado como arquivo (document). */
+export function audioMedia(message: Message): { fileId: string; extension: string } | undefined {
+  if (message.voice) return { fileId: message.voice.file_id, extension: '.ogg' };
+  const file = message.audio ?? (isAudioDocument(message.document) ? message.document : undefined);
+  if (!file) return undefined;
+  const fromName = path.extname(file.file_name ?? '').toLowerCase();
+  const fromMime = file.mime_type === 'audio/mpeg' ? '.mp3' : file.mime_type === 'audio/wav' || file.mime_type === 'audio/x-wav' ? '.wav' : '.ogg';
+  return { fileId: file.file_id, extension: fromName || fromMime };
+}
+
+type Pending = { kind: 'cadastro'; name: string; expiresAt: number } | { kind: 'teste'; voice?: string; expiresAt: number };
 
 /**
- * Comandos de clonagem de voz:
- *   /minhavoz [nome] — o próximo áudio enviado vira a amostra da voz (salva em VOICE_CLONE_DIR)
+ * Comandos de clonagem de voz (o áudio pode ser gravado na hora ou anexado como arquivo):
+ *   /minhavoz [nome] — o próximo áudio vira a amostra da voz (salva em VOICE_CLONE_DIR)
  *   /falar [@voz] texto — devolve um voice note com a voz clonada falando exatamente o texto
- *   /vozes — lista as vozes da pasta
- *   /apagarvoz nome — apaga uma voz da pasta
- *   /cancelar — cancela o cadastro pendente
+ *   /testarvoz [@voz] — o próximo áudio é transcrito e falado de novo (pela própria amostra ou pela voz)
+ *   /ajustar <pedido> — refaz o último teste ou /falar ("mais emoção", "mais lento", "igualar"...)
+ *   /salvarvoz [nome] — guarda o resultado ajustado
+ *   /vozes — lista as vozes da pasta;  /apagarvoz nome — apaga uma
+ *   /cancelar — cancela o cadastro ou teste pendente
  */
 export class VoiceCloneCommands {
   private readonly logger = new Logger('VoiceClone');
-  private readonly pending = new Map<number, { name: string; expiresAt: number }>();
+  private readonly pending = new Map<number, Pending>();
 
   constructor(private readonly deps: VoiceCloneCommandsDeps) {}
 
   register(bot: Bot): void {
     bot.command('minhavoz', (ctx) => this.handleEnroll(ctx));
     bot.command('falar', (ctx) => this.handleSpeak(ctx));
+    bot.command('testarvoz', (ctx) => this.handleTest(ctx));
+    bot.command('ajustar', (ctx) => this.handleAdjust(ctx));
+    bot.command('salvarvoz', (ctx) => this.handleSave(ctx));
     bot.command('vozes', (ctx) => this.handleList(ctx));
     bot.command('apagarvoz', (ctx) => this.handleRemove(ctx));
     bot.command('cancelar', (ctx) => this.handleCancel(ctx));
-    bot.on(['message:voice', 'message:audio', 'message:document'], (ctx, next) => this.captureSample(ctx, next));
+    bot.on(['message:voice', 'message:audio', 'message:document'], (ctx, next) => this.captureAudio(ctx, next));
   }
 
   private async handleEnroll(ctx: Context): Promise<void> {
     const name = VoiceLibrary.sanitizeName(String(ctx.match ?? '').trim() || this.deps.defaultVoiceName);
-    this.pending.set(ctx.chat!.id, { name, expiresAt: Date.now() + PENDING_TTL_MS });
+    this.pending.set(ctx.chat!.id, { kind: 'cadastro', name, expiresAt: Date.now() + PENDING_TTL_MS });
     await this.deps.output.notify(
       ctx.chat!.id,
       [
         `🎙️ Pronto para gravar a voz "${name}".`,
         '',
-        'Envie agora um áudio de 10 a 30 segundos falando naturalmente, sem música nem barulho de fundo.',
-        'Pode ser voice note, ou arquivo .mp3/.wav/.ogg.',
+        'Grave agora um áudio de 10 a 25 segundos falando naturalmente, sem música nem barulho de fundo,',
+        'ou anexe um arquivo de áudio (.opus do WhatsApp, .mp3, .wav, .ogg).',
         '',
         'Para cancelar: /cancelar',
       ].join('\n'),
     );
+  }
+
+  private async handleTest(ctx: Context): Promise<void> {
+    const chatId = ctx.chat!.id;
+    if (!this.deps.tuner) {
+      await this.deps.output.notify(chatId, '⚠️ O teste de voz precisa do módulo "voz" (transcrição) ligado.');
+      return;
+    }
+    const raw = String(ctx.match ?? '').trim().replace(/^@/, '');
+    let voice: string | undefined;
+    try {
+      voice = raw ? this.deps.service.resolveName(raw) : undefined;
+    } catch (error) {
+      await this.deps.output.sendError(chatId, error);
+      return;
+    }
+    this.pending.set(chatId, { kind: 'teste', ...(voice ? { voice } : {}), expiresAt: Date.now() + PENDING_TTL_MS });
+    await this.deps.output.notify(
+      chatId,
+      [
+        voice
+          ? `🧪 Teste com a voz "${voice}": grave ou anexe um áudio de alguém falando. Eu transcrevo e falo o mesmo texto com a voz "${voice}", para comparar ritmo e duração com o original.`
+          : '🧪 Teste espelho: grave ou anexe um áudio de alguém falando. Eu uso esse áudio como amostra, transcrevo e falo o mesmo texto de novo, para você comparar.',
+        '',
+        'Depois dá para refinar com /ajustar e guardar com /salvarvoz. Para cancelar: /cancelar',
+      ].join('\n'),
+    );
+  }
+
+  private async handleAdjust(ctx: Context): Promise<void> {
+    const chatId = ctx.chat!.id;
+    const request = String(ctx.match ?? '').trim();
+    const { tuner } = this.deps;
+    if (!tuner) {
+      await this.deps.output.notify(chatId, '⚠️ O ajuste de voz precisa do módulo "voz" ligado.');
+      return;
+    }
+    void this.deps.queue.enqueue(chatId, async () => {
+      const stopAction = this.deps.notifier.start(chatId, 'record_voice');
+      try {
+        const { audio, report } = await tuner.adjust(String(chatId), request);
+        await this.deps.output.sendPreparedVoice(chatId, 'ajuste', audio);
+        await this.deps.output.notify(chatId, report);
+      } catch (error) {
+        await this.deps.output.sendError(chatId, error);
+      } finally {
+        stopAction();
+      }
+    });
+  }
+
+  private async handleSave(ctx: Context): Promise<void> {
+    const chatId = ctx.chat!.id;
+    try {
+      if (!this.deps.tuner) throw new Error('teste de voz indisponível');
+      await this.deps.output.notify(chatId, this.deps.tuner.save(String(chatId), String(ctx.match ?? '').trim().replace(/^@/, '') || undefined));
+    } catch (error) {
+      await this.deps.output.sendError(chatId, error);
+    }
   }
 
   private async handleSpeak(ctx: Context): Promise<void> {
@@ -74,6 +159,11 @@ export class VoiceCloneCommands {
       return;
     }
     const chatId = ctx.chat!.id;
+    try {
+      this.deps.tuner?.remember(String(chatId), text, voice);
+    } catch {
+      // Voz inexistente: o /falar abaixo responde com o erro amigável.
+    }
     void this.deps.queue.enqueue(chatId, () => this.deps.output.sendClonedVoice(chatId, text, voice));
   }
 
@@ -81,7 +171,7 @@ export class VoiceCloneCommands {
     const voices = this.deps.service.list();
     const dir = this.deps.service.voicesDir;
     const text = voices.length
-      ? `🗣️ Vozes cadastradas (${voices.length}):\n\n${voices.map((voice) => `- ${voice.name} (${path.basename(voice.filePath)})`).join('\n')}\n\nPasta: ${dir}\nUse: /falar @nome texto\nApagar: /apagarvoz nome`
+      ? `🗣️ Vozes cadastradas (${voices.length}):\n\n${voices.map((voice) => `- ${voice.name} (${path.basename(voice.filePath)})`).join('\n')}\n\nPasta: ${dir}\nUse: /falar @nome texto\nTestar: /testarvoz @nome · Apagar: /apagarvoz nome`
       : `🗣️ Nenhuma voz cadastrada.\n\nUse /minhavoz e envie um áudio, ou coloque arquivos .wav/.mp3/.ogg em:\n${dir}`;
     await this.deps.output.notify(ctx.chat!.id, text);
   }
@@ -104,46 +194,32 @@ export class VoiceCloneCommands {
   }
 
   private async handleCancel(ctx: Context): Promise<void> {
-    const had = this.pending.delete(ctx.chat!.id);
-    await this.deps.output.notify(ctx.chat!.id, had ? 'Cadastro de voz cancelado.' : 'Nenhum cadastro de voz pendente.');
+    const pending = this.pending.get(ctx.chat!.id);
+    this.pending.delete(ctx.chat!.id);
+    await this.deps.output.notify(ctx.chat!.id, pending ? `${pending.kind === 'teste' ? 'Teste' : 'Cadastro'} de voz cancelado.` : 'Nenhum cadastro ou teste de voz pendente.');
   }
 
-  /** Se há cadastro pendente, o áudio vira amostra; senão segue para o fluxo normal (transcrição). */
-  private async captureSample(ctx: Context, next: NextFunction): Promise<void> {
+  /** Com cadastro ou teste pendente, o áudio (gravado ou anexado) vai para ele; senão segue o fluxo normal. */
+  private async captureAudio(ctx: Context, next: NextFunction): Promise<void> {
     const chatId = ctx.chat!.id;
     const pending = this.pending.get(chatId);
     if (!pending || pending.expiresAt < Date.now()) {
       if (pending) this.pending.delete(chatId);
       return next();
     }
-
-    const message = ctx.message!;
-    const document = message.document;
-    if (document && !AUDIO_DOCUMENT.test(document.file_name ?? '')) return next();
-    const media = message.voice ?? message.audio ?? document!;
-    const extension = message.voice
-      ? '.ogg'
-      : path.extname((message.audio?.file_name ?? document?.file_name) || '') || (message.audio?.mime_type === 'audio/mpeg' ? '.mp3' : '.ogg');
+    const media = audioMedia(ctx.message!);
+    if (!media) return next();
 
     void this.deps.queue.enqueue(chatId, async () => {
-      const stopAction = this.deps.notifier.start(chatId, 'typing');
+      const stopAction = this.deps.notifier.start(chatId, pending.kind === 'teste' ? 'record_voice' : 'typing');
       let tmpPath: string | undefined;
       try {
-        tmpPath = await this.deps.downloader.download(media.file_id, extension, MAX_SAMPLE_BYTES);
-        const { sample, durationSeconds, trimmedFromSeconds } = await this.deps.service.enroll(pending.name, fs.readFileSync(tmpPath), extension);
+        tmpPath = await this.deps.downloader.download(media.fileId, media.extension, MAX_SAMPLE_BYTES);
+        if (pending.kind === 'teste') await this.runTest(chatId, tmpPath, media.extension, pending.voice);
+        else await this.enroll(chatId, pending.name, tmpPath, media.extension);
         this.pending.delete(chatId);
-        const duration = trimmedFromSeconds
-          ? ` (usei os primeiros ${durationSeconds!.toFixed(0)}s dos ${trimmedFromSeconds.toFixed(1)}s: o limite da clonagem é 30s)`
-          : durationSeconds !== null
-            ? ` (${durationSeconds.toFixed(1)}s)`
-            : '';
-        this.logger.info(`💾 Voz "${sample.name}" cadastrada${duration} em ${sample.filePath}`);
-        await this.deps.output.notify(
-          chatId,
-          `✅ Voz "${sample.name}" salva${duration}.\n\nAgora é só digitar: /falar <texto>\nOu peça normalmente: "manda isso com a minha voz: ..."`,
-        );
       } catch (error) {
-        this.logger.warn(`Falha ao cadastrar voz: ${errorMessage(error)}`);
+        this.logger.warn(`Falha no ${pending.kind} de voz: ${errorMessage(error)}`);
         await this.deps.output.sendError(chatId, error);
         await this.deps.output.notify(chatId, 'Envie outro áudio para tentar de novo, ou /cancelar.');
       } finally {
@@ -151,5 +227,25 @@ export class VoiceCloneCommands {
         await this.deps.tmp.remove(tmpPath);
       }
     });
+  }
+
+  private async enroll(chatId: number, name: string, filePath: string, extension: string): Promise<void> {
+    const { sample, durationSeconds, trimmedFromSeconds } = await this.deps.service.enroll(name, fs.readFileSync(filePath), extension);
+    const duration = trimmedFromSeconds
+      ? ` (usei os primeiros ${durationSeconds!.toFixed(0)}s dos ${trimmedFromSeconds.toFixed(1)}s: o limite da clonagem é 30s)`
+      : durationSeconds !== null
+        ? ` (${durationSeconds.toFixed(1)}s)`
+        : '';
+    this.logger.info(`💾 Voz "${sample.name}" cadastrada${duration} em ${sample.filePath}`);
+    await this.deps.output.notify(
+      chatId,
+      `✅ Voz "${sample.name}" salva${duration}.\n\nAgora é só digitar: /falar <texto>\nOu peça normalmente: "manda isso com a minha voz: ..."\nPara conferir: /testarvoz @${sample.name}`,
+    );
+  }
+
+  private async runTest(chatId: number, filePath: string, extension: string, voice?: string): Promise<void> {
+    const { audio, report } = await this.deps.tuner!.test(String(chatId), filePath, extension, voice);
+    await this.deps.output.sendPreparedVoice(chatId, 'teste', audio);
+    await this.deps.output.notify(chatId, report);
   }
 }

@@ -51,6 +51,7 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     notifier,
     tmp: core.tmp,
     defaultVoiceName: config.voiceClone.defaultVoice ?? 'minha-voz',
+    ...(core.voiceTuner ? { tuner: core.voiceTuner } : {}),
   });
   new TelegramInputHandler({
     allowedUserIds: config.allowedUserIds,
