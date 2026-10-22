@@ -21,7 +21,9 @@ import { PersonaCatalog } from '../personas/Personas.js';
 import { PersonaAgents, PersonaDialogueTool, TalkToPersonaTool } from '../personas/PersonaTools.js';
 import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
-import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
+import { createSearchProvider, createWebTools } from '../modules/pesquisa-web/createWebTools.js';
+import { CharacterReferenceFinder } from '../modules/imagens/CharacterReference.js';
+import { SafeHttpClient } from '../net/SafeHttpClient.js';
 import { createKnowledge } from '../modules/conhecimento/createKnowledge.js';
 import { DebateEngine, DebateStore, DebateTool, debateContext } from '../modules/refinamento/Debate.js';
 import { AttachmentService } from '../modules/anexos/AttachmentService.js';
@@ -149,7 +151,12 @@ export function createCore(config: Config, options: CoreOptions): Core {
     }
   }
   const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
-  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir, attachments));
+  // Personagens existentes: referências da internet (SearXNG imagens + busca) antes de desenhar.
+  const references =
+    images && modules.has('pesquisa-web')
+      ? new CharacterReferenceFinder({ searxngUrl: config.search.searxngUrl, http: new SafeHttpClient(), llm, textSearch: createSearchProvider(config, new SafeHttpClient()) })
+      : undefined;
+  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir, attachments, references));
   // Módulo conhecimento: o CRAG completa com a internet quando o pesquisa-web está ligado.
   const webTool = registry.get('pesquisar_web');
   const knowledge = modules.has('conhecimento')
