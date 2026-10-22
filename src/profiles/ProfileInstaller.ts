@@ -151,6 +151,7 @@ export class ProfileInstaller {
     const dir = path.join(this.options.profilesDir, name);
     const record = this.readRegistry()[name];
     if (!fs.existsSync(path.join(dir, 'perfil.yaml'))) throw new ProfileError(`Perfil "${name}" não encontrado em ${this.options.profilesDir}`);
+    if (!record && fs.existsSync(path.join(dir, '.git'))) return this.pullClone(name, dir);
     if (!record) throw new ProfileError(`O perfil "${name}" não foi instalado pelo instalador (sem origem registrada); atualize-o manualmente.`);
 
     const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'perfil-'));
@@ -169,6 +170,24 @@ export class ProfileInstaller {
     } finally {
       fs.rmSync(staging, { recursive: true, force: true });
     }
+  }
+
+  /** Perfil que é um clone Git (ex.: a pasta onde você edita a fita): `git pull`; se a versão nova for inválida, volta. */
+  private async pullClone(name: string, dir: string): Promise<InstallResult> {
+    const git = (...args: string[]) => this.runner.run('git', ['-c', 'protocol.ext.allow=never', '-C', dir, ...args], 120_000);
+    const before = (await git('rev-parse', 'HEAD')).stdout.trim();
+    const pull = await git('pull', '--ff-only', '--quiet', '--no-recurse-submodules');
+    if (pull.code !== 0) throw new ProfileError(`git pull falhou: ${pull.stderr.trim().split('\n').pop() ?? 'erro desconhecido'}`);
+    let manifest: ProfileManifest;
+    try {
+      manifest = this.validate(dir);
+    } catch (error) {
+      await git('reset', '--hard', '--quiet', before);
+      throw new ProfileError(`${(error as Error).message}\nA versão anterior (${before.slice(0, 7)}) foi mantida.`);
+    }
+    const after = (await git('rev-parse', 'HEAD')).stdout.trim();
+    this.log(before === after ? `✔️ ${name} já está na versão mais recente` : `🔄 ${name}: ${before.slice(0, 7)} → ${after.slice(0, 7)}`);
+    return { name, dir, manifest, pendingVariables: this.prepareEnv(dir, manifest) };
   }
 
   /** Remove a pasta do perfil (e os dados, só se pedido). Confirmação é responsabilidade da CLI. */

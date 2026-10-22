@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -228,6 +229,30 @@ describe('Instalador de perfis', () => {
     assert.equal(result.name, 'fita1');
     assert.deepEqual(cloned, ['https://github.com/danillotparreira/perfil-fita1.git', 'https://github.com/danillotparreira/fita1.git']);
     assert.equal(installer.readRegistry().fita1?.commit, 'abc123');
+  });
+
+  it('atualizar um clone Git faz pull e volta à versão anterior se a nova for inválida', async () => {
+    const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, stdio: 'pipe' }).toString().trim();
+    const origin = tmpDir();
+    writeFiles(origin, { 'perfil.yaml': MANIFEST });
+    git(origin, 'init', '-q', '-b', 'main');
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-q', '-m', 'v1');
+    const profilesDir = tmpDir();
+    git(profilesDir, 'clone', '-q', origin, 'promo');
+    const installer = new ProfileInstaller({ profilesDir, playerVersion: '1.0.0' });
+
+    fs.writeFileSync(path.join(origin, 'perfil.yaml'), MANIFEST.replace('versao: 0.2.0', 'versao: 0.3.0'));
+    git(origin, 'commit', '-q', '-am', 'v2');
+    assert.equal((await installer.update('promo')).manifest.versao, '0.3.0');
+
+    const good = git(path.join(profilesDir, 'promo'), 'rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(origin, 'instalar.sh'), 'echo');
+    git(origin, 'add', '-A');
+    git(origin, 'commit', '-q', '-m', 'v3 com código');
+    await assert.rejects(installer.update('promo'), /Perfil recusado.*versão anterior .* foi mantida/s);
+    assert.equal(git(path.join(profilesDir, 'promo'), 'rev-parse', 'HEAD'), good);
+    assert.ok(!fs.existsSync(path.join(profilesDir, 'promo', 'instalar.sh')));
   });
 
   it('recusa perfis com código ou links e lista os arquivos', () => {
