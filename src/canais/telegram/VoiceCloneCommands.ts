@@ -111,9 +111,13 @@ export class VoiceCloneCommands {
       let tmpPath: string | undefined;
       try {
         tmpPath = await this.deps.downloader.download(media.file_id, extension, MAX_SAMPLE_BYTES);
-        const { sample, durationSeconds } = await this.deps.service.enroll(pending.name, fs.readFileSync(tmpPath), extension);
+        const { sample, durationSeconds, trimmedFromSeconds } = await this.deps.service.enroll(pending.name, fs.readFileSync(tmpPath), extension);
         this.pending.delete(chatId);
-        const duration = durationSeconds !== null ? ` (${durationSeconds.toFixed(1)}s)` : '';
+        const duration = trimmedFromSeconds
+          ? ` (usei os primeiros ${durationSeconds!.toFixed(0)}s dos ${trimmedFromSeconds.toFixed(1)}s: o limite da clonagem é 30s)`
+          : durationSeconds !== null
+            ? ` (${durationSeconds.toFixed(1)}s)`
+            : '';
         this.logger.info(`💾 Voz "${sample.name}" cadastrada${duration} em ${sample.filePath}`);
         await this.deps.output.notify(
           chatId,

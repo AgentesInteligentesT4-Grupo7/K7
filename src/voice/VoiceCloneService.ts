@@ -20,7 +20,7 @@ export class VoiceCloneService {
     return this.library.list();
   }
 
-  enroll(name: string, audio: Buffer, extension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null }> {
+  enroll(name: string, audio: Buffer, extension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
     return this.library.save(name, audio, extension);
   }
 

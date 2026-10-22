@@ -117,6 +117,41 @@ describe('ChatterboxVoiceCloner', () => {
       { voice_mode: 'clone', language: 'pt', output_format: 'opus', ref: remote[0] },
     );
   });
+
+  it('amostra recusada pelo servidor vira mensagem clara (motivo + como regravar), não "serviço desligado"', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.endsWith('/get_reference_files')) return new Response('[]');
+      return new Response(
+        JSON.stringify({ uploaded_files: [], errors: [{ filename: 'galvao-1.wav', error: 'Reference audio duration (30.71s) exceeds maximum allowed (30s).' }] }),
+        { status: 400 },
+      );
+    }) as typeof fetch;
+    const cloner = new ChatterboxVoiceCloner({ baseUrl: 'http://localhost:8004', language: 'pt', timeoutMs: 2000 });
+    await assert.rejects(
+      cloner.synthesize('Gol!', 'galvao', { buffer: silenceWav(6), extension: 'wav', durationSeconds: 6 }),
+      (error: unknown) =>
+        error instanceof UserFacingError &&
+        error.userMessage === 'o Chatterbox recusou a amostra da voz "galvao" (Reference audio duration (30.71s) exceeds maximum allowed (30s)). Grave de novo com /minhavoz galvao, de 10 a 25 segundos.',
+    );
+  });
+});
+
+describe('Limite da amostra de referência', () => {
+  it('WAV acima de 25 s é cortado nos primeiros 25 s (cadastro e amostras antigas), sem mexer nos menores', async () => {
+    const converter = new AudioSampleConverter();
+    const long = await converter.toReferenceAudio(silenceWav(31), 'wav');
+    assert.equal(long.durationSeconds, 25);
+    assert.equal(long.trimmedFromSeconds, 31);
+    assert.equal(AudioSampleConverter.wavDuration(long.buffer), 25, 'o cabeçalho do WAV cortado bate com o conteúdo');
+    const short = await converter.toReferenceAudio(silenceWav(12), 'wav');
+    assert.deepEqual([short.durationSeconds, short.trimmedFromSeconds], [12, undefined]);
+    assert.equal(AudioSampleConverter.trimWav(Buffer.from('não é wav'), 5), null);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vozes-'));
+    const saved = await new VoiceLibrary({ dir }, converter).save('galvao', silenceWav(31), 'wav');
+    assert.deepEqual([saved.durationSeconds, saved.trimmedFromSeconds], [25, 31]);
+    assert.equal(AudioSampleConverter.wavDuration(fs.readFileSync(saved.sample.filePath)), 25);
+  });
 });
 
 describe('Saída com voz clonada', () => {

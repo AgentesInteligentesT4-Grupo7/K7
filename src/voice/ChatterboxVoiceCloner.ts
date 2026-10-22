@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AudioSynthesisError, errorMessage } from '../errors/AppErrors.js';
+import { AudioSynthesisError, UserFacingError, errorMessage } from '../errors/AppErrors.js';
 import { Logger } from '../utils/Logger.js';
 import type { SynthesizedAudio } from './tts/TextToSpeech.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
@@ -56,11 +56,22 @@ export class ChatterboxVoiceCloner {
     if (!existing.includes(fileName)) {
       const form = new FormData();
       form.append('files', new Blob([new Uint8Array(reference.buffer)]), fileName);
-      await this.fetch('/upload_reference', { method: 'POST', body: form });
+      await this.upload(voiceName, form);
       this.logger.info(`📤 Amostra da voz "${voiceName}" enviada ao Chatterbox (${fileName})`);
     }
     this.uploaded.add(fileName);
     return fileName;
+  }
+
+  /** Recusa da amostra (duração, formato) vira mensagem clara para o usuário, não "serviço desligado". */
+  private async upload(voiceName: string, form: FormData): Promise<void> {
+    try {
+      await this.fetch('/upload_reference', { method: 'POST', body: form });
+    } catch (error) {
+      const reason = /"error":"([^"]+)/.exec(errorMessage(error))?.[1];
+      if (!reason) throw error;
+      throw new UserFacingError(`o Chatterbox recusou a amostra da voz "${voiceName}" (${reason.replace(/\.+$/, '')}). Grave de novo com /minhavoz ${voiceName}, de 10 a 25 segundos.`, errorMessage(error), { cause: error });
+    }
   }
 
   private async fetch(pathname: string, init: RequestInit, timeoutMs = this.options.timeoutMs): Promise<Response> {

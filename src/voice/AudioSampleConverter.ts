@@ -7,7 +7,15 @@ export interface ReferenceAudio {
   extension: 'wav' | 'mp3';
   /** Duração em segundos, quando conhecida. */
   durationSeconds: number | null;
+  /** Duração original quando a amostra foi cortada para caber no limite do Chatterbox. */
+  trimmedFromSeconds?: number;
 }
+
+/**
+ * O Chatterbox recusa referências acima de 30 s; 10–20 s já dão o melhor resultado.
+ * Amostras maiores são cortadas (e não recusadas) com folga para a margem do servidor.
+ */
+export const MAX_REFERENCE_SECONDS = 25;
 
 export class UnsupportedAudioFormatError extends UserFacingError {
   constructor(extension: string) {
@@ -23,7 +31,18 @@ const OGG_EXTENSIONS = new Set(['ogg', 'oga', 'opus']);
  * sem depender de ffmpeg no Windows.
  */
 export class AudioSampleConverter {
+  constructor(private readonly maxSeconds = MAX_REFERENCE_SECONDS) {}
+
   async toReferenceAudio(buffer: Buffer, extension: string): Promise<ReferenceAudio> {
+    const audio = await this.convert(buffer, extension);
+    if (audio.extension !== 'wav' || audio.durationSeconds === null || audio.durationSeconds <= this.maxSeconds) return audio;
+    const trimmed = AudioSampleConverter.trimWav(audio.buffer, this.maxSeconds);
+    return trimmed
+      ? { buffer: trimmed, extension: 'wav', durationSeconds: this.maxSeconds, trimmedFromSeconds: audio.durationSeconds }
+      : audio;
+  }
+
+  private async convert(buffer: Buffer, extension: string): Promise<ReferenceAudio> {
     const ext = extension.replace(/^\./, '').toLowerCase();
     if (OGG_EXTENSIONS.has(ext) || AudioSampleConverter.isOgg(buffer)) {
       const decoder = new OggOpusDecoder();
@@ -74,6 +93,40 @@ export class AudioSampleConverter {
     header.write('data', 36, 'latin1');
     header.writeUInt32LE(data.length, 40);
     return Buffer.concat([header, data]);
+  }
+
+  /**
+   * Mantém os primeiros `seconds` de um WAV PCM: copia o bloco "fmt " e corta o "data" num limite de amostra.
+   * Devolve null se o arquivo não for um WAV reconhecível (o original segue sem corte).
+   */
+  static trimWav(buffer: Buffer, seconds: number): Buffer | null {
+    if (buffer.length < 44 || buffer.toString('latin1', 0, 4) !== 'RIFF' || buffer.toString('latin1', 8, 12) !== 'WAVE') return null;
+    let offset = 12;
+    let fmt: Buffer | undefined;
+    while (offset + 8 <= buffer.length) {
+      const id = buffer.toString('latin1', offset, offset + 4);
+      const size = buffer.readUInt32LE(offset + 4);
+      if (id === 'fmt ') fmt = buffer.subarray(offset + 8, offset + 8 + size);
+      if (id === 'data' && fmt) {
+        const byteRate = fmt.readUInt32LE(8);
+        const blockAlign = fmt.readUInt16LE(12) || 1;
+        const keep = Math.min(size, Math.floor((byteRate * seconds) / blockAlign) * blockAlign);
+        const data = buffer.subarray(offset + 8, offset + 8 + keep);
+        const header = Buffer.alloc(12);
+        header.write('RIFF', 0, 'latin1');
+        header.writeUInt32LE(4 + 8 + fmt.length + (fmt.length % 2) + 8 + data.length, 4);
+        header.write('WAVE', 8, 'latin1');
+        const fmtHeader = Buffer.alloc(8);
+        fmtHeader.write('fmt ', 0, 'latin1');
+        fmtHeader.writeUInt32LE(fmt.length, 4);
+        const dataHeader = Buffer.alloc(8);
+        dataHeader.write('data', 0, 'latin1');
+        dataHeader.writeUInt32LE(data.length, 4);
+        return Buffer.concat([header, fmtHeader, fmt, Buffer.alloc(fmt.length % 2), dataHeader, data]);
+      }
+      offset += 8 + size + (size % 2);
+    }
+    return null;
   }
 
   /** Duração de um WAV PCM a partir do cabeçalho (null se não reconhecer). */

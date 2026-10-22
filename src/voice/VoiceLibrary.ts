@@ -78,7 +78,7 @@ export class VoiceLibrary {
   }
 
   /** Converte e salva uma amostra; substitui a voz de mesmo nome. */
-  async save(name: string, buffer: Buffer, sourceExtension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null }> {
+  async save(name: string, buffer: Buffer, sourceExtension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
     const voiceName = VoiceLibrary.sanitizeName(name);
     if (!voiceName) throw new UserFacingError('Nome de voz inválido. Use letras, números e hífen (ex.: minha-voz).');
 
@@ -96,7 +96,7 @@ export class VoiceLibrary {
     }
     const filePath = path.join(this.options.dir, `${voiceName}.${audio.extension}`);
     fs.writeFileSync(filePath, audio.buffer);
-    return { sample: { name: voiceName, filePath }, durationSeconds: audio.durationSeconds };
+    return { sample: { name: voiceName, filePath }, durationSeconds: audio.durationSeconds, ...(audio.trimmedFromSeconds ? { trimmedFromSeconds: audio.trimmedFromSeconds } : {}) };
   }
 
   /** Lê a amostra já no formato aceito pelo Chatterbox (converte .ogg colocado à mão). */
