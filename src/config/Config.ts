@@ -1,6 +1,7 @@
 import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
+import { DEFAULT_GUARDRAILS, type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
 import { parseImageModels } from '../modules/imagens/ImageStyles.js';
 import { CHANNELS, type ChannelId, DEFAULT_CHANNELS, DEFAULT_MODULES, MODULE_IDS, moduleSkillDirs } from '../modules/registry.js';
 
@@ -105,6 +106,8 @@ export class Config {
   readonly stylesDirs: string[];
   /** Estilo usado quando nada mais escolhe um (ESTILO_PADRAO / estilo_padrao da fita). */
   readonly defaultStyle: string | undefined;
+  /** Guardrails da fita (bloco `guardrails:` do perfil.yaml, via GUARDRAILS em JSON). */
+  readonly guardrails: GuardrailsConfig;
   /** Pasta do perfil em uso (evals/ e skills/ próprios). */
   readonly profileDir: string | undefined;
   /** Pasta das ferramentas HTTP declarativas (módulo "http"); com perfil, `<perfil>/ferramentas`. */
@@ -238,6 +241,7 @@ export class Config {
     this.personasDir = path.resolve(rootDir, env.PERSONAS_DIR?.trim() || './personas');
     this.stylesDirs = [path.resolve(rootDir, 'estilos'), ...(env.ESTILOS_DIR?.trim() ? [path.resolve(rootDir, env.ESTILOS_DIR.trim())] : [])];
     this.defaultStyle = env.ESTILO_PADRAO?.trim().toLowerCase() || undefined;
+    this.guardrails = Config.parseGuardrails(env.GUARDRAILS);
     this.profileDir = env.PERFIL_DIR?.trim() ? path.resolve(rootDir, env.PERFIL_DIR.trim()) : undefined;
     this.httpToolsDir = env.FERRAMENTAS_DIR?.trim() ? path.resolve(rootDir, env.FERRAMENTAS_DIR.trim()) : undefined;
     this.env = env;
@@ -365,6 +369,20 @@ export class Config {
   }
 
   /** Lista separada por vírgulas, validada contra os valores conhecidos. */
+  /** GUARDRAILS: JSON com o bloco `guardrails:` do perfil (validado de novo para o modo sem perfil). */
+  private static parseGuardrails(value: string | undefined): GuardrailsConfig {
+    if (!value?.trim()) return DEFAULT_GUARDRAILS;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      throw new ConfigError('GUARDRAILS deve ser JSON (com perfil, declare o bloco guardrails: no perfil.yaml).');
+    }
+    return parseGuardrails(raw, (field, problem) => {
+      throw new ConfigError(`GUARDRAILS: campo "${field}" ${problem}`);
+    });
+  }
+
   private static parseSet(value: string, known: readonly string[], key: string): ReadonlySet<string> {
     const items = Config.list(value).map((v) => v.toLowerCase());
     const unknown = items.filter((v) => !known.includes(v));

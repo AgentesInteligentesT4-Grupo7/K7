@@ -34,6 +34,15 @@ canais: [terminal]
 # publico | pessoal | local (local = só modelos na sua GPU)
 privacidade: publico
 
+# Limites do agente (opcional; spec guardrails). Descomente o que precisar:
+# guardrails:
+#   injecao: avisar                 # off | avisar | bloquear
+#   verificar_com_llm: false        # confirma injeção e tópico com o LLM de roteamento
+#   dados_pessoais: mascarar        # off | mascarar | bloquear (CPF, e-mail, telefone, chaves…)
+#   proibidas: { palavras: [], acao: corrigir }   # corrigir | refazer | bloquear
+#   topicos: { permitidos: [], proibidos: [], acao: bloquear }
+#   abster: [saude, juridico, financeiro]
+
 # Variáveis que o .env do perfil precisa ter (o instalador avisa as que faltam)
 variaveis: {}
 `,

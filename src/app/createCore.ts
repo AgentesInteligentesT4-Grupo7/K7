@@ -8,6 +8,7 @@ import type { Config } from '../config/Config.js';
 import { LlmProviderError, errorMessage } from '../errors/AppErrors.js';
 import { type Orchestrator, createOrchestrator } from '../llm/orchestration/createOrchestrator.js';
 import type { ILlmProvider } from '../llm/types.js';
+import { Guardrails } from '../guardrails/Guardrails.js';
 import { ProviderFactory } from '../llm/ProviderFactory.js';
 import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
@@ -146,7 +147,9 @@ export function createCore(config: Config, options: CoreOptions): Core {
     const reserved = new Set(registry.list().map((t) => t.name));
     for (const tool of loadHttpTools(config.httpToolsDir, config.env, reserved)) registry.register(tool);
   }
-  const agentLoop = new AgentLoop(llm, registry, config.maxIterations);
+  // Guardrails da fita: o verificador usa o LLM barato do roteamento; a reescrita, o principal.
+  const guardrails = new Guardrails(config.guardrails, { checker: routerLlm, writer: llm });
+  const agentLoop = new AgentLoop(llm, registry, config.maxIterations, undefined, (tool, output) => guardrails.inspectObservation(tool, output));
   const skillLoader = new SkillLoader(config.skillsDirs, config.identity);
   // Personas (agentes com memória própria) e estilos de texto, em camadas tocador → fita.
   const personas = new PersonaCatalog(new MarkdownCatalog([config.personasDir], 'Personas', config.identity));
@@ -226,6 +229,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
         styles,
         settings,
         defaultStyle: config.defaultStyle,
+        guardrails,
       }),
   };
 }

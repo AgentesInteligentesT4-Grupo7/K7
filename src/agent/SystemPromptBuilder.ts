@@ -1,4 +1,5 @@
 import { type AgentIdentity, DEFAULT_IDENTITY } from '../config/AgentIdentity.js';
+import { type TextControls, renderControls } from '../personas/TextControls.js';
 import type { SkillMetadata } from '../skills/SkillLoader.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
 import type { AgentInput } from './types.js';
@@ -11,6 +12,10 @@ export interface PromptContext {
   memory?: string;
   persona?: { name: string; body: string };
   style?: { name: string; body: string };
+  /** Níveis 1–10 por dimensão (estilo → persona → /estilo → mensagem). */
+  controls?: TextControls;
+  /** Limites da fita e avisos de segurança (guardrails). */
+  guardrails?: string;
 }
 
 /** Monta o System Prompt de cada execução do AgentLoop. */
@@ -25,6 +30,7 @@ export class SystemPromptBuilder {
       this.identitySection(context.input.channel ?? 'telegram'),
       context.persona ? this.personaSection(context.persona) : '',
       context.memory ?? '',
+      context.guardrails ?? '',
       this.reasoningRules(),
       this.toolsSection(),
       this.researchRules(),
@@ -32,6 +38,7 @@ export class SystemPromptBuilder {
       this.skillsSection(context.availableSkills, context.activeSkill?.name ?? null),
       context.activeSkill ? this.activeSkillSection(context.activeSkill) : '',
       context.style ? this.styleSection(context.style) : '',
+      context.controls ? renderControls(context.controls) : '',
       this.inputSection(context.input),
     ];
     return sections.filter(Boolean).join('\n\n');

@@ -122,6 +122,8 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     CHANNELS: manifest.canais?.join(','),
     PRIVACY_DEFAULT: manifest.privacidade,
     ESTILO_PADRAO: manifest.estiloPadrao,
+    // Estruturado: vai como JSON já validado; o Config só o relê.
+    GUARDRAILS: manifest.guardrails ? JSON.stringify(manifest.guardrails) : undefined,
   };
   for (const [key, value] of Object.entries(fromManifest)) if (value !== undefined) env[key] = value;
 

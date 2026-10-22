@@ -1,5 +1,6 @@
 import { load as parseYaml } from 'js-yaml';
 import { ConfigError } from '../config/Config.js';
+import { type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
 import type { PrivacyLevel } from '../llm/orchestration/types.js';
 import { CHANNELS, type ChannelId, MODULE_IDS } from '../modules/registry.js';
 
@@ -38,6 +39,8 @@ export interface ProfileManifest {
   estiloPadrao?: string;
   /** Variáveis de ambiente que o `.env` do perfil precisa ter, com a descrição de cada uma. */
   variaveis: Record<string, string>;
+  /** Bloco `guardrails:` (spec guardrails); ausente = padrão do tocador. */
+  guardrails?: GuardrailsConfig;
 }
 
 /** Módulos previstos na spec que ainda não existem neste tocador. */
@@ -110,6 +113,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     privacidade,
     ...(str(raw.estilo_padrao) ? { estiloPadrao: str(raw.estilo_padrao)!.toLowerCase() } : {}),
     variaveis,
+    ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
   };
 }
 

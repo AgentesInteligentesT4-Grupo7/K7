@@ -19,6 +19,9 @@ export interface SkillExecutionRequest {
   /** Persona ativa e estilo de texto (spec personas-styles). */
   persona?: { name: string; body: string };
   style?: { name: string; body: string };
+  controls?: Record<string, number>;
+  /** Seção de guardrails (limites da fita + aviso da entrada). */
+  guardrails?: string;
 }
 
 export interface SkillExecutionResult extends AgentRunResult {
@@ -83,6 +86,8 @@ export class SkillExecutor {
       memory: request.memory,
       persona: request.persona,
       style: request.style,
+      controls: request.controls,
+      guardrails: request.guardrails,
     });
 
     const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });

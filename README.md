@@ -417,6 +417,25 @@ Três peças que se combinam (spec [personas-styles](specs/personas-styles.md)):
 - **Estilo:** peça na mensagem ("reescreva em tom formal"), fixe com `/estilo formal` (`/estilo padrao` desfaz), ou
   defina `estilo: ...` na persona ou `estilo_padrao: ...` no `perfil.yaml`. Vale nessa ordem: mensagem → persona →
   `/estilo` → padrão da fita.
+- **Níveis do texto (1–10):** `complexidade`, `tom`, `sentimento`, `perspectiva` (1–3), `foco`, `surpresa`,
+  `detalhe`, `originalidade`, `abstracao`. Na mensagem (`resuma o artigo detalhe=3`), fixos (`/estilo formal tom=2`)
+  ou no frontmatter do estilo/persona (`controles: { detalhe: 2 }`).
+
+### Limites da fita (guardrails)
+
+Declarados no `perfil.yaml`, sem código (spec [guardrails](specs/guardrails.md)):
+
+```yaml
+guardrails:
+  injecao: bloquear              # "ignore as instruções anteriores..." é recusado
+  dados_pessoais: mascarar       # CPF, CNPJ, e-mail, telefone, cartão e chaves viram [CPF], [EMAIL]...
+  proibidas: { palavras: [concorrente x], acao: refazer }   # acha até "c0nc0rr3nt3"; refazer = LLM reescreve
+  topicos: { permitidos: [culinária, receitas], acao: bloquear }
+  verificar_com_llm: true        # confirma injeção/tópico com o modelo barato (1 pedido por mensagem)
+  abster: [saude, juridico]      # só informação geral + "procure um profissional"
+```
+
+Mesmo sem configuração, texto de página, anexo ou API que tenta dar ordens ao agente chega ao LLM marcado como dado.
 
 ```markdown
 ---

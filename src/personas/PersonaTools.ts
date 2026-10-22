@@ -5,6 +5,7 @@ import type { MemoryManager } from '../memory/MemoryManager.js';
 import { BaseTool, ToolArgumentError, type ToolResult } from '../tools/BaseTool.js';
 import { type Persona, PersonaCatalog } from './Personas.js';
 import type { StyleCatalog } from './Styles.js';
+import { renderControls } from './TextControls.js';
 
 export interface PersonaAgentsDeps {
   personas: PersonaCatalog;
@@ -63,6 +64,7 @@ export class PersonaAgents {
       'Mesmo em personagem: nada de conteúdo sexual, violência gráfica ou instruções perigosas.',
       memory,
       style ? `# Estilo de escrita: ${style.name}\n${style.body}` : '',
+      renderControls({ ...style?.controls, ...persona.controls }),
     ]
       .filter(Boolean)
       .join('\n\n');

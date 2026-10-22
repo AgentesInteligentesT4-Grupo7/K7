@@ -1,4 +1,5 @@
 import type { CatalogEntry, MarkdownCatalog } from './MarkdownCatalog.js';
+import { type TextControls, sanitizeControls } from './TextControls.js';
 
 export interface TextStyle {
   name: string;
@@ -6,6 +7,8 @@ export interface TextStyle {
   aliases: string[];
   /** Instruções de escrita injetadas no system prompt. */
   body: string;
+  /** Níveis padrão do estilo (frontmatter `controles`). */
+  controls: TextControls;
 }
 
 /** Palavras que indicam pedido de tom/registro ("em tom formal", "reescreva de forma infantil"). */
@@ -47,6 +50,7 @@ export class StyleCatalog {
       description: entry.description,
       aliases: Array.isArray(aliases) ? aliases.map((a) => String(a).trim()).filter(Boolean) : [],
       body: entry.body,
+      controls: sanitizeControls(entry.frontmatter.controles),
     };
   }
 }

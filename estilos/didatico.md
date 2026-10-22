@@ -1,6 +1,7 @@
 ---
 name: didatico
 description: "Explicação passo a passo para quem está aprendendo."
+controles: { complexidade: 4, abstracao: 3, detalhe: 7 }
 aliases: [didatico, didático, didatica, didática, iniciante, leigo, simples]
 ---
 - Comece pela ideia central em uma frase simples.

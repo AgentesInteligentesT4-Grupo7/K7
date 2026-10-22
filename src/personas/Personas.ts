@@ -1,4 +1,5 @@
 import type { CatalogEntry, MarkdownCatalog } from './MarkdownCatalog.js';
+import { type TextControls, sanitizeControls } from './TextControls.js';
 
 export interface Persona {
   name: string;
@@ -9,6 +10,8 @@ export interface Persona {
   style?: string;
   /** Só estas skills ficam disponíveis com a persona ativa (vazio = todas). */
   skills: string[];
+  /** Níveis de texto próprios da persona (frontmatter `controles`). */
+  controls: TextControls;
 }
 
 /** Personas da fita (`personas/<nome>.md`): cada uma é um agente com memória própria. */
@@ -44,6 +47,7 @@ export class PersonaCatalog {
       body: entry.body,
       ...(typeof entry.frontmatter.estilo === 'string' ? { style: entry.frontmatter.estilo.trim().toLowerCase() } : {}),
       skills: Array.isArray(skills) ? skills.map((s) => String(s).trim()).filter(Boolean) : [],
+      controls: sanitizeControls(entry.frontmatter.controles),
     };
   }
 }

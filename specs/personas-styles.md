@@ -81,7 +81,20 @@ Escreva em registro formal…
 
 ### 5.3 Preferências por usuário
 
-Tabela `user_settings(user_id, key, value)`: `persona` e `estilo` ativos.
+Tabela `user_settings(user_id, key, value)`: `persona`, `estilo` e `controles` (JSON) ativos.
+
+### 5.4 Controles do texto (níveis 1–10)
+
+Ajuste fino que se soma ao estilo, em dimensões com nível de 1 a 10 (perspectiva: 1 a 3):
+`complexidade`, `entonacao` (apelido `tom`), `sentimento`, `perspectiva` (1ª, 2ª ou 3ª pessoa), `foco`,
+`surpresa`, `detalhe`, `originalidade`, `abstracao`.
+
+- **Onde se define:** frontmatter `controles: { detalhe: 2, foco: 9 }` no estilo ou na persona;
+  `/estilo formal detalhe=3 tom=2` (grava para o usuário); `detalhe=8` dentro da mensagem (só ela; o token sai do texto).
+- **Precedência:** estilo → persona → `/estilo` → mensagem (o mais específico vence, por dimensão).
+- **Sintaxe:** `nome=N` colado, para não confundir com texto comum ("meu foco: 2 coisas" não é controle).
+- No system prompt vira `# Controles do texto`, com as âncoras de cada ponta (1 = …; 10 = …), e prevalece sobre o
+  estilo em conflito. `/estilo padrao` zera estilo e níveis.
 
 ## 6. Edge Cases
 

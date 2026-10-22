@@ -5,6 +5,8 @@ import type { ConversationSummarizer } from '../memory/ConversationSummarizer.js
 import type { UserSettings } from '../memory/UserSettings.js';
 import { type Persona, PersonaCatalog } from '../personas/Personas.js';
 import type { StyleCatalog, TextStyle } from '../personas/Styles.js';
+import { type TextControls, controlsHelp, formatControls, parseControls, sanitizeControls } from '../personas/TextControls.js';
+import type { Guardrails } from '../guardrails/Guardrails.js';
 import { ResponseAttachments } from './ResponseAttachments.js';
 import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
@@ -33,6 +35,8 @@ export interface AgentControllerDeps {
   settings?: UserSettings;
   /** estilo_padrao da fita / ESTILO_PADRAO. */
   defaultStyle?: string;
+  /** Guardrails declarados na fita (spec guardrails). */
+  guardrails?: Guardrails;
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -69,7 +73,9 @@ export class AgentController {
     // Persona: "@nome mensagem" vale só para esta mensagem; senão, a escolhida com /persona.
     const mention = this.deps.personas?.mention(original.text);
     const persona = mention?.persona ?? this.activePersona(userId);
-    const input: AgentInput = mention ? { ...original, text: mention.text } : original;
+    // Controles de texto na mensagem ("detalhe=3 tom=8") valem só para ela e saem do texto.
+    const asked = parseControls(mention?.text ?? original.text);
+    const input: AgentInput = { ...original, text: asked.rest };
     // Memória isolada por persona; anexos, roteamento e orquestrador seguem com o usuário real.
     const memoryUserId = PersonaCatalog.memoryUserId(userId, persona);
     const conversation = memory.getOrCreateActiveConversation(memoryUserId, this.deps.providerName);
@@ -93,9 +99,23 @@ export class AgentController {
     // Persona com "skills: [...]" só enxerga essas skills.
     const skills = this.deps.skillLoader.loadAll().filter((s) => !persona?.skills.length || persona.skills.includes(s.name));
     const style = this.resolveStyle(userId, input.text, persona);
-    if (persona || style) this.logger.info(`🎭 ${persona ? `persona ${persona.name}` : 'agente'}${style ? ` · estilo ${style.name}` : ''}`);
+    const controls = this.resolveControls(userId, style, persona, asked.controls);
+    if (persona || style || controls) {
+      this.logger.info(`🎭 ${persona ? `persona ${persona.name}` : 'agente'}${style ? ` · estilo ${style.name}` : ''}${controls ? ` · ${formatControls(controls)}` : ''}`);
+    }
     // Privacidade: documentos e anexos são dados pessoais (spec llm-orchestration RF-09).
     const privacy = input.source === 'document' ? stricter(this.deps.privacyDefault ?? 'publico', 'pessoal') : (this.deps.privacyDefault ?? 'publico');
+
+    // Guardrails de entrada: injeção e tópico. Documento enviado é conteúdo externo (só avisa).
+    const { guardrails } = this.deps;
+    const verdict = guardrails
+      ? await TaskContext.run({ task: 'roteamento', privacy, userId }, () => guardrails.checkInput(input.text, { external: input.source === 'document' }))
+      : undefined;
+    if (verdict?.blocked) {
+      memory.saveMessage(conversation.id, 'assistant', verdict.blocked, { guardrails: verdict.events });
+      return { text: verdict.blocked, isAudio: false };
+    }
+    const guardrailsPrompt = [guardrails?.promptSection(), verdict?.warning].filter(Boolean).join('\n\n') || undefined;
     const routed = await TaskContext.run({ task: 'roteamento', privacy, userId }, () =>
       this.deps.skillRouter.routeWithTask(input.text, skills),
     );
@@ -103,8 +123,12 @@ export class AgentController {
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const { result, images } = await ResponseAttachments.collect(() =>
-      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style })),
+      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style, controls, guardrails: guardrailsPrompt })),
     );
+    // Guardrails de saída: palavras proibidas e dados pessoais (a versão salva na memória também sai limpa).
+    const output = guardrails ? await TaskContext.run({ task, privacy, userId }, () => guardrails.checkOutput(result.text)) : undefined;
+    const text = output?.text ?? result.text;
+    const guardrailEvents = [...(verdict?.events ?? []), ...(output?.events ?? [])];
 
     for (const step of result.steps) {
       memory.saveMessage(conversation.id, 'tool', `${step.tool}(${step.arguments}) → ${step.observation}`, {
@@ -115,7 +139,7 @@ export class AgentController {
     memory.saveMessage(
       conversation.id,
       'assistant',
-      result.text,
+      text,
       {
         provider: result.providerName,
         skill: result.skillName,
@@ -123,6 +147,8 @@ export class AgentController {
         privacy,
         ...(persona ? { persona: persona.name } : {}),
         ...(style ? { style: style.name } : {}),
+        ...(controls ? { controls } : {}),
+        ...(guardrailEvents.length ? { guardrails: guardrailEvents } : {}),
         iterations: result.iterations,
         ...result.details,
         ...(images.length ? { images: images.map((i) => i.path) } : {}),
@@ -132,7 +158,7 @@ export class AgentController {
     );
 
     this.deps.summarizer?.schedule(conversation.id, memoryUserId);
-    return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
+    return { text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
   }
 
   /** URLs lidas com ler_pagina nesta resposta (spec web-search §9: metadata.sources). */
@@ -204,25 +230,65 @@ export class AgentController {
     return `🎭 Agora você fala com ${persona.name} (memória própria). /persona sair volta ao agente.`;
   }
 
-  /** `/estilo`: lista, fixa (`/estilo formal`) ou volta ao padrão (`/estilo padrao`). */
+  /**
+   * `/estilo`: lista, fixa (`/estilo formal`), ajusta níveis (`/estilo formal detalhe=3 tom=2`)
+   * ou volta ao padrão (`/estilo padrao`, que também zera os níveis).
+   */
   styleCommand(userId: number | string, arg: string): string {
     const { styles, settings } = this.deps;
     if (!styles || !settings) return 'Estilos não disponíveis.';
     const id = String(userId);
-    const wanted = arg.trim().toLowerCase();
-    if (!wanted) {
+    const { controls, rest } = parseControls(arg);
+    const wanted = rest.trim().toLowerCase();
+    const changedControls = Object.keys(controls).length > 0;
+    if (!wanted && !changedControls) {
       const active = settings.get(id, 'estilo') ?? this.deps.defaultStyle;
+      const saved = this.savedControls(id);
       const list = styles.list().map((s) => `${s.name === active ? '▶' : '-'} ${s.name}: ${s.description}`).join('\n');
-      return `✍️ Estilos (${active ? `ativo: ${active}` : 'nenhum fixo'}):\n${list}\n\nUse /estilo <nome>, /estilo padrao, ou peça na mensagem ("em tom formal").`;
+      return [
+        `✍️ Estilos (${active ? `ativo: ${active}` : 'nenhum fixo'}${Object.keys(saved).length ? ` · níveis: ${formatControls(saved)}` : ''}):`,
+        list,
+        '',
+        'Níveis (combine com o estilo, ex.: /estilo formal detalhe=3):',
+        controlsHelp(),
+        '',
+        'Use /estilo <nome> [níveis], /estilo padrao, ou peça na mensagem ("em tom formal", "detalhe=8").',
+      ].join('\n');
     }
     if (['padrao', 'padrão', 'nenhum', 'sair'].includes(wanted)) {
       settings.set(id, 'estilo', undefined);
-      return '✍️ Estilo de volta ao padrão.';
+      settings.set(id, 'controles', undefined);
+      return '✍️ Estilo e níveis de volta ao padrão.';
     }
-    const style = styles.get(wanted);
-    if (!style) return `Estilo "${wanted}" não existe. Disponíveis: ${styles.list().map((s) => s.name).join(', ')}.`;
-    settings.set(id, 'estilo', style.name);
-    return `✍️ Estilo fixado: ${style.name}. /estilo padrao desfaz.`;
+    const replies: string[] = [];
+    if (wanted) {
+      const style = styles.get(wanted);
+      if (!style) return `Estilo "${wanted}" não existe. Disponíveis: ${styles.list().map((s) => s.name).join(', ')}.`;
+      settings.set(id, 'estilo', style.name);
+      replies.push(`✍️ Estilo fixado: ${style.name}.`);
+    }
+    if (changedControls) {
+      const merged = { ...this.savedControls(id), ...controls };
+      settings.set(id, 'controles', JSON.stringify(merged));
+      replies.push(`🎚️ Níveis: ${formatControls(merged)}.`);
+    }
+    return `${replies.join(' ')} /estilo padrao desfaz.`;
+  }
+
+  private savedControls(userId: string): TextControls {
+    const raw = this.deps.settings?.get(userId, 'controles');
+    if (!raw) return {};
+    try {
+      return sanitizeControls(JSON.parse(raw));
+    } catch {
+      return {};
+    }
+  }
+
+  /** Níveis do texto: estilo → persona → /estilo → mensagem (o mais específico vence). */
+  private resolveControls(userId: string, style: TextStyle | undefined, persona: Persona | undefined, asked: TextControls): TextControls | undefined {
+    const merged = { ...style?.controls, ...persona?.controls, ...this.savedControls(userId), ...asked };
+    return Object.keys(merged).length ? merged : undefined;
   }
 
   private activePersona(userId: string): Persona | undefined {

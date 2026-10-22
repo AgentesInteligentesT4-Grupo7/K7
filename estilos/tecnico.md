@@ -1,6 +1,7 @@
 ---
 name: tecnico
 description: "Linguagem técnica precisa, para especialistas."
+controles: { complexidade: 8, abstracao: 6 }
 aliases: [tecnico, técnico, tecnica, técnica, especialista]
 ---
 - Use a terminologia correta da área, sem simplificar conceitos.

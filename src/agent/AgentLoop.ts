@@ -44,6 +44,8 @@ export class AgentLoop {
     private readonly registry: ToolRegistry,
     private readonly maxIterations: number,
     private readonly maxObservationChars = 20_000,
+    /** Guardrail de conteúdo externo: marca observações com cara de injeção antes de chegarem ao LLM. */
+    private readonly inspectObservation?: (tool: string, output: string) => string,
   ) {}
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
@@ -74,7 +76,8 @@ export class AgentLoop {
       // NG-02: tool calls executadas em cascata sequencial, nunca em paralelo.
       for (const call of response.toolCalls) {
         this.logger.info(`🔧 Action: ${call.name}(${preview(call.arguments, 200)})`);
-        const observation = truncate(await this.executeTool(call), this.maxObservationChars);
+        const raw = truncate(await this.executeTool(call), this.maxObservationChars);
+        const observation = this.inspectObservation ? this.inspectObservation(call.name, raw) : raw;
         this.logger.info(`👁️  Observation: ${preview(observation)}`);
         messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: observation });
         steps.push({ iteration, thought, tool: call.name, arguments: call.arguments, observation });
