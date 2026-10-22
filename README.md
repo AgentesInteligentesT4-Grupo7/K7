@@ -293,7 +293,7 @@ docker stop comfyui | docker start comfyui                     # desligar / reli
   Estilo sem modelo cai para o padrão, com aviso.
 - **VRAM:** uma geração por vez; antes de gerar, os modelos do Ollama são descarregados da GPU; depois de
   `IMAGE_IDLE_UNLOAD_MIN` minutos ocioso, o modelo de imagem também sai.
-- **Conteúdo:** nudez, conteúdo sexual, violência gráfica e fotos realistas de pessoas reais são recusados antes
+- **Conteúdo:** nudez, conteúdo sexual e violência gráfica (com qualquer pessoa, real ou não) são recusados antes
   de chegar à GPU, e todo prompt leva um negativo de segurança fixo.
 - Seed fixo repete a imagem; mesma descrição canônica do personagem mantém a aparência entre cenas.
 - **Fichas de personagem (HQ):** `npm run imagens:modelo -- personagens` instala o IP-Adapter (~3,5 GB). Cada

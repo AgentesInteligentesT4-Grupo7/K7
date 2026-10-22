@@ -38,7 +38,7 @@ export class GenerateImageTool extends BaseTool {
     'Personagens: use "fichas" com os nomes de fichas salvas (listar_fichas) para manter rosto e corpo iguais em toda a história; ' +
     'para um personagem que já existe (desenho, anime, filme, jogo, livro) sem ficha, preencha "personagem" com "Nome (Obra)": a ' +
     'ferramenta busca referências na internet e cria a ficha. Para transformar uma foto enviada em desenho, passe o ID do anexo em ' +
-    '"imagem_base". Nunca gere nudez, conteúdo sexual, violência gráfica ou pessoas reais em estilo realista.';
+    '"imagem_base". Nunca gere nudez, conteúdo sexual ou violência gráfica, nem imagem de pessoa real para enganar ou humilhar.';
   readonly parameters: JsonSchema = {
     type: 'object',
     properties: {

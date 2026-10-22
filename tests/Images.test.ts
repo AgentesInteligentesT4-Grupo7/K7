@@ -56,11 +56,12 @@ function generator(fetcher: typeof fetch, extra: Partial<ConstructorParameters<t
 }
 
 describe('Imagens: travas de conteúdo e estilos', () => {
-  it('bloqueia sexual, menores em contexto sexual, gore e foto realista de pessoa real; permite cenas comuns', () => {
+  it('bloqueia sexual (com qualquer pessoa), menores em contexto sexual e gore; permite cenas comuns e pessoas reais em contexto neutro', () => {
     assert.throws(() => checkImagePrompt('anime girl, nude, beach'), ForbiddenImageError);
     assert.throws(() => checkImagePrompt('schoolgirl, sexy pose'), /menores é proibido/);
     assert.throws(() => checkImagePrompt('warrior, decapitated enemy, gore'), /violência gráfica/);
-    assert.throws(() => checkImagePrompt('photorealistic portrait of Elon Musk'), /pessoas reais/);
+    assert.throws(() => checkImagePrompt('photorealistic photo of Elon Musk, nude'), /conteúdo sexual/);
+    assert.doesNotThrow(() => checkImagePrompt('photorealistic portrait of Elon Musk giving a speech'));
     for (const ok of ['young mechanic running in a neon alley, rain, night', 'a little girl reading a book under a tree, storybook', 'knight fighting a dragon, epic']) {
       assert.doesNotThrow(() => checkImagePrompt(ok), ok);
     }

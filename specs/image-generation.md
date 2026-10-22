@@ -52,7 +52,7 @@ O projeto já tem a infraestrutura de serviços em Docker na GPU (Kokoro, Whispe
 
 ## 4. Non-Goals (Fora do Escopo)
 
-- NG-01: Conteúdo sexual, nudez, violência gráfica extrema, ou imagens realistas de pessoas reais identificáveis.
+- NG-01: Conteúdo sexual, nudez ou violência gráfica extrema (com qualquer pessoa); imagem de pessoa real feita para enganar ou humilhar; foto enviada de uma pessoa transformada em foto realista (só vira desenho).
 - NG-02: Fotorrealismo como foco (os modelos escolhidos são de ilustração).
 - NG-03: Vídeo e animação.
 - NG-04: Treino de LoRA dentro do bot nesta versão (Fase 5 é opcional e roda fora do fluxo de conversa).
