@@ -93,6 +93,7 @@ Ajuste fino que se soma ao estilo, em dimensões com nível de 1 a 10 (perspecti
   `/estilo formal detalhe=3 tom=2` (grava para o usuário); `detalhe=8` dentro da mensagem (só ela; o token sai do texto).
 - **Precedência:** estilo → persona → `/estilo` → mensagem (o mais específico vence, por dimensão).
 - **Sintaxe:** `nome=N` colado, para não confundir com texto comum ("meu foco: 2 coisas" não é controle).
+- Base: MACEDO, Sandeco. *Prompts em Ação: Engenharia de Prompts para Leigos*. 2024. (níveis de controle); prompt "PROMPT MATRIX" de MACEDO, Sandeco. *prompts* (repositório). <https://github.com/sandeco/prompts>.
 - No system prompt vira `# Controles do texto`, com as âncoras de cada ponta (1 = …; 10 = …), e prevalece sobre o
   estilo em conflito. `/estilo padrao` zera estilo e níveis.
 

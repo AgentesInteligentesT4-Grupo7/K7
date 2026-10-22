@@ -74,6 +74,7 @@ function parseJson<T>(text: string | null): T | undefined {
  * Recuperação da base de conhecimento: busca lexical (FTS5/BM25) + vetorial (cosseno), fundidas por RRF;
  * em volta, as técnicas opcionais. O planejador faz Adaptive + RAG-Fusion + HyDE num pedido só,
  * e o avaliador CRAG noutro: no máximo dois pedidos extras ao LLM barato por consulta.
+ * Base: "RAG: Retrieval-Augmented Generation" (Sandeco Macedo); ver CREDITOS.md.
  */
 export class KnowledgeRetriever {
   private readonly logger = new Logger('Conhecimento');

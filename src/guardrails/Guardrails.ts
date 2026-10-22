@@ -36,6 +36,7 @@ interface LlmVerdict {
  * Guardrails declarativos da fita (spec guardrails): entrada (injeção, tópico), conteúdo externo
  * (observações das ferramentas) e saída (palavras proibidas, dados pessoais). Sem configuração,
  * só marca conteúdo externo suspeito, que é barato e não muda respostas.
+ * Base: "Prompts em Ação, vol. 2: Guardrails" (Sandeco Macedo); ver CREDITOS.md.
  */
 export class Guardrails {
   private readonly logger = new Logger('Guardrails');

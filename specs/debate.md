@@ -38,3 +38,9 @@ agentes, trazer uma ideia própria (vira um novo agente), pedir a combinação d
 | RF-03 | Tabela de notas ordenada pelo total |
 | RF-04 | Falha de um pedido mantém a posição anterior (nunca derruba o debate) |
 | RF-05 | Tema e posições são dados para os agentes (não instruções) |
+
+## Referências
+
+- MACEDO, Sandeco. *Prompts em Ação, vol. 2: Guardrails*. 2025. (feedback humano como guardrail no debate de multiagentes).
+- MACEDO, Sandeco. *prompts* (repositório). <https://github.com/sandeco/prompts>: prompts "MULTIAGENTES EM DEBATE" e "PROMPT EVOLUTIVO".
+- Detalhes e artigos originais: [CREDITOS.md](../CREDITOS.md).

@@ -515,3 +515,11 @@ Conversas longas não estouram o contexto nem esquecem o começo:
 | `data/parreiraclaw.db` | Conversas e mensagens (SQLite, WAL). Está no `.gitignore`. |
 | `tmp/` | Áudios/PDFs temporários, apagados após o uso e limpos no startup |
 | `workspace/` | Única pasta onde as ferramentas de arquivo podem ler e escrever |
+
+## Créditos
+
+Os controles de texto, os guardrails, a base de conhecimento (RAG), os modos de raciocínio (CoVe, RaR), a
+análise em etapas, o debate entre agentes e o criador de prompts foram desenhados a partir dos livros
+*Prompts em Ação* (vol. 1 e vol. 2: Guardrails) e *RAG: Retrieval-Augmented Generation* e do repositório
+[sandeco/prompts](https://github.com/sandeco/prompts), do **Prof. Sandeco Macedo** (IFG/UFG). O mapa do que veio
+de onde, com os artigos originais de cada técnica, está em [CREDITOS.md](CREDITOS.md).

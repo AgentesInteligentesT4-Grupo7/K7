@@ -70,6 +70,7 @@ function parseJson<T>(text: string | null | undefined): T | undefined {
  * Debate entre agentes com o usuário no meio (spec debate): a cada rodada cada agente lê as posições
  * dos outros, reflete e atualiza a sua; um juiz dá notas; o debate pausa para o usuário manter,
  * descartar, acrescentar uma ideia (vira um novo agente) ou pedir a combinação das melhores.
+ * Base: "Prompts em Ação, vol. 2" e os prompts MULTIAGENTES EM DEBATE e PROMPT EVOLUTIVO de github.com/sandeco/prompts; ver CREDITOS.md.
  */
 export class DebateEngine {
   private readonly logger = new Logger('Debate');

@@ -74,3 +74,9 @@ Sem perfil, `GUARDRAILS` pode ser definido no `.env` em JSON com as mesmas chave
 | Número de pedido de 8 dígitos | Não é telefone (exige DDD ou separador e ≥ 10 dígitos) |
 | CPF com dígito errado | Não é mascarado |
 | YAML `injecao: off` (lido como `false`) | Tratado como `off` |
+
+## Referências
+
+- MACEDO, Sandeco. *Prompts em Ação, vol. 2: Guardrails*. 2025.
+- MACEDO, Sandeco. *prompts* (repositório). <https://github.com/sandeco/prompts>: prompt "PROMPT INJECTION DETECT".
+- Detalhes e artigos originais: [CREDITOS.md](../CREDITOS.md).

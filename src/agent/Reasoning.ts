@@ -9,6 +9,7 @@ import { Logger } from '../utils/Logger.js';
  * - reformular (RaR em duas etapas): a pergunta é reescrita e detalhada antes da resposta;
  * - verificado (CoVe): a resposta passa por perguntas de verificação respondidas sem ver o rascunho
  *   e é revisada com o que elas mostrarem.
+ * Base: "Prompts em Ação", vol. 1 (CoVe) e vol. 2 (RaR), de Sandeco Macedo; ver CREDITOS.md.
  */
 export const REASONING_MODES = ['normal', 'reformular', 'verificado'] as const;
 export type ReasoningMode = (typeof REASONING_MODES)[number];

@@ -35,3 +35,9 @@ Apelidos: `rar` = reformular; `cove`, `verificar` = verificado; `padrao` = norma
 | RF-05 | Os guardrails de saída rodam sobre a resposta final (depois da revisão) |
 | RF-06 | Metadata da resposta: `mode` e `verification: { questions, changed }` |
 | RF-07 | Etapas usam o LLM principal com a tarefa `raciocinio` (o orquestrador escolhe o modelo) |
+
+## Referências
+
+- MACEDO, Sandeco. *Prompts em Ação: Engenharia de Prompts para Leigos*. 2024. (Chain-of-Verification, Knowledge-Driven CoT).
+- MACEDO, Sandeco. *Prompts em Ação, vol. 2: Guardrails*. 2025. (Rephrase and Respond).
+- Detalhes e artigos originais: [CREDITOS.md](../CREDITOS.md).

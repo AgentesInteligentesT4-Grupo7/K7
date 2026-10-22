@@ -14,6 +14,9 @@ loop:
     tag: analisador
     provider: ollama
     model: qwen3:8b
+# Fonte (não entra no prompt; ver CREDITOS.md)
+referencias:
+  - "github.com/sandeco/prompts: REFLEXION (idealizador/analisador)"
 ---
 
 # Skill: Idealizador ↔ Analisador

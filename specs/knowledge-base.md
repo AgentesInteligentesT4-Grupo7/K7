@@ -106,3 +106,8 @@ e `kb_fts` (FTS5, `unicode61 remove_diacritics 2`). Vetores em BLOB Float32; bus
 | Cota do Gemini esgotada | Pausa 10 min; trechos sem vetor continuam na busca por palavras |
 | Base inexistente na ferramenta | Erro com a lista de bases |
 | Planejador/avaliador fora do ar | Segue sem a técnica (busca simples) |
+
+## Referências
+
+- MACEDO, Sandeco. *RAG: Retrieval-Augmented Generation*. 2025.
+- Detalhes e artigos originais: [CREDITOS.md](../CREDITOS.md).

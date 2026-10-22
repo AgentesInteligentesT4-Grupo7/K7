@@ -1,6 +1,10 @@
 ---
 name: criador-de-prompts
 description: "Cria ou melhora um prompt junto com o usuário, em rodadas: prompt revisado, sugestões e perguntas, até ficar bom ('me ajude a escrever um prompt', 'melhore este prompt', 'crie um prompt para o ChatGPT/Gemini/Claude', 'prompt para gerar...')."
+# Fonte (não entra no prompt; ver CREDITOS.md)
+referencias:
+  - "Prompts em Ação (Sandeco Macedo, 2024): gerador de prompts"
+  - "github.com/sandeco/prompts: PROMPT ITERATIVO"
 ---
 
 # Skill: Criador de prompts

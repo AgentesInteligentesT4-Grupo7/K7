@@ -11,6 +11,7 @@ interface Dimension {
 /**
  * Dimensões de controle do texto (spec personas-styles §5.4), inspiradas nos "níveis de controle"
  * da engenharia de prompts: cada uma vai de 1 a 10 e completa o estilo escolhido.
+ * Base: "Prompts em Ação" e o prompt PROMPT MATRIX (Sandeco Macedo); ver CREDITOS.md.
  */
 export const DIMENSIONS: Record<string, Dimension> = {
   complexidade: { label: 'Complexidade', max: 10, low: 'palavras do dia a dia e frases curtas', high: 'vocabulário técnico e frases elaboradas' },

@@ -2,6 +2,9 @@
 name: analise-em-etapas
 description: "Analisa um problema complexo em etapas explícitas (entender, decompor, resolver cada parte, apontar limites, sintetizar): decisões difíceis, diagnósticos de causa, planejamento, comparação de caminhos ('analise com calma', 'pense passo a passo', 'qual a melhor decisão', 'por que isso está acontecendo')."
 max_iterations: 8
+# Fonte (não entra no prompt; ver CREDITOS.md)
+referencias:
+  - "Prompts em Ação (Sandeco Macedo, 2024): Knowledge-Driven CoT"
 ---
 
 # Skill: Análise em etapas
