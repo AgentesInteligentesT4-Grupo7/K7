@@ -9,6 +9,10 @@ export interface AgentRunInput {
   systemPrompt: string;
   /** Histórico (janela de memória), terminando na mensagem atual do usuário. */
   history: ChatMessage[];
+  /** Limite de iterações desta execução (skill com max_iterations); padrão: MAX_ITERATIONS. */
+  maxIterations?: number;
+  /** Ao estourar o limite, pede uma resposta final com o que já foi levantado em vez de falhar (spec web-search EC-08). */
+  finishOnLimit?: boolean;
 }
 
 export interface AgentStep {
@@ -47,8 +51,9 @@ export class AgentLoop {
     const tools = this.registry.toDefinitions();
     const steps: AgentStep[] = [];
 
-    for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
-      this.logger.info(`── Iteração ${iteration}/${this.maxIterations} ──`);
+    const limit = input.maxIterations ?? this.maxIterations;
+    for (let iteration = 1; iteration <= limit; iteration++) {
+      this.logger.info(`── Iteração ${iteration}/${limit} ──`);
       const response = await this.provider.chat({ messages, tools });
 
       if (response.toolCalls.length === 0) {
@@ -76,8 +81,15 @@ export class AgentLoop {
       }
     }
 
-    this.logger.warn(`⛔ MAX_ITERATIONS (${this.maxIterations}) atingido; abortando loop`);
-    throw new MaxIterationsError(this.maxIterations);
+    if (input.finishOnLimit) {
+      this.logger.warn(`⛔ Limite de ${limit} iterações; pedindo a resposta final com o que já foi levantado`);
+      messages.push({ role: 'user', content: 'Limite de passos atingido. Responda agora ao usuário com o que já levantou (cite as fontes já lidas), sem chamar ferramentas.' });
+      const response = await this.provider.chat({ messages });
+      const answer = response.content?.trim();
+      if (answer) return { text: answer, iterations: limit, steps, providerName: response.providerName };
+    }
+    this.logger.warn(`⛔ MAX_ITERATIONS (${limit}) atingido; abortando loop`);
+    throw new MaxIterationsError(limit);
   }
 
   /** Executa uma tool call e SEMPRE devolve uma observação (nunca lança). */

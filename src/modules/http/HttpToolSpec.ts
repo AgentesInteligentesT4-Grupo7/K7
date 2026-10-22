@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { load as parseYaml } from 'js-yaml';
-import { isBlockedAddress } from './NetworkGuard.js';
+import { isBlockedAddress } from '../../net/NetworkGuard.js';
 
 /** Erro numa ferramenta declarada (`ferramentas/<nome>.yaml`), apontando o arquivo e o campo. */
 export class HttpToolSpecError extends Error {

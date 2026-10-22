@@ -100,11 +100,27 @@ export class AgentController {
         iterations: result.iterations,
         ...result.details,
         ...(images.length ? { images: images.map((i) => i.path) } : {}),
+        ...AgentController.sources(result.steps),
       },
       result.providerName,
     );
 
     return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
+  }
+
+  /** URLs lidas com ler_pagina nesta resposta (spec web-search §9: metadata.sources). */
+  private static sources(steps: Array<{ tool: string; arguments: string }>): { sources?: string[] } {
+    const urls = steps
+      .filter((s) => s.tool === 'ler_pagina')
+      .map((s) => {
+        try {
+          return String((JSON.parse(s.arguments) as { url?: unknown }).url ?? '');
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean);
+    return urls.length ? { sources: [...new Set(urls)] } : {};
   }
 
   newConversation(userId: number | string): void {

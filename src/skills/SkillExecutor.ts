@@ -31,6 +31,8 @@ export interface SkillExecutorOptions {
   roleProviders: IRoleProviderResolver;
   /** Teto de rodadas aceito no frontmatter (REFINEMENT_MAX_ROUNDS). */
   maxRefinementRounds: number;
+  /** Teto para o max_iterations pedido no frontmatter de uma skill (MAX_ITERATIONS_HARD_CAP). */
+  maxIterationsHardCap?: number;
   refinementLoop?: RefinementLoop;
 }
 
@@ -75,8 +77,15 @@ export class SkillExecutor {
       input: request.input,
     });
 
-    const result = await this.agentLoop.run({ systemPrompt, history: request.history });
+    const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });
     return { ...result, skillName: activeSkill?.name ?? null };
+  }
+
+  /** Skill com `max_iterations` no frontmatter roda com mais passos (até o teto) e fecha com resposta parcial. */
+  private iterationLimits(skill: SkillMetadata | null): { maxIterations?: number; finishOnLimit?: boolean } {
+    const requested = Number(skill?.frontmatter?.max_iterations);
+    if (!Number.isInteger(requested) || requested < 1) return {};
+    return { maxIterations: Math.min(requested, this.options.maxIterationsHardCap ?? requested), finishOnLimit: true };
   }
 
   private async executeRefinement(skill: SkillMetadata, body: string, problem: string): Promise<SkillExecutionResult> {

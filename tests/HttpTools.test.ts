@@ -6,7 +6,7 @@ import { describe, it } from 'node:test';
 import { HttpTool, type HttpRequest, type HttpResponse, httpsTransport } from '../src/modules/http/HttpTool.js';
 import { parseHttpToolSpec } from '../src/modules/http/HttpToolSpec.js';
 import { loadHttpTools } from '../src/modules/http/loadHttpTools.js';
-import { isBlockedAddress } from '../src/modules/http/NetworkGuard.js';
+import { isBlockedAddress } from '../src/net/NetworkGuard.js';
 
 const CLIMA = `nome: previsao_do_tempo
 descricao: Previsão do tempo atual para uma coordenada

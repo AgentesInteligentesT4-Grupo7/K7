@@ -13,6 +13,7 @@ import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
+import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { ComfyUIClient } from '../modules/imagens/ComfyUIClient.js';
 import { GenerateImageTool } from '../modules/imagens/GenerateImageTool.js';
 import { ImageGenerator } from '../modules/imagens/ImageGenerator.js';
@@ -113,6 +114,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
   // Ferramentas, ReAct e skills (camadas: módulos ligados → perfil)
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
   if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
+  if (modules.has('pesquisa-web')) for (const tool of createWebTools(config)) registry.register(tool);
   const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
   if (images) registry.register(new GenerateImageTool(images, config.workspaceDir));
   if (modules.has('http') && config.httpToolsDir) {
@@ -125,6 +127,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
   const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry, config.identity), agentLoop, {
     roleProviders: providerFactory,
     maxRefinementRounds: config.refinementMaxRounds,
+    maxIterationsHardCap: config.maxIterationsHardCap,
   });
   const skills = skillLoader.loadAll();
   logger.info(`🔧 ${registry.size} ferramentas | 📚 ${skills.length} skills: ${skills.map((s) => s.name).join(', ') || '(nenhuma)'}`);

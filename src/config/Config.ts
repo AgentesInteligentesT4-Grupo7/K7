@@ -118,6 +118,19 @@ export class Config {
   /** Clonagem de voz (Chatterbox na GPU) e pasta das amostras. */
   /** Canal web (chat no navegador): só em 127.0.0.1 por padrão, protegido por token. */
   readonly web: { host: string; port: number; token: string | undefined; userId: string };
+  /** Módulo pesquisa-web (spec web-search). */
+  readonly search: {
+    providers: string[];
+    searxngUrl: string;
+    tavilyApiKey: string | undefined;
+    timeoutMs: number;
+    maxBytes: number;
+    pageMaxChars: number;
+    language: string;
+    region: string;
+  };
+  /** Teto para o max_iterations que uma skill pode pedir no frontmatter (spec web-search RF-10). */
+  readonly maxIterationsHardCap: number;
   /** Módulo imagens (spec image-generation): ComfyUI na GPU. */
   readonly images: {
     baseUrl: string;
@@ -229,6 +242,17 @@ export class Config {
       langCode: env.KOKORO_LANG?.trim() || 'p',
     };
     this.ttsVoice = env.TTS_VOICE?.trim() || 'pt-BR-ThalitaMultilingualNeural';
+    this.search = {
+      providers: Config.list(env.SEARCH_PROVIDERS || 'searxng,duckduckgo,tavily').map((p) => p.toLowerCase()),
+      searxngUrl: (env.SEARXNG_BASE_URL?.trim() || 'http://localhost:8888').replace(/\/+$/, ''),
+      tavilyApiKey: Config.optional(env.TAVILY_API_KEY),
+      timeoutMs: Config.positiveInt(env.WEB_FETCH_TIMEOUT_MS, 10_000),
+      maxBytes: Config.positiveInt(env.WEB_FETCH_MAX_BYTES, 3 * 1024 * 1024),
+      pageMaxChars: Config.positiveInt(env.WEB_PAGE_MAX_CHARS, 12_000),
+      language: env.NEWS_LANGUAGE?.trim() || 'pt-BR',
+      region: env.NEWS_REGION?.trim() || 'BR',
+    };
+    this.maxIterationsHardCap = Math.max(this.maxIterations, Config.positiveInt(env.MAX_ITERATIONS_HARD_CAP, 10));
     const quality = (env.IMAGE_QUALITY?.trim().toLowerCase() || 'rapido') as 'rapido' | 'qualidade';
     if (quality !== 'rapido' && quality !== 'qualidade') throw new ConfigError('IMAGE_QUALITY deve ser rapido ou qualidade');
     this.images = {

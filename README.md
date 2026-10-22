@@ -197,6 +197,20 @@ perfil) e `npm run dev`. A página fica em `web/index.html` (editável sem reini
   usar o agente. `WEB_TOKEN` fixa o token; vazio gera um novo a cada início.
 - A página tem CSP restritiva (só o próprio script, por nonce) e o Markdown é renderizado com escape.
 
+## Pesquisa na internet (módulo `pesquisa-web`)
+
+O agente pesquisa antes de responder sobre fatos atuais, números, preços ou versões, lê as melhores fontes e
+cita as URLs ("Fontes:"). Ferramentas: `pesquisar_web`, `ler_pagina` (HTML e PDF) e `buscar_noticias`
+(Google News). Skills: `pesquisador-web` (várias fontes, até 8 passos) e `noticias` (resumo por tema e período).
+
+- **Buscadores, em ordem** (`SEARCH_PROVIDERS`): SearXNG local → DuckDuckGo (sem chave) → Tavily (com
+  `TAVILY_API_KEY`). Sem o SearXNG no ar, tudo funciona pelo DuckDuckGo.
+- SearXNG em Docker (opcional, ~200 MB): `docker compose --env-file .env -f servicos/searxng/docker-compose.yml up -d`.
+- **Segurança:** nunca acessa a rede local (DNS validado e cada redirecionamento revalidado), páginas limitadas
+  a 3 MB e 12.000 caracteres, e o conteúdo da internet chega ao LLM delimitado como dado, nunca como instrução.
+- Skills podem pedir mais passos com `max_iterations` no frontmatter (até `MAX_ITERATIONS_HARD_CAP`); ao
+  estourar, o agente entrega o que já levantou em vez de um erro.
+
 ## Imagens na GPU (módulo `imagens`)
 
 O agente desenha ilustrações, HQ, anime e mangá com modelos SDXL no [ComfyUI](https://github.com/comfyanonymous/ComfyUI),

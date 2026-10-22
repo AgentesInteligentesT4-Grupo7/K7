@@ -1,0 +1,20 @@
+# SearXNG local para o módulo "pesquisa-web" (spec web-search): busca gratuita, sem chave e sem rastreio.
+#   Subir:            docker compose --env-file .env -f servicos/searxng/docker-compose.yml up -d   (da raiz do tocador)
+#   Parar / religar:  docker stop searxng   |   docker start searxng
+#   Testar:           curl "http://127.0.0.1:8888/search?q=teste&format=json"
+#
+# Enquanto ele não estiver no ar, a busca usa o DuckDuckGo (SEARCH_PROVIDERS=searxng,duckduckgo,tavily).
+name: searxng
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "127.0.0.1:8888:8080"
+    environment:
+      # Chave do servidor (defina SEARXNG_SECRET no .env do tocador; qualquer texto aleatório longo).
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?defina SEARXNG_SECRET no .env do tocador}
+      SEARXNG_BASE_URL: http://127.0.0.1:8888/
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped

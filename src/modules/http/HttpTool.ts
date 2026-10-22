@@ -2,7 +2,7 @@ import https from 'node:https';
 import type { JsonSchema } from '../../llm/types.js';
 import { BaseTool, ToolArgumentError, type ToolResult } from '../../tools/BaseTool.js';
 import type { HttpToolSpec } from './HttpToolSpec.js';
-import { safeLookup } from './NetworkGuard.js';
+import { safeLookup } from '../../net/NetworkGuard.js';
 
 export interface HttpRequest {
   method: 'GET' | 'POST';

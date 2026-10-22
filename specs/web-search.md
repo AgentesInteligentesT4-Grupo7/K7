@@ -1,7 +1,7 @@
 # Spec: Web Search & Research (Consulta à Internet)
 
 **Versão:** 1.0
-**Status:** Em Revisão
+**Status:** Implementada (v1.0) — módulo pesquisa-web; DuckDuckGo como fallback sem chave e extração de HTML própria (sem Readability)
 **Autor:** ParreiraClaw Agent
 **Data:** 2026-10-17
 **Reviewers:** Parreira

@@ -1,0 +1,26 @@
+# Configuração mínima do SearXNG para uso local pelo ParreiraClaw (spec web-search §10).
+use_default_settings: true
+
+general:
+  instance_name: ParreiraClaw
+  enable_metrics: false
+
+server:
+  # A chave real vem da variável SEARXNG_SECRET (docker-compose.yml).
+  secret_key: "definida-pela-variavel-SEARXNG_SECRET"
+  # Uso local por um único programa: sem limitador de requisições (que bloquearia o agente).
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 1
+  default_lang: pt-BR
+  autocomplete: ""
+  # JSON é o formato que o tocador consome.
+  formats:
+    - html
+    - json
+
+ui:
+  default_locale: pt
