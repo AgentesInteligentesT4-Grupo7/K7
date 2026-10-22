@@ -176,6 +176,27 @@ Comandos: `/arquivo <caminho> [instrução]` (PDF/.md), `/audio <caminho>` (tran
 Documentos e áudios gerados ficam em `data/terminal/`. Pode rodar ao mesmo tempo que o bot do Telegram.
 Spec: [specs/channels.md](specs/channels.md). O WhatsApp (via n8n) está planejado na mesma spec.
 
+## Chat no navegador
+
+Uma interface no estilo do app desktop do Claude, servida pelo próprio tocador (sem dependências nem
+internet): conversas na lateral (reabra qualquer uma), Markdown, anexos PDF/.md, microfone, resposta em
+áudio, download dos documentos gerados e o modelo que respondeu.
+
+```bash
+npm run web                          # mostra o endereço com o token
+npm run web -- --abrir               # já abre no navegador
+npm run web -- --perfil promo --porta 8790
+```
+
+Ou como canal de serviço junto do bot: `CHANNELS=telegram,terminal,web` (ou `canais: [telegram, web]` no
+perfil) e `npm run dev`. A página fica em `web/index.html` (editável sem reiniciar).
+
+- **Só no seu PC:** escuta em `127.0.0.1` (`WEB_PORT`, padrão 8787).
+- **Token na URL:** o endereço termina com `#t=<token>` (o fragmento nunca é enviado ao servidor); a API
+  exige o token no cabeçalho e confere o `Host`, então outros sites abertos no navegador não conseguem
+  usar o agente. `WEB_TOKEN` fixa o token; vazio gera um novo a cada início.
+- A página tem CSP restritiva (só o próprio script, por nonce) e o Markdown é renderizado com escape.
+
 ## Voz clonada (sua voz a partir de texto)
 
 Você digita, o bot devolve um voice note com a **sua voz**, gerado localmente na GPU pelo

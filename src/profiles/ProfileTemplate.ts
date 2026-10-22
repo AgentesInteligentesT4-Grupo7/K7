@@ -28,7 +28,7 @@ ${MODULES.map((m) => `#   ${m.id.padEnd(12)} ${m.descricao}`).join('\n')}
 modulos:
   arquivos: {}
 
-# Canais: telegram, terminal (padrão: todos)
+# Canais: telegram, terminal, web (chat no navegador). Padrão: telegram e terminal
 canais: [terminal]
 
 # publico | pessoal | local (local = só modelos na sua GPU)

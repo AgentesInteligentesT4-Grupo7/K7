@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ParreiraClaw</title>
+<style nonce="__NONCE__">
+:root {
+  --bg: #faf9f5; --side: #f0eee6; --panel: #ffffff; --text: #1f1e1d; --muted: #6b6a66; --line: #e3e0d5;
+  --user: #ece9df; --accent: #c96442; --accent-text: #ffffff; --code: #f3f1ea; --warn: #9a5b00; --error: #b3261e;
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 6px 24px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #262624; --side: #1f1e1d; --panel: #30302e; --text: #ece9e1; --muted: #a3a19a; --line: #3d3d3a;
+    --user: #3a3936; --accent: #d97757; --code: #1f1e1d; --warn: #e3a54a; --error: #f2847b;
+    --shadow: 0 1px 3px rgba(0,0,0,.3), 0 6px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #262624; --side: #1f1e1d; --panel: #30302e; --text: #ece9e1; --muted: #a3a19a; --line: #3d3d3a;
+  --user: #3a3936; --accent: #d97757; --code: #1f1e1d; --warn: #e3a54a; --error: #f2847b;
+  --shadow: 0 1px 3px rgba(0,0,0,.3), 0 6px 24px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .5; }
+
+/* Barra lateral */
+#side { width: 268px; flex-shrink: 0; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+#brand { display: flex; align-items: center; gap: 10px; padding: 16px 16px 8px; font-weight: 600; font-size: 16px; }
+#brand .emoji { font-size: 22px; }
+#brand .profile { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+#new { margin: 8px 12px 12px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); text-align: left; display: flex; gap: 8px; align-items: center; box-shadow: var(--shadow); }
+#new:hover { border-color: var(--accent); }
+#convs-label { font-size: 12px; color: var(--muted); padding: 4px 18px; text-transform: uppercase; letter-spacing: .04em; }
+#convs { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+.conv { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.conv:hover { background: var(--user); }
+.conv.active { background: var(--user); font-weight: 600; }
+.conv small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+#side-foot { border-top: 1px solid var(--line); padding: 10px 16px; font-size: 12px; color: var(--muted); }
+#side-foot .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; }
+
+/* Área principal */
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#top { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--line); min-height: 52px; }
+#menu { display: none; border: 0; background: none; font-size: 20px; padding: 2px 6px; }
+#title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#model { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+#theme { border: 0; background: none; font-size: 16px; padding: 2px 6px; }
+#scroll { flex: 1; overflow-y: auto; }
+#messages { max-width: 780px; margin: 0 auto; padding: 24px 20px 12px; }
+.msg { margin: 0 0 22px; display: flex; gap: 12px; }
+.msg.user { justify-content: flex-end; }
+.msg.user .bubble { background: var(--user); border-radius: 18px; padding: 10px 16px; max-width: 85%; white-space: pre-wrap; word-wrap: break-word; }
+.avatar { width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--line); font-size: 17px; }
+.msg.assistant .body { flex: 1; min-width: 0; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 12px; }
+.md h1, .md h2, .md h3 { line-height: 1.3; margin: 18px 0 8px; } .md h1 { font-size: 1.35em; } .md h2 { font-size: 1.2em; } .md h3 { font-size: 1.05em; }
+.md ul, .md ol { margin: 0 0 12px; padding-left: 24px; }
+.md li { margin: 2px 0; }
+.md code { background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.md pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0 0 12px; }
+.md pre code { background: none; border: 0; padding: 0; }
+.md blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.md a { color: var(--accent); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.md table { border-collapse: collapse; margin: 0 0 12px; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
+.extras { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.file { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel); color: var(--text); text-decoration: none; width: fit-content; }
+.file:hover { border-color: var(--accent); }
+audio { width: 100%; max-width: 420px; height: 40px; }
+.warn { color: var(--warn); font-size: 14px; }
+.error { color: var(--error); }
+.meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; gap: 12px; align-items: center; }
+.meta button { border: 0; background: none; color: var(--muted); padding: 0; font-size: 12px; }
+.meta button:hover { color: var(--text); }
+.thinking { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.dots span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 3px; animation: pulse 1.2s infinite ease-in-out; }
+.dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+#empty { text-align: center; margin-top: 16vh; color: var(--muted); }
+#empty .big { font-size: 42px; }
+#empty h1 { color: var(--text); font-weight: 600; font-size: 26px; margin: 8px 0 6px; }
+#skills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+#skills .chip { padding: 4px 12px; font-size: 13px; background: var(--panel); }
+
+/* Caixa de mensagem */
+#composer-wrap { padding: 8px 20px 18px; }
+#composer { max-width: 780px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 12px 8px; }
+#composer:focus-within { border-color: var(--accent); }
+#attachment { display: none; margin: 0 0 8px; }
+#attachment.on { display: flex; }
+#attachment .file { padding: 4px 10px; font-size: 13px; }
+#attachment button { border: 0; background: none; color: var(--muted); }
+#input { width: 100%; border: 0; outline: 0; resize: none; background: none; color: var(--text); font: inherit; max-height: 220px; min-height: 26px; padding: 2px 4px; }
+#tools { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.tool { border: 1px solid transparent; background: none; border-radius: 8px; padding: 4px 8px; font-size: 15px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.tool:hover:not(:disabled) { background: var(--user); color: var(--text); }
+.tool.on { color: var(--accent); border-color: var(--accent); }
+.tool.rec { color: #fff; background: var(--error); }
+.tool small { font-size: 12px; }
+#send { margin-left: auto; width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-text); font-size: 17px; display: grid; place-items: center; }
+#hint { max-width: 780px; margin: 6px auto 0; text-align: center; font-size: 12px; color: var(--muted); }
+#locked { margin: 20vh auto; max-width: 460px; text-align: center; padding: 20px; }
+.hidden { display: none !important; }
+
+@media (max-width: 760px) {
+  #side { position: fixed; z-index: 10; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow); }
+  #side.open { transform: none; }
+  #menu { display: block; }
+  #model { display: none; }
+  #messages, #composer-wrap { padding-left: 12px; padding-right: 12px; }
+}
+</style>
+</head>
+<body>
+<aside id="side">
+  <div id="brand"><span class="emoji" id="brand-emoji">🦀</span><span id="brand-name">ParreiraClaw</span><span class="profile hidden" id="brand-profile"></span></div>
+  <button id="new" type="button">✏️ Nova conversa</button>
+  <div id="convs-label">Conversas</div>
+  <nav id="convs"></nav>
+  <div id="side-foot"><div id="llm"></div><div class="chips" id="modules"></div></div>
+</aside>
+<main id="main">
+  <header id="top">
+    <button id="menu" type="button" aria-label="Conversas">☰</button>
+    <div id="title">Nova conversa</div>
+    <div id="model"></div>
+    <button id="theme" type="button" title="Tema claro/escuro">◐</button>
+  </header>
+  <div id="scroll">
+    <div id="messages">
+      <div id="empty">
+        <div class="big" id="empty-emoji">🦀</div>
+        <h1 id="empty-title">Como posso ajudar?</h1>
+        <div id="empty-sub"></div>
+        <div id="skills"></div>
+      </div>
+    </div>
+    <div id="locked" class="hidden">
+      <h2>🔒 Acesso protegido</h2>
+      <p>Abra o endereço completo exibido no terminal ao iniciar o canal web (ele termina com <code>#t=…</code>).</p>
+    </div>
+  </div>
+  <div id="composer-wrap">
+    <form id="composer">
+      <div id="attachment"><span class="file" id="attachment-name"></span><button type="button" id="attachment-remove" title="Remover anexo">✕</button></div>
+      <textarea id="input" rows="1" placeholder="Mensagem…" autofocus></textarea>
+      <div id="tools">
+        <button class="tool" type="button" id="attach" title="Anexar PDF ou .md">📎</button>
+        <button class="tool hidden" type="button" id="mic" title="Gravar áudio">🎤</button>
+        <button class="tool hidden" type="button" id="speak" title="Responder em áudio">🔊 <small>áudio</small></button>
+        <button id="send" type="submit" title="Enviar (Enter)">↑</button>
+      </div>
+      <input type="file" id="file" accept=".pdf,.md,application/pdf,text/markdown" class="hidden">
+    </form>
+    <div id="hint">Enter envia · Shift+Enter quebra linha · tudo roda no seu computador</div>
+  </div>
+</main>
+<script nonce="__NONCE__">
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { token: '', info: null, busy: false, attachment: null, audioReply: false, recorder: null, conversationId: null };
+
+  // Token: vem no fragmento (#t=...), que o navegador nunca envia ao servidor.
+  var match = /[#&]t=([^&]+)/.exec(location.hash);
+  try {
+    if (match) { sessionStorage.setItem('token', decodeURIComponent(match[1])); history.replaceState(null, '', location.pathname); }
+    state.token = sessionStorage.getItem('token') || '';
+  } catch (e) { state.token = match ? decodeURIComponent(match[1]) : ''; }
+
+  // Tema (claro/escuro), lembrado por navegador.
+  try { var saved = localStorage.getItem('theme'); if (saved) document.documentElement.dataset.theme = saved; } catch (e) {}
+  $('theme').onclick = function () {
+    var dark = document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === 'dark'
+      : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('theme', document.documentElement.dataset.theme); } catch (e) {}
+  };
+
+  function api(path, options) {
+    options = options || {};
+    var headers = { 'X-Token': state.token };
+    if (options.body) headers['Content-Type'] = 'application/json';
+    return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body ? JSON.stringify(options.body) : undefined })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (res.status === 401) { lock(); throw new Error(data.erro || 'Token inválido'); }
+          if (!res.ok) throw new Error(data.erro || ('HTTP ' + res.status));
+          return data;
+        });
+      });
+  }
+  function fileUrl(url) { return url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(state.token); }
+  function lock() { $('messages').classList.add('hidden'); $('locked').classList.remove('hidden'); $('composer-wrap').classList.add('hidden'); }
+
+  // ── Markdown seguro: escapa tudo e só então aplica a formatação ───────────────
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function inline(s) {
+    var codes = [];
+    s = s.replace(/`([^`\n]+)`/g, function (_, c) { codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+    s = esc(s);
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>').replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return '<code>' + esc(codes[+i]) + '</code>'; });
+  }
+  function markdown(src) {
+    var lines = src.replace(/\r\n/g, '\n').split('\n'), out = [], i = 0, para = [];
+    function flush() { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } }
+    while (i < lines.length) {
+      var line = lines[i], m;
+      if ((m = /^```(\S*)/.exec(line))) {
+        flush(); var code = []; i++;
+        while (i < lines.length && !/^```/.test(lines[i])) code.push(lines[i++]);
+        i++; out.push('<pre><code>' + esc(code.join('\n')) + '</code></pre>'); continue;
+      }
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) { flush(); out.push('<h' + m[1].length + '>' + inline(m[2]) + '</h' + m[1].length + '>'); i++; continue; }
+      if (/^(-{3,}|\*{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); i++; continue; }
+      if (/^>\s?/.test(line)) {
+        flush(); var quote = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^>\s?/, ''));
+        out.push('<blockquote>' + markdown(quote.join('\n')) + '</blockquote>'); continue;
+      }
+      if (/^\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        flush(); var cells = function (l) { return l.trim().replace(/^\||\|$/g, '').split('|'); };
+        var html = '<table><thead><tr>' + cells(line).map(function (c) { return '<th>' + inline(c.trim()) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        i += 2;
+        while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) html += '<tr>' + cells(lines[i++]).map(function (c) { return '<td>' + inline(c.trim()) + '</td>'; }).join('') + '</tr>';
+        out.push(html + '</tbody></table>'); continue;
+      }
+      if ((m = /^\s*([-*+]|\d+[.)])\s+/.exec(line))) {
+        flush(); var ordered = /\d/.test(m[1]), items = [];
+        while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+          var item = lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, '');
+          while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) item += '\n' + lines[i++].trim();
+          items.push('<li>' + item.split('\n').map(inline).join('<br>') + '</li>');
+        }
+        out.push(ordered ? '<ol>' + items.join('') + '</ol>' : '<ul>' + items.join('') + '</ul>'); continue;
+      }
+      if (!line.trim()) { flush(); i++; continue; }
+      para.push(line); i++;
+    }
+    flush();
+    return out.join('');
+  }
+
+  // ── Mensagens ──────────────────────────────────────────────────────────────
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function hideEmpty() { $('empty').classList.add('hidden'); }
+  function scrollDown() { var s = $('scroll'); s.scrollTop = s.scrollHeight; }
+
+  function addUser(text, attachmentName) {
+    hideEmpty();
+    var row = el('div', 'msg user'), bubble = el('div', 'bubble');
+    bubble.textContent = text + (attachmentName ? (text ? '\n\n' : '') + '📎 ' + attachmentName : '');
+    row.appendChild(bubble); $('messages').appendChild(row); scrollDown();
+  }
+  function addAssistant() {
+    hideEmpty();
+    var row = el('div', 'msg assistant'), avatar = el('div', 'avatar'), body = el('div', 'body');
+    avatar.textContent = state.info ? state.info.emoji : '🦀';
+    row.appendChild(avatar); row.appendChild(body); $('messages').appendChild(row);
+    return body;
+  }
+  function renderReply(body, reply, seconds) {
+    body.innerHTML = '';
+    if (reply.erro) body.appendChild(el('div', 'error', esc(reply.erro)));
+    if (reply.texto) body.appendChild(el('div', 'md', markdown(reply.texto)));
+    var extras = el('div', 'extras');
+    (reply.audios || []).forEach(function (a) { var audio = el('audio'); audio.controls = true; audio.src = fileUrl(a.url); extras.appendChild(audio); });
+    (reply.arquivos || []).forEach(function (f) { var link = el('a', 'file'); link.href = fileUrl(f.url); link.textContent = '📄 ' + f.nome; link.setAttribute('download', f.nome); extras.appendChild(link); });
+    (reply.avisos || []).forEach(function (w) { extras.appendChild(el('div', 'warn', esc(w))); });
+    if (extras.childNodes.length) body.appendChild(extras);
+    if (reply.texto) {
+      var meta = el('div', 'meta'), copy = el('button');
+      copy.type = 'button'; copy.textContent = 'Copiar';
+      copy.onclick = function () { navigator.clipboard.writeText(reply.texto).then(function () { copy.textContent = 'Copiado ✓'; setTimeout(function () { copy.textContent = 'Copiar'; }, 1500); }); };
+      meta.appendChild(copy);
+      if (reply.modelo) meta.appendChild(el('span', '', esc(reply.modelo)));
+      if (seconds) meta.appendChild(el('span', '', seconds + ' s'));
+      body.appendChild(meta);
+    }
+    if (reply.modelo) $('model').textContent = reply.modelo;
+    scrollDown();
+  }
+
+  function send(payload, shownText, attachmentName) {
+    if (state.busy) return;
+    state.busy = true; $('send').disabled = true;
+    if (shownText != null) addUser(shownText, attachmentName);
+    var body = addAssistant(), started = Date.now();
+    body.innerHTML = '<div class="thinking"><span class="dots"><span></span><span></span><span></span></span><span class="secs">pensando…</span></div>';
+    var timer = setInterval(function () { var s = body.querySelector('.secs'); if (s) s.textContent = 'pensando… ' + Math.round((Date.now() - started) / 1000) + ' s'; }, 1000);
+    scrollDown();
+    payload.responderEmAudio = state.audioReply;
+    api('/api/mensagens', { method: 'POST', body: payload })
+      .then(function (reply) {
+        if (reply.transcricao && shownText == null) addUserBefore(body.parentNode, '🎤 ' + reply.transcricao);
+        renderReply(body, reply, Math.round((Date.now() - started) / 1000));
+        loadConversations();
+      })
+      .catch(function (err) { renderReply(body, { erro: '⚠️ ' + err.message }); })
+      .then(function () { clearInterval(timer); state.busy = false; $('send').disabled = false; $('input').focus(); });
+  }
+  function addUserBefore(node, text) {
+    var row = el('div', 'msg user'), bubble = el('div', 'bubble'); bubble.textContent = text; row.appendChild(bubble);
+    node.parentNode.insertBefore(row, node);
+  }
+
+  // ── Conversas ─────────────────────────────────────────────────────────────
+  function when(sqlDate) {
+    var d = new Date(sqlDate.replace(' ', 'T') + 'Z'), diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'agora';
+    if (diff < 3600) return Math.round(diff / 60) + ' min';
+    if (diff < 86400) return Math.round(diff / 3600) + ' h';
+    return d.toLocaleDateString('pt-BR');
+  }
+  function loadConversations() {
+    return api('/api/conversas').then(function (list) {
+      var nav = $('convs'); nav.innerHTML = '';
+      list.forEach(function (c) {
+        var b = el('button', 'conv' + (c.ativa ? ' active' : '')); b.type = 'button';
+        b.textContent = c.titulo; b.title = c.titulo;
+        b.appendChild(el('small', '', esc(when(c.atualizadaEm) + ' · ' + c.mensagens + ' msg')));
+        b.onclick = function () { openConversation(c.id, c.titulo); };
+        nav.appendChild(b);
+        if (c.ativa) { state.conversationId = c.id; $('title').textContent = c.mensagens ? c.titulo : 'Nova conversa'; }
+      });
+      return list;
+    });
+  }
+  function clearMessages() { Array.prototype.slice.call($('messages').querySelectorAll('.msg')).forEach(function (m) { m.remove(); }); }
+  function showHistory(id) {
+    return api('/api/conversas/' + id).then(function (messages) {
+      clearMessages();
+      if (!messages.length) { $('empty').classList.remove('hidden'); return; }
+      messages.forEach(function (m) {
+        if (m.papel === 'user') addUser(m.texto); else renderReply(addAssistant(), { texto: m.texto });
+      });
+    });
+  }
+  function openConversation(id, title) {
+    if (state.busy) return;
+    api('/api/conversas/' + id + '/abrir', { method: 'POST' })
+      .then(function () { $('title').textContent = title; $('side').classList.remove('open'); return showHistory(id); })
+      .then(loadConversations);
+  }
+  $('new').onclick = function () {
+    if (state.busy) return;
+    api('/api/conversas', { method: 'POST' }).then(function () {
+      clearMessages(); $('empty').classList.remove('hidden'); $('title').textContent = 'Nova conversa'; $('side').classList.remove('open');
+      loadConversations(); $('input').focus();
+    });
+  };
+  $('menu').onclick = function () { $('side').classList.toggle('open'); };
+
+  // ── Caixa de mensagem ─────────────────────────────────────────────────────
+  var input = $('input');
+  function grow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 220) + 'px'; }
+  input.addEventListener('input', grow);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
+  $('composer').addEventListener('submit', function (e) { e.preventDefault(); submit(); });
+  function submit() {
+    var text = input.value.trim();
+    if (!text && !state.attachment) return;
+    var payload = { texto: text };
+    if (state.attachment) payload.anexo = state.attachment;
+    send(payload, text, state.attachment && state.attachment.nome);
+    input.value = ''; grow(); clearAttachment();
+  }
+
+  function readBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result).split(',')[1] || ''); };
+      reader.onerror = reject; reader.readAsDataURL(blob);
+    });
+  }
+  $('attach').onclick = function () { $('file').click(); };
+  $('file').onchange = function () {
+    var f = $('file').files[0]; if (!f) return;
+    readBase64(f).then(function (b64) {
+      state.attachment = { nome: f.name, tipo: f.type, base64: b64 };
+      $('attachment-name').textContent = '📄 ' + f.name; $('attachment').classList.add('on'); input.focus();
+    });
+    $('file').value = '';
+  };
+  function clearAttachment() { state.attachment = null; $('attachment').classList.remove('on'); }
+  $('attachment-remove').onclick = clearAttachment;
+
+  $('speak').onclick = function () { state.audioReply = !state.audioReply; $('speak').classList.toggle('on', state.audioReply); };
+
+  $('mic').onclick = function () {
+    if (state.recorder) { state.recorder.stop(); return; }
+    if (state.busy) return;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].filter(function (t) { return window.MediaRecorder && MediaRecorder.isTypeSupported(t); })[0];
+      var rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined), chunks = [];
+      rec.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        state.recorder = null; $('mic').classList.remove('rec'); $('mic').textContent = '🎤';
+        var blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+        readBase64(blob).then(function (b64) {
+          var text = input.value.trim(); input.value = ''; grow();
+          if (text) addUser(text);
+          send({ texto: text, audio: { tipo: blob.type, base64: b64 } }, null);
+        });
+      };
+      rec.start(); state.recorder = rec; $('mic').classList.add('rec'); $('mic').textContent = '⏹';
+    }).catch(function () { alert('Não consegui acessar o microfone.'); });
+  };
+
+  // ── Início ────────────────────────────────────────────────────────────────
+  if (!state.token) { lock(); return; }
+  api('/api/info').then(function (info) {
+    state.info = info;
+    document.title = info.nome;
+    $('brand-emoji').textContent = info.emoji; $('brand-name').textContent = info.nome;
+    $('empty-emoji').textContent = info.emoji;
+    $('empty-title').textContent = 'Como posso ajudar, ' + info.dono + '?';
+    if (info.perfil) { $('brand-profile').textContent = info.perfil; $('brand-profile').classList.remove('hidden'); }
+    $('llm').textContent = 'LLM: ' + (info.llm || []).join(' → ');
+    info.modulos.forEach(function (m) { $('modules').appendChild(el('span', 'chip', esc(m))); });
+    info.skills.forEach(function (s) { var c = el('span', 'chip', esc(s.nome)); c.title = s.descricao; $('skills').appendChild(c); });
+    if (info.voz) { $('mic').classList.remove('hidden'); $('speak').classList.remove('hidden'); }
+    return loadConversations();
+  }).then(function () {
+    if (state.conversationId) return showHistory(state.conversationId);
+  }).catch(function (err) { if (!$('locked').classList.contains('hidden')) return; renderReply(addAssistant(), { erro: '⚠️ ' + err.message }); });
+})();
+</script>
+</body>
+</html>

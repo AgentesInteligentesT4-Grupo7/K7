@@ -27,6 +27,7 @@ COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY .agents ./.agents
 COPY modulos ./modulos
+COPY web ./web
 COPY evals ./evals
 
 # Pastas graváveis pelo usuário sem privilégios (o volume /app/state herda essa posse).

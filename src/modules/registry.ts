@@ -24,8 +24,10 @@ export const MODULE_IDS: readonly string[] = MODULES.map((m) => m.id);
 /** Todos os módulos: comportamento de quando nenhum perfil é usado (retrocompatível). */
 export const DEFAULT_MODULES = MODULE_IDS.join(',');
 
-export const CHANNELS = ['telegram', 'terminal'] as const;
+export const CHANNELS = ['telegram', 'terminal', 'web'] as const;
 export type ChannelId = (typeof CHANNELS)[number];
+/** Sem perfil e sem CHANNELS: como sempre foi (o canal web abre uma porta, então é opcional). */
+export const DEFAULT_CHANNELS: readonly ChannelId[] = ['telegram', 'terminal'];
 
 /** Pastas de skills dos módulos ligados (só as que existem). */
 export function moduleSkillDirs(rootDir: string, enabled: Iterable<string>): string[] {

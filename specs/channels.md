@@ -101,11 +101,19 @@ O núcleo já é independente de transporte (AgentController recebe um `AgentInp
                  ┌────────────── createCore(config) ──────────────┐
  Telegram ──►  TelegramInputHandler ─┐                           │
  Terminal ──►  TerminalChat ─────────┼─► AgentController ─► IOutputHandler do canal
- (n8n/WhatsApp ► HttpChannel, futuro)┘   (memória, skills, ReAct, vozes)
+ Navegador ─►  WebChannel (HTTP) ────┤   (memória, skills, ReAct, vozes)
+ (n8n/WhatsApp ► HttpChannel, futuro)┘
 ```
 
 - `src/app/createCore.ts`: composição compartilhada.
 - `src/canais/terminal/chat.ts` + `TerminalOutputHandler.ts`: canal terminal (todos os canais ficam em `src/canais/<canal>/`).
+- `src/canais/web/` (v1.1): chat no navegador no estilo do app desktop do Claude. `WebChannel` (servidor
+  `node:http` em 127.0.0.1), `WebOutputHandler` (resposta por requisição: texto, documentos, áudios, avisos) e
+  a página `web/index.html`. API: `GET /api/info`, `GET|POST /api/conversas`, `GET /api/conversas/:id`,
+  `POST /api/conversas/:id/abrir`, `POST /api/mensagens` (`{texto, anexo?, audio?, responderEmAudio?}`),
+  `POST /api/falar`, `GET /api/arquivos/:nome`. Segurança: token de 192 bits no fragmento da URL e no
+  cabeçalho `X-Token`, checagem de `Host` (DNS rebinding), CSP com nonce, limite de corpo, uma mensagem por vez.
+  O futuro canal do n8n/WhatsApp pode reaproveitar o mesmo servidor e o contrato abaixo.
 
 ---
 

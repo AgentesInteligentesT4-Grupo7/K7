@@ -31,7 +31,7 @@ export interface ProfileManifest {
   /** Módulos ligados; as opções de cada um ficam em `opcoesModulos`. */
   modulos: string[];
   opcoesModulos: Record<string, Record<string, unknown>>;
-  /** Canais que o perfil usa (padrão: todos). */
+  /** Canais que o perfil usa (padrão: telegram e terminal; web é opcional). */
   canais?: ChannelId[];
   privacidade?: PrivacyLevel;
   /** Variáveis de ambiente que o `.env` do perfil precisa ter, com a descrição de cada uma. */

@@ -1,5 +1,5 @@
 export type InputSource = 'text' | 'document' | 'voice';
-export type Channel = 'telegram' | 'terminal';
+export type Channel = 'telegram' | 'terminal' | 'web';
 
 /** Entrada já normalizada em texto pelo TelegramInputHandler. */
 export interface AgentInput {

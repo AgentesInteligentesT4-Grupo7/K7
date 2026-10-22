@@ -2,9 +2,9 @@ import { errorMessage } from '../errors/AppErrors.js';
 import type { ChatMessage } from '../llm/types.js';
 import { Logger } from '../utils/Logger.js';
 import { sanitizeText, truncate } from '../utils/text.js';
-import { type Conversation, ConversationRepository } from './ConversationRepository.js';
+import { type Conversation, ConversationRepository, type ConversationSummary } from './ConversationRepository.js';
 import type { SqliteDatabase } from './DatabaseConnection.js';
-import { type MessageRole, MessageRepository } from './MessageRepository.js';
+import { type MessageRole, MessageRepository, type StoredMessage } from './MessageRepository.js';
 
 export interface MemoryOptions {
   /** Quantidade de mensagens recentes repassadas ao AgentLoop (MEMORY_WINDOW_SIZE). */
@@ -78,6 +78,21 @@ export class MemoryManager {
       this.logger.warn(`Falha ao ler histórico; seguindo sem contexto: ${errorMessage(error)}`);
       return [];
     }
+  }
+
+  listConversations(userId: string, limit = 50): ConversationSummary[] {
+    return this.conversations.listByUser(userId, limit);
+  }
+
+  /** Reabre uma conversa antiga do próprio usuário (canal web). */
+  activateConversation(userId: string, conversationId: string): boolean {
+    return this.conversations.activate(userId, conversationId);
+  }
+
+  /** Histórico (user/assistant) de uma conversa do usuário, para exibir; vazio se não for dele. */
+  getHistory(userId: string, conversationId: string, limit = 200): StoredMessage[] {
+    if (this.conversations.findById(conversationId)?.userId !== userId) return [];
+    return this.messages.findRecent(conversationId, limit, ['user', 'assistant']);
   }
 
   countMessages(conversationId: string): number {

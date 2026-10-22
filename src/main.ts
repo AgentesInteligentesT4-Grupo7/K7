@@ -1,6 +1,7 @@
 import { GrammyError } from 'grammy';
 import { createCore } from './app/createCore.js';
 import { createTelegramChannel } from './canais/telegram/TelegramChannel.js';
+import { WebChannel } from './canais/web/WebChannel.js';
 import { ConfigError } from './config/Config.js';
 import { DatabaseConnection } from './memory/DatabaseConnection.js';
 import { loadConfig } from './profiles/ProfileLoader.js';
@@ -25,6 +26,7 @@ async function bootstrap(): Promise<void> {
   const services: ServiceChannel[] = [];
   const core = createCore(config, { tmpDir: config.tmpDir, cleanTmp: true, databaseMaintenance: true, healthChecks: true });
   if (config.channels.has('telegram')) services.push(createTelegramChannel(core));
+  if (config.channels.has('web')) services.push(new WebChannel(core, config.web));
 
   if (services.length === 0) {
     logger.error(`Nenhum canal de serviço ligado (CHANNELS=${[...config.channels].join(',')}). Use "npm run chat" para o terminal.`);

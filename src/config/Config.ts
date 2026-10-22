@@ -1,7 +1,7 @@
 import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
-import { CHANNELS, type ChannelId, DEFAULT_MODULES, MODULE_IDS, moduleSkillDirs } from '../modules/registry.js';
+import { CHANNELS, type ChannelId, DEFAULT_CHANNELS, DEFAULT_MODULES, MODULE_IDS, moduleSkillDirs } from '../modules/registry.js';
 
 export type ProviderName = 'gemini' | 'deepseek' | 'groq' | 'ollama';
 export type WhisperEngine = 'openai-whisper' | 'whisper-cpp' | 'http';
@@ -83,7 +83,7 @@ export class Config {
   readonly skillsDirs: string[];
   /** Módulos ligados (MODULES); sem perfil, todos. */
   readonly modules: ReadonlySet<string>;
-  /** Canais ligados (CHANNELS): telegram, terminal. */
+  /** Canais ligados (CHANNELS): telegram, terminal, web. */
   readonly channels: ReadonlySet<ChannelId>;
   /** Perfil ativo (definido pelo carregador de perfis), ou undefined no modo sem perfil. */
   readonly profileName: string | undefined;
@@ -115,6 +115,8 @@ export class Config {
   /** Voz do Edge-TTS. */
   readonly ttsVoice: string;
   /** Clonagem de voz (Chatterbox na GPU) e pasta das amostras. */
+  /** Canal web (chat no navegador): só em 127.0.0.1 por padrão, protegido por token. */
+  readonly web: { host: string; port: number; token: string | undefined; userId: string };
   readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
   readonly logLevel: string;
 
@@ -124,7 +126,7 @@ export class Config {
     /** Padrão: exige o Telegram só se o canal estiver ligado em CHANNELS (o terminal passa false). */
     options: { requireTelegram?: boolean } = {},
   ) {
-    this.channels = Config.parseSet(env.CHANNELS || CHANNELS.join(','), CHANNELS, 'CHANNELS') as ReadonlySet<ChannelId>;
+    this.channels = Config.parseSet(env.CHANNELS || DEFAULT_CHANNELS.join(','), CHANNELS, 'CHANNELS') as ReadonlySet<ChannelId>;
     const requireTelegram = options.requireTelegram ?? this.channels.has('telegram');
     this.identity = identityFromEnv(env);
     this.telegramBotToken = requireTelegram ? Config.required(env, 'TELEGRAM_BOT_TOKEN') : env.TELEGRAM_BOT_TOKEN?.trim() ?? '';
@@ -217,6 +219,12 @@ export class Config {
       langCode: env.KOKORO_LANG?.trim() || 'p',
     };
     this.ttsVoice = env.TTS_VOICE?.trim() || 'pt-BR-ThalitaMultilingualNeural';
+    this.web = {
+      host: env.WEB_HOST?.trim() || '127.0.0.1',
+      port: Config.positiveInt(env.WEB_PORT, 8787),
+      token: env.WEB_TOKEN?.trim() || undefined,
+      userId: env.WEB_USER_ID?.trim() || 'web',
+    };
     this.voiceClone = {
       dir: path.resolve(rootDir, env.VOICE_CLONE_DIR?.trim() || './data/voices'),
       baseUrl: (env.CHATTERBOX_BASE_URL?.trim() || 'http://localhost:8004').replace(/\/+$/, ''),

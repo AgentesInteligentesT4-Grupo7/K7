@@ -66,7 +66,7 @@ async function main(): Promise<void> {
         }
         const origin = registry[p.name] ? ` · origem: ${registry[p.name]!.origem}` : '';
         console.log(`${p.manifest.identidade.emoji ?? '•'} ${p.name} v${p.manifest.versao} — ${p.manifest.descricao}`);
-        console.log(`   módulos: ${p.manifest.modulos.join(', ') || '(nenhum)'} · canais: ${(p.manifest.canais ?? ['todos']).join(', ')}${origin}`);
+        console.log(`   módulos: ${p.manifest.modulos.join(', ') || '(nenhum)'} · canais: ${(p.manifest.canais ?? ['telegram', 'terminal']).join(', ')}${origin}`);
       }
       return;
     }
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
 function printSummary(manifest: ProfileManifest): void {
   const id = manifest.identidade;
   console.log(`   ${id.emoji ?? ''} ${id.nome ?? manifest.nome} v${manifest.versao} — ${manifest.descricao}`);
-  console.log(`   módulos: ${manifest.modulos.join(', ') || '(nenhum)'} · canais: ${(manifest.canais ?? ['todos']).join(', ')} · privacidade: ${manifest.privacidade ?? 'padrão'}`);
+  console.log(`   módulos: ${manifest.modulos.join(', ') || '(nenhum)'} · canais: ${(manifest.canais ?? ['telegram', 'terminal']).join(', ')} · privacidade: ${manifest.privacidade ?? 'padrão'}`);
 }
 
 function printPending(dir: string, pending: string[], manifest: ProfileManifest): void {

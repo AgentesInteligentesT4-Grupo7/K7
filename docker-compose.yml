@@ -2,6 +2,7 @@
 #   Subir o bot:        docker compose up -d --build
 #   Logs:               docker compose logs -f
 #   Chat no terminal:   docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js
+#   Chat no navegador:  CHANNELS=telegram,web no .env (ou no perfil) → http://127.0.0.1:8787/#t=<token do log>
 #   Com perfil:         PERFIL=promo docker compose up -d   (ou --perfil promo no chat)
 #   Avaliar modelos:    docker compose run --rm parreiraclaw node dist/cli/eval.js pesquisa
 #
@@ -26,6 +27,8 @@ services:
       PERFIS_DIR: /app/perfis
       DADOS_DIR: /app/state/dados
       PERFIL: ${PERFIL:-}
+      # Canal web: dentro do container escuta em todas as interfaces; a porta só é publicada no 127.0.0.1 do PC.
+      WEB_HOST: 0.0.0.0
       TZ: America/Sao_Paulo
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -37,6 +40,8 @@ services:
       - ./evals:/app/evals                 # conjuntos de avaliação dos modelos
       - ./modulos:/app/modulos             # skills dos módulos (hot-reload)
       - ${PERFIS_DIR_HOST:-../ParreiraClaw-perfis}:/app/perfis   # fitas (perfil.yaml, skills, .env)
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8787}:${WEB_PORT:-8787}"
     restart: unless-stopped
     stdin_open: true                       # permite o chat no terminal via `docker compose run`
     tty: true

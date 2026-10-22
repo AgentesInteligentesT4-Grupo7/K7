@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parse as parseDotenv } from 'dotenv';
 import { Config } from '../config/Config.js';
-import { CHANNELS } from '../modules/registry.js';
+import { DEFAULT_CHANNELS } from '../modules/registry.js';
 import { ProfileError, type ProfileManifest, parseManifest, satisfiesVersion } from './ProfileManifest.js';
 
 export interface LoadedProfile {
@@ -175,7 +175,7 @@ export function loadConfig(options: ConfigOptions = {}): Config {
 
   const profile = loadProfile(name, profileDirs(env, rootDir), playerVersion(rootDir));
   const profileEnv = buildProfileEnv(env, rootDir, profile);
-  const telegram = options.requireTelegram ?? (profile.manifest.canais ?? CHANNELS).includes('telegram');
+  const telegram = options.requireTelegram ?? (profile.manifest.canais ?? DEFAULT_CHANNELS).includes('telegram');
   const missing = missingVariables(profile, profileEnv, telegram);
   if (missing.length) {
     const lines = missing.map((key) => `  ${key}: ${profile.manifest.variaveis[key] || DEFAULT_DESCRIPTIONS[key] || '(sem descrição)'}`);
