@@ -125,13 +125,16 @@ export class AgentController {
       return { text: verdict.blocked, isAudio: false };
     }
     const guardrailsPrompt = [guardrails?.promptSection(), verdict?.warning].filter(Boolean).join('\n\n') || undefined;
-    const routed = await TaskContext.run({ task: 'roteamento', privacy, userId }, () =>
-      this.deps.skillRouter.routeWithTask(input.text, skills),
-    );
+    // Contexto recuperado (base de conhecimento, debate) antes do roteamento: sessão interativa em andamento
+    // segura a skill, senão o roteador manda o retorno do usuário para outra skill.
+    const { retrieved, ongoing } = await this.retrieve(input.text, { task: 'roteamento', privacy, userId });
+    const routed = ongoing
+      ? { skill: null, task: 'raciocinio' as Task }
+      : await TaskContext.run({ task: 'roteamento', privacy, userId }, () => this.deps.skillRouter.routeWithTask(input.text, skills));
+    if (ongoing) this.logger.info('🧭 Sessão interativa em andamento: sem troca de skill');
     const skill = routed.skill;
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
-    const retrieved = await this.retrieve(input.text, { task, privacy, userId });
     const { reasoning } = this.deps;
     // RaR: a pergunta reescrita vai junto da original só nesta requisição (o histórico salvo fica com a original).
     if (mode === 'reformular' && reasoning && current?.role === 'user') {
@@ -186,20 +189,21 @@ export class AgentController {
   }
 
   /** Contexto dos provedores (falha de um não derruba a resposta). */
-  private async retrieve(text: string, context: { task: Task; privacy: PrivacyLevel; userId: string }): Promise<string | undefined> {
+  private async retrieve(text: string, context: { task: Task; privacy: PrivacyLevel; userId: string }): Promise<{ retrieved?: string; ongoing: boolean }> {
     const providers = this.deps.contextProviders ?? [];
-    if (!providers.length) return undefined;
-    const parts = await TaskContext.run(context, () =>
-      Promise.all(
+    if (!providers.length) return { ongoing: false };
+    return TaskContext.run(context, async () => {
+      const parts = await Promise.all(
         providers.map((p) =>
           p.contextFor(text).catch((error: unknown) => {
             this.logger.warn(`Contexto indisponível: ${errorMessage(error)}`);
             return undefined;
           }),
         ),
-      ),
-    );
-    return parts.filter(Boolean).join('\n\n') || undefined;
+      );
+      const retrieved = parts.filter(Boolean).join('\n\n') || undefined;
+      return { ...(retrieved ? { retrieved } : {}), ongoing: providers.some((p) => p.ongoing?.() ?? false) };
+    });
   }
 
   /** URLs lidas com ler_pagina nesta resposta (spec web-search §9: metadata.sources). */

@@ -460,6 +460,15 @@ reescreve e detalha perguntas vagas antes de responder (RaR). A fita pode fixar 
 Para decisões e problemas difíceis, a skill `analise-em-etapas` (módulo `refinamento`) mostra o raciocínio:
 entender → decompor → resolver as partes → limites → síntese (spec [reasoning](specs/reasoning.md)).
 
+### Debate entre agentes e criador de prompts (módulo `refinamento`)
+
+- **Debate:** "faça um debate com 3 agentes sobre ..." cria participantes com perspectivas diferentes (ou use as
+  personas da fita). A cada rodada eles leem uns aos outros e atualizam as posições, um juiz dá notas e o debate
+  para esperando você: "descarta o 3", "minha ideia é ...", "combine os dois melhores", "foco em custo zero",
+  "encerra" (spec [debate](specs/debate.md)).
+- **Criador de prompts:** "me ajude a escrever um prompt para ..." trabalha em rodadas com A) prompt revisado,
+  B) sugestões e C) perguntas numeradas, até você dizer que está bom.
+
 ### Limites da fita (guardrails)
 
 Declarados no `perfil.yaml`, sem código (spec [guardrails](specs/guardrails.md)):

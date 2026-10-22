@@ -32,6 +32,11 @@ export interface AgentResponse {
 /** Contexto extra recuperado para a mensagem (ex.: base de conhecimento no modo automático). */
 export interface IContextProvider {
   contextFor(text: string): Promise<string | undefined>;
+  /**
+   * Há uma sessão interativa em andamento para o usuário atual (ex.: debate)? Enquanto houver, o roteador
+   * não escolhe skill: a próxima mensagem costuma ser retorno para a sessão, que o agente trata com ferramentas.
+   */
+  ongoing?(): boolean;
 }
 
 /** Contrato do Output Handler consumido pelo AgentController. */

@@ -39,20 +39,38 @@ modulos:                      # escolha só os necessários
   anexos: {}                  # imagens e documentos enviados
   voz: {}                     # áudio (Whisper + Kokoro)
   http: {}                    # ferramentas HTTP de ferramentas/*.yaml
-  # refinamento, voz-clonada, imagens (ComfyUI na GPU)
+  conhecimento: {}            # documentos próprios em conhecimento/ (RAG); opções: fusao, hyde, crag, adaptativo
+  refinamento: {}             # criador ↔ crítico, análise em etapas, debate entre agentes, criador de prompts
+  # voz-clonada, imagens (ComfyUI na GPU)
 canais: [telegram, terminal]  # web = chat no navegador
 privacidade: publico          # publico | pessoal | local
 estilo_padrao: <opcional>     # formal, informal, tecnico, didatico, jornalistico, academico, infantil, persuasivo, poetico, conciso
+modo_padrao: <opcional>       # normal | reformular | verificado (confere fatos; bom para fitas informativas)
 variaveis: {}                 # ex.: { MINHA_API_KEY: "chave da API X" }
+guardrails:                   # opcional: limites do agente (sem código)
+  injecao: avisar             # bloquear em fitas abertas ao público
+  dados_pessoais: off         # mascarar em fitas que publicam conteúdo
+  topicos: { permitidos: [], proibidos: [] }
+  abster: []                  # saude, juridico, financeiro: só informação geral
 ```
 
 **`skills/<skill>/SKILL.md`**: frontmatter com `name` e `description` (o roteador escolhe pela descrição: escreva
-quando usar) e o corpo com o procedimento passo a passo e as regras. Use `{{AGENT_NAME}}` e `{{OWNER_NAME}}`.
+quando usar, com 2 ou 3 exemplos de pedidos entre aspas) e o corpo escrito com estes padrões:
+- **Papel e público** no início ("Você é {{AGENT_NAME}} e ajuda {{OWNER_NAME}} a...", para quem é o resultado).
+- **Procedimento em passos numerados**, cada passo com uma ação clara e a ferramenta a usar, se houver.
+- **Instruções afirmativas** (o que fazer), com as proibições reunidas numa seção "Regras" curta.
+- **Formato de saída** explícito (estrutura, tamanho, quando entregar como `<arquivo>`), com um exemplo curto
+  entre marcadores quando o formato importar.
+- `max_iterations: N` no frontmatter só se a skill precisar de muitos passos com ferramentas (pesquisa, arquivos).
+
+**`conhecimento/`** (opcional, módulo conhecimento): documentos `.md`, `.txt` ou `.pdf` em subpastas (cada uma é
+uma base) e `bases.yaml` com `nome: { descricao, idioma }`. Bom para FAQ, políticas, catálogo, manual, bíblia de história.
 
 **`personas/<nome>.md`** (opcional): frontmatter `name`, `description`, `estilo` (opcional), `skills` (opcional) e
 o corpo em segunda pessoa: "Você é ..." com aparência/personalidade, jeito de falar, história e objetivos.
 
-**`estilos/<nome>.md`** (opcional, só se nenhum dos prontos servir): `name`, `description`, `aliases` e as regras de escrita.
+**`estilos/<nome>.md`** (opcional, só se nenhum dos prontos servir): `name`, `description`, `aliases`, `controles`
+(níveis 1–10, ex.: `{ detalhe: 3, complexidade: 2 }`) e as regras de escrita. Personas também aceitam `controles`.
 
 **`ferramentas/<nome>.yaml`** (opcional, módulo http): `nome`, `descricao`, `url` (só https; `{param}` no caminho),
 `parametros` ({ tipo, descricao, opcional }), `fixos`, `autenticacao` ({ tipo: header|query|bearer, nome, variavel }),

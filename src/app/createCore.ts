@@ -23,6 +23,7 @@ import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { createKnowledge } from '../modules/conhecimento/createKnowledge.js';
+import { DebateEngine, DebateStore, DebateTool, debateContext } from '../modules/refinamento/Debate.js';
 import { AttachmentService } from '../modules/anexos/AttachmentService.js';
 import { AttachmentStore } from '../modules/anexos/AttachmentStore.js';
 import { createAttachmentTools } from '../modules/anexos/AttachmentTools.js';
@@ -185,6 +186,10 @@ export function createCore(config: Config, options: CoreOptions): Core {
     const agents = new PersonaAgents({ personas, styles, memory, llm, summarizer });
     registry.register(new TalkToPersonaTool(agents)).register(new PersonaDialogueTool(agents));
   }
+  // Módulo refinamento: debate entre agentes com o usuário decidindo entre as rodadas.
+  const debates = modules.has('refinamento') ? new DebateStore(db) : undefined;
+  if (debates) registry.register(new DebateTool(new DebateEngine(llm, debates, personas)));
+  const contextProviders = [knowledge?.contextProvider, debates ? debateContext(debates) : undefined].filter((p) => p !== undefined);
   const skillRouter = new SkillRouter(routerLlm);
   const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry, config.identity), agentLoop, {
     roleProviders: providerFactory,
@@ -246,7 +251,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
         guardrails,
         reasoning: new ReasoningStrategies(llm),
         defaultMode: config.defaultMode,
-        ...(knowledge?.contextProvider ? { contextProviders: [knowledge.contextProvider] } : {}),
+        ...(contextProviders.length ? { contextProviders } : {}),
       }),
   };
 }

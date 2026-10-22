@@ -15,7 +15,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   { id: 'arquivos', descricao: 'Ferramentas de arquivos no workspace (criar, ler, listar)' },
   { id: 'voz', descricao: 'Mensagens de voz: transcrição (Whisper) e respostas em áudio (Kokoro/Edge)' },
   { id: 'voz-clonada', descricao: 'Clonagem de voz (Chatterbox): /minhavoz, /falar e skill voz-clonada' },
-  { id: 'refinamento', descricao: 'Raciocínio em etapas: criador ↔ crítico (idealizador-analisador) e análise em etapas (analise-em-etapas)' },
+  { id: 'refinamento', descricao: 'Raciocínio: criador ↔ crítico, análise em etapas, debate entre agentes e criador de prompts' },
   { id: 'http', descricao: 'Ferramentas HTTP declaradas pelo perfil em ferramentas/*.yaml (APIs REST, sem código)' },
   { id: 'pesquisa-web', descricao: 'Pesquisa na internet, leitura de páginas e notícias (SearXNG/DuckDuckGo, Google News)' },
   { id: 'anexos', descricao: 'Imagens e documentos enviados: visão, OCR, biblioteca com busca (listar_anexos, ler_anexo...)' },
