@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { ResponseAttachments } from '../src/agent/ResponseAttachments.js';
+import { TaskContext } from '../src/llm/orchestration/TaskContext.js';
 import { ImageOutputStrategy } from '../src/canais/telegram/output/strategies/ImageOutputStrategy.js';
 import type { TelegramSender } from '../src/canais/telegram/output/TelegramSender.js';
 import { Config } from '../src/config/Config.js';
@@ -22,8 +23,9 @@ function fakeServices(checkpoints: string[] = ['dreamshaperXL_v21TurboDPMSDE.saf
   const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } });
   const fetcher = (async (input: string | URL, init?: RequestInit) => {
     const url = String(input);
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
     calls.push({ url, body });
+    if (url.endsWith('/upload/image')) return json({ name: ((body as FormData).get('image') as File).name, subfolder: '', type: 'input' });
     if (url.endsWith('/object_info/CheckpointLoaderSimple')) return json({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [checkpoints] } } } });
     if (url.endsWith('/prompt')) return json({ prompt_id: 'p1' });
     if (url.includes('/history/p1')) {
@@ -115,6 +117,33 @@ describe('Imagens: geração no ComfyUI', () => {
     await assert.rejects(generator(fakeServices([]).fetcher).generate({ description: 'samurai' }), /Nenhum modelo de imagem instalado/);
   });
 
+  it('foto → desenho (img2img): envia a foto, parte dela em vez de tela vazia e usa a intensidade pedida', async () => {
+    const { calls, fetcher } = fakeServices();
+    const image = await generator(fetcher).generate({ description: 'family at the beach', style: 'anime', baseImage: { data: Buffer.from('jpg'), name: 'base-7.jpg' }, strength: 'fiel' });
+    assert.equal(image.style, 'anime');
+    const upload = calls.findIndex((c) => c.url.endsWith('/upload/image'));
+    const queued = calls.findIndex((c) => c.url.endsWith('/prompt'));
+    assert.ok(upload >= 0 && upload < queued, 'a foto sobe antes do pedido');
+    const workflow = (calls[queued]!.body as { prompt: Record<string, { class_type: string; inputs: Record<string, unknown> }> }).prompt;
+    assert.deepEqual(workflow['11'], { class_type: 'LoadImage', inputs: { image: 'base-7.jpg' } });
+    assert.equal(workflow['12']!.class_type, 'ImageScaleToTotalPixels');
+    assert.deepEqual(workflow['3']!.inputs.latent_image, ['13', 0], 'o sampler parte da foto codificada');
+    assert.equal(workflow['3']!.inputs.denoise, 0.45);
+    assert.equal(workflow['5'], undefined, 'sem tela vazia');
+  });
+
+  it('estilo realista: usa o RealVisXL se baixado; senão o DreamShaper, com a dica de como baixar', async () => {
+    const without = await generator(fakeServices(['DreamShaperXL_Turbo_V2-SFW.safetensors']).fetcher).generate({ description: 'mountain lake at sunrise', style: 'realista' });
+    assert.equal(without.checkpoint, 'DreamShaperXL_Turbo_V2-SFW.safetensors');
+    assert.match(without.warning!, /npm run imagens:modelo -- realista/);
+    const { calls, fetcher } = fakeServices(['DreamShaperXL_Turbo_V2-SFW.safetensors', 'RealVisXL_V5.0_Lightning_fp16.safetensors']);
+    const withModel = await generator(fetcher).generate({ description: 'mountain lake at sunrise', style: 'realista' });
+    assert.deepEqual([withModel.checkpoint, withModel.warning], ['RealVisXL_V5.0_Lightning_fp16.safetensors', undefined]);
+    const workflow = (calls.find((c) => c.url.endsWith('/prompt'))!.body as { prompt: Record<string, { inputs: Record<string, unknown> }> }).prompt;
+    assert.match(String(workflow['6']!.inputs.text), /^RAW photo, photorealistic/);
+    assert.match(String(workflow['7']!.inputs.text), /cartoon, anime/);
+  });
+
   it('ComfyUI desligado e erro de execução viram mensagens amigáveis', async () => {
     const off = (async () => {
       throw new TypeError('fetch failed');
@@ -166,6 +195,25 @@ describe('Imagens: ferramenta e entrega', () => {
     assert.equal(images.length, 1);
     assert.equal(images[0]!.caption, 'Farol');
     await assert.rejects(tool.execute({ descricao: 'x', estilo: 'fotografia' }), /deve ser um de/);
+  });
+
+  it('imagem_base: pega a foto do usuário nos anexos; só vira desenho; recusa anexo que não é imagem', async () => {
+    const { calls, fetcher } = fakeServices();
+    const store = {
+      get: (userId: string, id: number) =>
+        userId !== '7' ? undefined : id === 3 ? { id: 3, kind: 'image', name: 'praia.jpg' } : id === 4 ? { id: 4, kind: 'pdf', name: 'a.pdf' } : undefined,
+      readFile: () => Buffer.from('foto'),
+    };
+    const tool = new GenerateImageTool(generator(fetcher), os.tmpdir(), { store } as never);
+    const inChat = <T>(fn: () => Promise<T>) => TaskContext.run({ task: 'visao', privacy: 'pessoal', userId: '7' }, fn);
+    const { result } = await inChat(() => ResponseAttachments.collect(() => tool.execute({ descricao: 'two friends on the beach', imagem_base: 3 })));
+    const output = JSON.parse(result.output) as Record<string, unknown>;
+    assert.deepEqual([output.estilo, output.a_partir_de, output.intensidade], ['ilustracao', 'anexo #3', 'equilibrado'], 'sem estilo, foto vira ilustração');
+    assert.ok(calls.some((c) => c.url.endsWith('/upload/image')));
+    await assert.rejects(inChat(() => tool.execute({ descricao: 'x', imagem_base: 3, estilo: 'realista' })), /só vira desenho/);
+    await assert.rejects(inChat(() => tool.execute({ descricao: 'x', imagem_base: 4 })), /não é uma imagem/);
+    await assert.rejects(inChat(() => tool.execute({ descricao: 'x', imagem_base: 9 })), /não encontrado/);
+    await assert.rejects(new GenerateImageTool(generator(fetcher), os.tmpdir()).execute({ descricao: 'x', imagem_base: 3 }), /módulo "anexos"/);
   });
 
   it('Telegram: 1 imagem vira foto; 12 viram um álbum de 10 + 1 álbum de 2', async () => {

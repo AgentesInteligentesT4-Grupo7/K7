@@ -271,6 +271,7 @@ navegador e no terminal (`workspace/imagens/`).
 | Estilo | Modelo (checkpoint) | Passos |
 |---|---|---|
 | `hq`, `ilustracao` | DreamShaper XL (versão Turbo/Lightning) | 6–8 |
+| `realista` | RealVisXL V5 Lightning (sem ele, DreamShaper com prompt de foto) | 6–8 |
 | `anime` | Animagine XL 4.0 | 20–28 |
 | `manga` | Pony Diffusion V6 XL | 20–28 |
 
@@ -280,6 +281,7 @@ Para ligar (uma vez; baixa ~5,4 GB da imagem e ~6,9 GB do modelo):
 docker compose -f servicos/comfyui/docker-compose.yml up -d   # ComfyUI na GPU, só em 127.0.0.1:8188
 npm run imagens:modelo                  # DreamShaper XL Turbo V2 SFW (estilos hq e ilustracao), SHA-256 conferido
 npm run imagens:modelo -- anime         # opcional: Animagine XL 4.0
+npm run imagens:modelo -- realista      # opcional: RealVisXL V5 Lightning (~7 GB), fotos mais realistas
 docker stop comfyui | docker start comfyui                     # desligar / religar (não reinicia sozinho)
 ```
 
@@ -294,6 +296,9 @@ docker stop comfyui | docker start comfyui                     # desligar / reli
 - **Conteúdo:** nudez, conteúdo sexual, violência gráfica e fotos realistas de pessoas reais são recusados antes
   de chegar à GPU, e todo prompt leva um negativo de segurança fixo.
 - Seed fixo repete a imagem; mesma descrição canônica do personagem mantém a aparência entre cenas.
+- **Foto → desenho:** mande uma foto (módulo `anexos`) e peça "transforma em anime" (ou HQ, ilustração, mangá).
+  O ComfyUI redesenha por cima da foto mantendo composição e cores; `intensidade` fiel, equilibrado (padrão) ou
+  criativo. Com pessoas, o rosto pode mudar (use "fiel"). Foto nunca vira o estilo `realista`.
 
 ## Voz clonada (sua voz a partir de texto)
 

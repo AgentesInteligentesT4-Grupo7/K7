@@ -50,6 +50,29 @@ export function txt2imgWorkflow(p: Txt2ImgParams): ComfyWorkflow {
   };
 }
 
+export interface Img2ImgParams extends Omit<Txt2ImgParams, 'width' | 'height'> {
+  /** Nome da imagem já enviada ao ComfyUI (/upload/image). */
+  image: string;
+  /** Quanto redesenhar: 0 = igual à foto, 1 = ignora a foto. */
+  denoise: number;
+}
+
+/**
+ * Img2img (foto → desenho): a foto é redimensionada para ~1 megapixel (o tamanho que o SDXL conhece),
+ * codificada no espaço latente e redesenhada no estilo com `denoise` < 1, mantendo composição e cores.
+ */
+export function img2imgWorkflow(p: Img2ImgParams): ComfyWorkflow {
+  const base = txt2imgWorkflow({ ...p, width: 1024, height: 1024 });
+  delete base['5'];
+  return {
+    ...base,
+    '11': { class_type: 'LoadImage', inputs: { image: p.image } },
+    '12': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['11', 0], upscale_method: 'lanczos', megapixels: 1, resolution_steps: 64 } },
+    '13': { class_type: 'VAEEncode', inputs: { pixels: ['12', 0], vae: ['4', 2] } },
+    '3': { ...base['3']!, inputs: { ...base['3']!.inputs, denoise: p.denoise, latent_image: ['13', 0] } },
+  };
+}
+
 interface HistoryEntry {
   status?: { status_str?: string; completed?: boolean; messages?: Array<[string, Record<string, unknown>]> };
   outputs?: Record<string, { images?: Array<{ filename: string; subfolder: string; type: string }> }>;
@@ -92,6 +115,17 @@ export class ComfyUIClient {
       await sleep(800);
     }
     throw new ImageServiceError(`A imagem não ficou pronta em ${Math.round(timeoutMs / 1000)} s (a primeira geração carrega o modelo na GPU e demora mais).`);
+  }
+
+  /** Envia uma imagem de entrada (img2img) e devolve o nome com que o ComfyUI a guardou. */
+  async uploadImage(data: Buffer, fileName: string): Promise<string> {
+    const form = new FormData();
+    form.append('image', new Blob([new Uint8Array(data)]), fileName);
+    form.append('overwrite', 'true');
+    const res = await this.request('/upload/image', { method: 'POST', body: form });
+    const body = (await res.json()) as { name?: string; subfolder?: string };
+    if (!body.name) throw new ImageServiceError('O ComfyUI não aceitou a foto enviada.');
+    return body.subfolder ? `${body.subfolder}/${body.name}` : body.name;
   }
 
   /** Descarrega os modelos da VRAM (spec RF-10). */

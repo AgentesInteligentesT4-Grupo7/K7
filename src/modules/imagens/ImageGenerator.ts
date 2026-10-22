@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage } from '../../errors/AppErrors.js';
 import { Logger } from '../../utils/Logger.js';
-import { type ComfyUIClient, ImageServiceError, txt2imgWorkflow } from './ComfyUIClient.js';
+import { type ComfyUIClient, ImageServiceError, img2imgWorkflow, txt2imgWorkflow } from './ComfyUIClient.js';
 import { checkImagePrompt } from './ContentGuard.js';
 import { ASPECTS, IMAGE_STYLES, type ImageStyle, buildPrompt } from './ImageStyles.js';
 
@@ -25,12 +25,19 @@ export interface ImageGeneratorOptions {
   fetcher?: typeof fetch;
 }
 
+/** Quanto a foto de base é redesenhada (denoise do img2img). */
+export const STRENGTHS = { fiel: 0.45, equilibrado: 0.6, criativo: 0.75 } as const;
+export type Strength = keyof typeof STRENGTHS;
+
 export interface ImageRequest {
   /** Descrição visual em inglês (o estilo acrescenta qualidade e travas). */
   description: string;
   style?: string;
   aspect?: string;
   seed?: number;
+  /** Foto de partida (img2img): a imagem sai no estilo, mantendo composição e cores; a proporção vem da foto. */
+  baseImage?: { data: Buffer; name: string };
+  strength?: Strength;
 }
 
 export interface GeneratedImageInfo {
@@ -76,25 +83,31 @@ export class ImageGenerator {
     const { checkpoint, warning } = await this.resolveCheckpoint(style);
     const seed = request.seed ?? randomInt(1, 2 ** 31);
     const { positive, negative } = buildPrompt(style, request.description);
+    const common = {
+      checkpoint,
+      positive,
+      negative,
+      seed,
+      steps: style.steps[this.options.quality],
+      cfg: style.cfg,
+      sampler: style.sampler,
+      scheduler: style.scheduler,
+      clipSkip: style.clipSkip,
+    };
 
     await this.freeOllama();
-    this.logger.info(`🎨 ${style.id} ${aspect.width}×${aspect.height} seed ${seed} → ${checkpoint}`);
-    const png = await this.options.comfy.run(
-      txt2imgWorkflow({
-        checkpoint,
-        positive,
-        negative,
-        width: aspect.width,
-        height: aspect.height,
-        seed,
-        steps: style.steps[this.options.quality],
-        cfg: style.cfg,
-        sampler: style.sampler,
-        scheduler: style.scheduler,
-        clipSkip: style.clipSkip,
-      }),
-      this.options.timeoutMs,
-    );
+    let workflow;
+    if (request.baseImage) {
+      const strength = request.strength ?? 'equilibrado';
+      const image = await this.options.comfy.uploadImage(request.baseImage.data, request.baseImage.name);
+      this.logger.info(`🎨 ${style.id} a partir de foto (${strength}) seed ${seed} → ${checkpoint}`);
+      workflow = img2imgWorkflow({ ...common, image, denoise: STRENGTHS[strength] });
+    } else {
+      this.logger.info(`🎨 ${style.id} ${aspect.width}×${aspect.height} seed ${seed} → ${checkpoint}`);
+      workflow = txt2imgWorkflow({ ...common, width: aspect.width, height: aspect.height });
+    }
+    const png = await this.options.comfy.run(workflow, this.options.timeoutMs);
+    const size = ImageGenerator.pngSize(png) ?? aspect;
 
     fs.mkdirSync(this.options.outputDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -103,7 +116,13 @@ export class ImageGenerator {
     this.scheduleUnload();
     const ms = Date.now() - started;
     this.logger.info(`🖼️ Imagem pronta em ${(ms / 1000).toFixed(1)} s: ${file}`);
-    return { path: file, seed, style: style.id, checkpoint, width: aspect.width, height: aspect.height, ms, ...(warning ? { warning } : {}) };
+    return { path: file, seed, style: style.id, checkpoint, width: size.width, height: size.height, ms, ...(warning ? { warning } : {}) };
+  }
+
+  /** Largura e altura do PNG (cabeçalho IHDR); no img2img o tamanho vem da foto. */
+  static pngSize(png: Buffer): { width: number; height: number } | undefined {
+    if (png.length < 24 || png.toString('latin1', 12, 16) !== 'IHDR') return undefined;
+    return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
   }
 
   /** Checkpoint do estilo; se não estiver baixado, cai para o do estilo padrão e avisa (spec §6.3). */
@@ -113,6 +132,10 @@ export class ImageGenerator {
     const wanted = this.options.models[style.id] ?? style.checkpoint;
     const exact = find(wanted);
     if (exact) return { checkpoint: exact };
+    for (const alternative of style.alternatives ?? []) {
+      const found = find(alternative);
+      if (found) return { checkpoint: found, ...(style.alternativeHint ? { warning: style.alternativeHint } : {}) };
+    }
 
     const fallbackStyle = IMAGE_STYLES[this.options.defaultStyle];
     const fallback = find(this.options.models[this.options.defaultStyle] ?? fallbackStyle?.checkpoint ?? '') ?? available[0];

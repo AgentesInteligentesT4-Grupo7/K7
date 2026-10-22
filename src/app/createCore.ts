@@ -149,7 +149,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     }
   }
   const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
-  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir));
+  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir, attachments));
   // Módulo conhecimento: o CRAG completa com a internet quando o pesquisa-web está ligado.
   const webTool = registry.get('pesquisar_web');
   const knowledge = modules.has('conhecimento')

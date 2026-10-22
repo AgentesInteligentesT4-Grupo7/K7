@@ -8,6 +8,10 @@ export interface ImageStyle {
   descricao: string;
   /** Trecho do nome do checkpoint no ComfyUI (IMAGE_MODELS sobrescreve). */
   checkpoint: string;
+  /** Outros checkpoints aceitos, em ordem, quando o principal não está baixado (sem aviso de troca). */
+  alternatives?: string[];
+  /** Dica mostrada quando o estilo roda num checkpoint alternativo (ex.: como baixar o ideal). */
+  alternativeHint?: string;
   prefix: string;
   suffix: string;
   negative: string;
@@ -47,6 +51,22 @@ export const IMAGE_STYLES: Record<string, ImageStyle> = {
     prefix: 'digital illustration, painterly, soft lighting, storybook art,',
     suffix: ', highly detailed, beautiful composition',
     negative: `${QUALITY_NEGATIVE}, photo, photorealistic`,
+    clipSkip: 1,
+    sampler: 'dpmpp_sde',
+    scheduler: 'karras',
+    cfg: 2,
+    steps: { rapido: 6, qualidade: 8 },
+  },
+  realista: {
+    id: 'realista',
+    descricao: 'foto realista (paisagens, objetos, lugares, retratos de pessoas fictícias)',
+    // RealVisXL V5 Lightning: mesmo regime do DreamShaper Turbo (DPM++ SDE Karras, poucos passos, cfg baixo).
+    checkpoint: 'RealVisXL',
+    alternatives: ['dreamshaperXL'],
+    alternativeHint: 'Para fotos mais realistas, baixe o modelo dedicado: npm run imagens:modelo -- realista (~7 GB).',
+    prefix: 'RAW photo, photorealistic, professional photography, 35mm lens, natural lighting,',
+    suffix: ', sharp focus, high detail, realistic skin texture, film grain',
+    negative: `${QUALITY_NEGATIVE}, illustration, painting, drawing, cartoon, anime, comic, 3d render, cgi, plastic skin, oversaturated`,
     clipSkip: 1,
     sampler: 'dpmpp_sde',
     scheduler: 'karras',

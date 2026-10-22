@@ -5,12 +5,13 @@ import { errorMessage } from '../errors/AppErrors.js';
 const CATALOG: Record<string, { repo: string; file: string; estilos: string }> = {
   hq: { repo: 'Lykon/dreamshaper-xl-v2-turbo', file: 'DreamShaperXL_Turbo_V2-SFW.safetensors', estilos: 'hq, ilustracao' },
   anime: { repo: 'cagliostrolab/animagine-xl-4.0', file: 'animagine-xl-4.0-opt.safetensors', estilos: 'anime' },
+  realista: { repo: 'SG161222/RealVisXL_V5.0_Lightning', file: 'RealVisXL_V5.0_Lightning_fp16.safetensors', estilos: 'realista' },
 };
 const CONTAINER = 'comfyui';
 const DEST = '/root/ComfyUI/models/checkpoints';
 
 /**
- * `npm run imagens:modelo -- [hq|anime]`: baixa o checkpoint para dentro do volume do ComfyUI
+ * `npm run imagens:modelo -- [hq|anime|realista]`: baixa o checkpoint para dentro do volume do ComfyUI
  * (o container precisa estar no ar), mostrando licença e tamanho e conferindo o SHA-256 do Hugging Face.
  * O estilo manga (Pony Diffusion V6 XL) fica no Civitai e exige token: baixe manualmente.
  */

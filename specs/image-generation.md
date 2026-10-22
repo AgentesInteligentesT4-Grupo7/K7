@@ -1,7 +1,7 @@
 # Spec: Geração de Imagens e Histórias Ilustradas (HQ, mangá, livro ilustrado)
 
 **Versão:** 1.0
-**Status:** Implementada em parte (MVP: RF-01, RF-02, RF-03, RF-10, RF-11, RF-13 a/b)
+**Status:** Implementada em parte (MVP: RF-01, RF-02, RF-03, RF-10, RF-11, RF-13 a/b; img2img foto → desenho e estilo realista)
 **Autor:** ParreiraClaw Agent
 **Data:** 2026-10-21
 **Reviewers:** Parreira
