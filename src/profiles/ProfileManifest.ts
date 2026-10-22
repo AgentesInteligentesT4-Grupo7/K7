@@ -1,5 +1,6 @@
 import { load as parseYaml } from 'js-yaml';
 import { ConfigError } from '../config/Config.js';
+import { REASONING_MODES, parseMode } from '../agent/Reasoning.js';
 import { type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
 import type { PrivacyLevel } from '../llm/orchestration/types.js';
 import { CHANNELS, type ChannelId, MODULE_IDS } from '../modules/registry.js';
@@ -37,6 +38,8 @@ export interface ProfileManifest {
   privacidade?: PrivacyLevel;
   /** Estilo de texto padrão da fita (ex.: formal, infantil). */
   estiloPadrao?: string;
+  /** Modo de raciocínio padrão da fita: normal, reformular ou verificado. */
+  modoPadrao?: string;
   /** Variáveis de ambiente que o `.env` do perfil precisa ter, com a descrição de cada uma. */
   variaveis: Record<string, string>;
   /** Bloco `guardrails:` (spec guardrails); ausente = padrão do tocador. */
@@ -112,6 +115,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     canais,
     privacidade,
     ...(str(raw.estilo_padrao) ? { estiloPadrao: str(raw.estilo_padrao)!.toLowerCase() } : {}),
+    ...(str(raw.modo_padrao) ? { modoPadrao: parseMode(str(raw.modo_padrao)) ?? fail('modo_padrao', `deve ser ${REASONING_MODES.join(', ')}`) } : {}),
     variaveis,
     ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
   };

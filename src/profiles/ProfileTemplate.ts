@@ -34,6 +34,10 @@ canais: [terminal]
 # publico | pessoal | local (local = só modelos na sua GPU)
 privacidade: publico
 
+# Estilo e modo de raciocínio padrão (opcionais): estilo_padrao: formal | modo_padrao: verificado
+# estilo_padrao: informal
+# modo_padrao: normal
+
 # Limites do agente (opcional; spec guardrails). Descomente o que precisar:
 # guardrails:
 #   injecao: avisar                 # off | avisar | bloquear

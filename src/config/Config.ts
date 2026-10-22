@@ -1,6 +1,7 @@
 import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
+import { type ReasoningMode, parseMode } from '../agent/Reasoning.js';
 import { DEFAULT_GUARDRAILS, type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
 import type { EmbeddingsChoice } from '../modules/conhecimento/Embeddings.js';
 import type { RetrievalOptions } from '../modules/conhecimento/KnowledgeRetriever.js';
@@ -123,6 +124,8 @@ export class Config {
   readonly stylesDirs: string[];
   /** Estilo usado quando nada mais escolhe um (ESTILO_PADRAO / estilo_padrao da fita). */
   readonly defaultStyle: string | undefined;
+  /** Modo de raciocínio padrão (MODO_PADRAO / modo_padrao da fita). */
+  readonly defaultMode: ReasoningMode | undefined;
   /** Guardrails da fita (bloco `guardrails:` do perfil.yaml, via GUARDRAILS em JSON). */
   readonly guardrails: GuardrailsConfig;
   /** Pasta do perfil em uso (evals/ e skills/ próprios). */
@@ -261,6 +264,8 @@ export class Config {
     this.stylesDirs = [path.resolve(rootDir, 'estilos'), ...(env.ESTILOS_DIR?.trim() ? [path.resolve(rootDir, env.ESTILOS_DIR.trim())] : [])];
     this.defaultStyle = env.ESTILO_PADRAO?.trim().toLowerCase() || undefined;
     this.guardrails = Config.parseGuardrails(env.GUARDRAILS);
+    this.defaultMode = parseMode(env.MODO_PADRAO);
+    if (env.MODO_PADRAO?.trim() && !this.defaultMode) throw new ConfigError('MODO_PADRAO deve ser normal, reformular ou verificado');
     this.profileDir = env.PERFIL_DIR?.trim() ? path.resolve(rootDir, env.PERFIL_DIR.trim()) : undefined;
     this.httpToolsDir = env.FERRAMENTAS_DIR?.trim() ? path.resolve(rootDir, env.FERRAMENTAS_DIR.trim()) : undefined;
     this.env = env;

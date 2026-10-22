@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AgentController } from '../agent/AgentController.js';
 import { AgentLoop } from '../agent/AgentLoop.js';
+import { ReasoningStrategies } from '../agent/Reasoning.js';
 import { SystemPromptBuilder } from '../agent/SystemPromptBuilder.js';
 import type { IOutputHandler } from '../agent/types.js';
 import type { Config } from '../config/Config.js';
@@ -243,6 +244,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
         settings,
         defaultStyle: config.defaultStyle,
         guardrails,
+        reasoning: new ReasoningStrategies(llm),
+        defaultMode: config.defaultMode,
         ...(knowledge?.contextProvider ? { contextProviders: [knowledge.contextProvider] } : {}),
       }),
   };

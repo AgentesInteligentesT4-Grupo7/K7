@@ -452,6 +452,14 @@ Três peças que se combinam (spec [personas-styles](specs/personas-styles.md)):
   `detalhe`, `originalidade`, `abstracao`. Na mensagem (`resuma o artigo detalhe=3`), fixos (`/estilo formal tom=2`)
   ou no frontmatter do estilo/persona (`controles: { detalhe: 2 }`).
 
+### Modos de raciocínio
+
+`/modo verificado` (ou `modo=verificado` numa mensagem) confere os fatos da resposta: o agente cria perguntas
+de verificação, responde cada uma sem olhar o rascunho e corrige o que não bater (CoVe). `/modo reformular`
+reescreve e detalha perguntas vagas antes de responder (RaR). A fita pode fixar `modo_padrao: verificado`.
+Para decisões e problemas difíceis, a skill `analise-em-etapas` (módulo `refinamento`) mostra o raciocínio:
+entender → decompor → resolver as partes → limites → síntese (spec [reasoning](specs/reasoning.md)).
+
 ### Limites da fita (guardrails)
 
 Declarados no `perfil.yaml`, sem código (spec [guardrails](specs/guardrails.md)):

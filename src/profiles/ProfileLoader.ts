@@ -123,6 +123,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     CHANNELS: manifest.canais?.join(','),
     PRIVACY_DEFAULT: manifest.privacidade,
     ESTILO_PADRAO: manifest.estiloPadrao,
+    MODO_PADRAO: manifest.modoPadrao,
     // Estruturado: vai como JSON já validado; o Config só o relê.
     GUARDRAILS: manifest.guardrails ? JSON.stringify(manifest.guardrails) : undefined,
     MODULOS_OPCOES: JSON.stringify(manifest.opcoesModulos),

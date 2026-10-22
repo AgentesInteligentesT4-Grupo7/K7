@@ -7,6 +7,7 @@ import { type Persona, PersonaCatalog } from '../personas/Personas.js';
 import type { StyleCatalog, TextStyle } from '../personas/Styles.js';
 import { type TextControls, controlsHelp, formatControls, parseControls, sanitizeControls } from '../personas/TextControls.js';
 import type { Guardrails } from '../guardrails/Guardrails.js';
+import { REASONING_MODES, type ReasoningMode, type ReasoningStrategies, extractMode, parseMode } from './Reasoning.js';
 import { ResponseAttachments } from './ResponseAttachments.js';
 import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
@@ -39,6 +40,9 @@ export interface AgentControllerDeps {
   guardrails?: Guardrails;
   /** Contexto recuperado a cada mensagem (base de conhecimento no modo automático). */
   contextProviders?: IContextProvider[];
+  /** Modos de raciocínio (RaR, CoVe) e o padrão da fita (modo_padrao). */
+  reasoning?: ReasoningStrategies;
+  defaultMode?: ReasoningMode;
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -77,7 +81,10 @@ export class AgentController {
     const persona = mention?.persona ?? this.activePersona(userId);
     // Controles de texto na mensagem ("detalhe=3 tom=8") valem só para ela e saem do texto.
     const asked = parseControls(mention?.text ?? original.text);
-    const input: AgentInput = { ...original, text: asked.rest };
+    // "modo=verificado" na mensagem vale só para ela; senão, o do /modo ou o padrão da fita.
+    const askedMode = extractMode(asked.rest);
+    const mode: ReasoningMode = askedMode.mode ?? parseMode(this.deps.settings?.get(userId, 'modo')) ?? this.deps.defaultMode ?? 'normal';
+    const input: AgentInput = { ...original, text: askedMode.rest };
     // Memória isolada por persona; anexos, roteamento e orquestrador seguem com o usuário real.
     const memoryUserId = PersonaCatalog.memoryUserId(userId, persona);
     const conversation = memory.getOrCreateActiveConversation(memoryUserId, this.deps.providerName);
@@ -125,12 +132,24 @@ export class AgentController {
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const retrieved = await this.retrieve(input.text, { task, privacy, userId });
+    const { reasoning } = this.deps;
+    // RaR: a pergunta reescrita vai junto da original só nesta requisição (o histórico salvo fica com a original).
+    if (mode === 'reformular' && reasoning && current?.role === 'user') {
+      const rephrased = await TaskContext.run({ task, privacy, userId }, () => reasoning.rephrase(input.text));
+      if (rephrased) current.content = `${current.content ?? ''}\n\n[Pergunta reformulada e detalhada, para guiar a resposta: ${rephrased}]`;
+    }
     const { result, images } = await ResponseAttachments.collect(() =>
       TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style, controls, guardrails: guardrailsPrompt, retrieved })),
     );
+    // CoVe: verifica a resposta (o loop criador ↔ crítico já é uma revisão; não repete).
+    const verified =
+      mode === 'verificado' && reasoning && !result.details?.refinement_rounds
+        ? await TaskContext.run({ task, privacy, userId }, () => reasoning.verify(input.text, result.text))
+        : undefined;
+    const answer = verified?.text ?? result.text;
     // Guardrails de saída: palavras proibidas e dados pessoais (a versão salva na memória também sai limpa).
-    const output = guardrails ? await TaskContext.run({ task, privacy, userId }, () => guardrails.checkOutput(result.text)) : undefined;
-    const text = output?.text ?? result.text;
+    const output = guardrails ? await TaskContext.run({ task, privacy, userId }, () => guardrails.checkOutput(answer)) : undefined;
+    const text = output?.text ?? answer;
     const guardrailEvents = [...(verdict?.events ?? []), ...(output?.events ?? [])];
 
     for (const step of result.steps) {
@@ -151,6 +170,8 @@ export class AgentController {
         ...(persona ? { persona: persona.name } : {}),
         ...(style ? { style: style.name } : {}),
         ...(controls ? { controls } : {}),
+        ...(mode !== 'normal' ? { mode } : {}),
+        ...(verified?.questions.length ? { verification: { questions: verified.questions, changed: verified.changed } } : {}),
         ...(guardrailEvents.length ? { guardrails: guardrailEvents } : {}),
         iterations: result.iterations,
         ...result.details,
@@ -293,6 +314,28 @@ export class AgentController {
       replies.push(`🎚️ Níveis: ${formatControls(merged)}.`);
     }
     return `${replies.join(' ')} /estilo padrao desfaz.`;
+  }
+
+  /** `/modo`: mostra, fixa (`/modo verificado`) ou volta ao normal (`/modo normal`). */
+  modeCommand(userId: number | string, arg: string): string {
+    const { settings, reasoning } = this.deps;
+    if (!settings || !reasoning) return 'Modos de raciocínio não disponíveis.';
+    const id = String(userId);
+    const wanted = arg.trim();
+    const descriptions: Record<ReasoningMode, string> = {
+      normal: 'responde direto',
+      reformular: 'reescreve e detalha a pergunta antes de responder (perguntas vagas ou curtas)',
+      verificado: 'confere os fatos da resposta com perguntas independentes e corrige (mais lento, 3 pedidos extras)',
+    };
+    if (!wanted) {
+      const active = parseMode(settings.get(id, 'modo')) ?? this.deps.defaultMode ?? 'normal';
+      const list = REASONING_MODES.map((m) => `${m === active ? '▶' : '-'} ${m}: ${descriptions[m]}`).join('\n');
+      return `🧠 Modo de raciocínio (ativo: ${active}):\n${list}\n\nUse /modo <nome> ou "modo=verificado" numa mensagem só.`;
+    }
+    const mode = parseMode(wanted);
+    if (!mode) return `Modo "${wanted}" não existe. Disponíveis: ${REASONING_MODES.join(', ')}.`;
+    settings.set(id, 'modo', mode === 'normal' ? undefined : mode);
+    return `🧠 Modo: ${mode} (${descriptions[mode]}).`;
   }
 
   private savedControls(userId: string): TextControls {

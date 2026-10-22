@@ -43,7 +43,8 @@ export const TERMINAL_HELP = [
   '  /skills                         lista as skills',
   '  /memoria   /esquecer <n>|tudo   o que o agente lembra (resumo e fatos) / apagar',
   '  /persona [nome|sair]            fala com uma persona (memória própria); ou "@nome mensagem"',
-  '  /estilo [nome|padrao]           tom do texto: formal, informal, técnico, infantil...',
+  '  /estilo [nome|padrao] [n=N]     tom do texto e níveis 1–10 (ex.: /estilo formal detalhe=3)',
+  '  /modo [normal|reformular|verificado]  raciocínio (verificado confere os fatos)',
   '  /verbose                        mostra/esconde os passos do agente (Thought/Action/Observation)',
   '  /play                           abre os áudios gerados automaticamente no player',
   '  /modelos [tarefa]  /modelo      ranking dos modelos gratuitos / quem respondeu (orquestrador)',
@@ -120,6 +121,8 @@ export class TerminalChat {
         return this.say(this.deps.controller.personaCommand(this.deps.userId, rest));
       case '/estilo':
         return this.say(this.deps.controller.styleCommand(this.deps.userId, rest));
+      case '/modo':
+        return this.say(this.deps.controller.modeCommand(this.deps.userId, rest));
       case '/memoria':
         return this.say(this.deps.controller.memoryReport(this.deps.userId));
       case '/esquecer':
