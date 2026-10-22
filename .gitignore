@@ -13,3 +13,6 @@ workspace/
 # Perfis instalados e dados isolados por perfil
 perfis/
 dados/
+
+# Livros e materiais de referência (direitos autorais; não versionar)
+livros/
