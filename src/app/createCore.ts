@@ -285,7 +285,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
 function createImageGenerator(config: Config, llm: ILlmProvider): ImageGenerator {
   return new ImageGenerator({
     comfy: new ComfyUIClient(config.images.baseUrl),
-    outputDir: path.join(config.workspaceDir, 'imagens'),
+    outputDir: config.images.dir,
+    keep: config.images.keep,
     models: config.images.models,
     defaultStyle: config.images.defaultStyle,
     quality: config.images.quality,

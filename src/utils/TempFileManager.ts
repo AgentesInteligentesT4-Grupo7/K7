@@ -8,16 +8,23 @@ import { Logger } from './Logger.js';
  * Meta: 0 bytes residuais — todo arquivo criado aqui deve ser removido com `remove`
  * num bloco `finally`, e o diretório é varrido no startup.
  */
+/** Subpastas do tmp que sobrevivem à limpeza de início. */
+const PRESERVED = new Set(['imagens']);
+
 export class TempFileManager {
   private readonly logger = new Logger('TempFiles');
 
   constructor(private readonly tmpDir: string) {}
 
-  /** Cria o diretório e remove resíduos de execuções anteriores (ex.: crash). */
+  /**
+   * Cria o diretório e remove resíduos de execuções anteriores (ex.: crash). Subpastas de `PRESERVED` ficam:
+   * as imagens geradas têm a própria rotação (as 10 mais recentes) e não podem sumir a cada reinício.
+   */
   initialize(): void {
     fs.mkdirSync(this.tmpDir, { recursive: true });
     let removed = 0;
     for (const entry of fs.readdirSync(this.tmpDir)) {
+      if (PRESERVED.has(entry)) continue;
       fs.rmSync(path.join(this.tmpDir, entry), { recursive: true, force: true });
       removed++;
     }

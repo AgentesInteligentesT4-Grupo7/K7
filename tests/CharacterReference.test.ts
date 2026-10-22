@@ -153,7 +153,7 @@ describe('Fichas de personagem e inspeção', () => {
     assert.deepEqual([workflow['50']!.inputs.model, workflow['50']!.inputs.ipadapter, workflow['50']!.inputs.image, workflow['50']!.inputs.weight, workflow['50']!.inputs.combine_embeds], [['4', 0], ['31', 0], ['151', 0], 0.6, 'average']);
     assert.deepEqual([workflow['60']!.inputs.model, workflow['60']!.inputs.ipadapter], [['50', 0], ['32', 0]], 'rosto encadeado depois do corpo');
     assert.deepEqual(workflow['3']!.inputs.model, ['60', 0], 'o sampler usa o modelo condicionado');
-    assert.equal(workflow['21']!.class_type, 'SaveImage');
+    assert.equal(workflow['21']!.class_type, 'PreviewImage');
   });
 
   it('inspeção: anatomia vem antes da semelhança; erro de corpo em todas → nova rodada; persiste → avisa', async () => {

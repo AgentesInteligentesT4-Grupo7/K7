@@ -189,6 +189,9 @@ export class Config {
     candidates: number;
     /** Libera a GPU (ComfyUI + Ollama) este tempo depois de entregar a imagem (IMAGE_RELEASE_AFTER_SEC; 0 = não). */
     releaseAfterMs: number;
+    /** Pasta das imagens geradas (tmp/<perfil>/imagens) e quantas ficam (IMAGE_KEEP): a mais antiga sai primeiro. */
+    dir: string;
+    keep: number;
   };
   readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
   readonly logLevel: string;
@@ -337,6 +340,8 @@ export class Config {
       candidates: Math.min(4, Config.positiveInt(env.IMAGE_CANDIDATES, 3)),
       // 0 desliga; padrão 10 s depois de entregar a resposta com imagem.
       releaseAfterMs: Number(env.IMAGE_RELEASE_AFTER_SEC ?? 10) * 1000 || 0,
+      dir: path.join(this.tmpDir, 'imagens'),
+      keep: Config.positiveInt(env.IMAGE_KEEP, 10),
     };
     this.web = {
       host: env.WEB_HOST?.trim() || '127.0.0.1',

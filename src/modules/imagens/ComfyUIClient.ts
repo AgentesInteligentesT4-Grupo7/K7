@@ -46,7 +46,9 @@ export function txt2imgWorkflow(p: Txt2ImgParams): ComfyWorkflow {
       },
     },
     '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
-    '9': { class_type: 'SaveImage', inputs: { filename_prefix: 'parreiraclaw', images: ['8', 0] } },
+    // PreviewImage: fica na pasta temporária do ComfyUI (limpa quando ele reinicia); a cópia que vale é a do
+    // tocador, com rotação. SaveImage acumulava todas as imagens no volume do container.
+    '9': { class_type: 'PreviewImage', inputs: { images: ['8', 0] } },
   };
 }
 
@@ -159,7 +161,7 @@ export function generationWorkflow(p: GenerationParams): ComfyWorkflow {
 
   if (p.preview) {
     workflow['20'] = { class_type: 'ImageScaleBy', inputs: { image: ['8', 0], upscale_method: 'bilinear', scale_by: 0.35 } };
-    workflow['21'] = { class_type: 'SaveImage', inputs: { filename_prefix: 'previa', images: ['20', 0] } };
+    workflow['21'] = { class_type: 'PreviewImage', inputs: { images: ['20', 0] } };
   }
   return workflow;
 }

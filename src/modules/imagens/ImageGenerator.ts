@@ -12,8 +12,10 @@ export type ImageQuality = 'rapido' | 'qualidade';
 
 export interface ImageGeneratorOptions {
   comfy: ComfyUIClient;
-  /** Pasta onde os PNGs ficam (workspace/imagens). */
+  /** Pasta onde os PNGs ficam (tmp/<perfil>/imagens). */
   outputDir: string;
+  /** Quantas imagens ficam na pasta; acima disso, as mais antigas são apagadas primeiro (padrão 10). */
+  keep?: number;
   /** Estilo → trecho do nome do checkpoint (IMAGE_MODELS). */
   models: Record<string, string>;
   defaultStyle: string;
@@ -164,6 +166,7 @@ export class ImageGenerator {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const file = path.join(this.options.outputDir, `${stamp}-${style.id}-${chosen!.seed}${batch > 1 ? `-v${chosen!.variant}` : ''}.png`);
     fs.writeFileSync(file, png);
+    this.prune(file);
     this.scheduleUnload();
     const ms = Date.now() - started;
     this.logger.info(`🖼️ Imagem pronta em ${(ms / 1000).toFixed(1)} s: ${file}`);
@@ -200,6 +203,19 @@ export class ImageGenerator {
       if (images.length) inputs.push({ images, weight, faceWeight: weight * 0.6 });
     }
     return inputs;
+  }
+
+  /** Mantém só as `keep` imagens mais recentes: a primeira gerada é a primeira apagada (nunca a recém-criada). */
+  private prune(justCreated: string): void {
+    const keep = this.options.keep ?? 10;
+    const files = fs
+      .readdirSync(this.options.outputDir)
+      .filter((f) => f.toLowerCase().endsWith('.png'))
+      .map((f) => ({ file: path.join(this.options.outputDir, f), mtime: fs.statSync(path.join(this.options.outputDir, f)).mtimeMs }))
+      .sort((a, b) => a.mtime - b.mtime || a.file.localeCompare(b.file));
+    const excess = files.filter((f) => f.file !== justCreated).slice(0, Math.max(0, files.length - keep));
+    for (const { file } of excess) fs.rmSync(file, { force: true });
+    if (excess.length) this.logger.info(`🧹 ${excess.length} imagem(ns) antiga(s) apagada(s): ficam as ${keep} mais recentes`);
   }
 
   /** Largura e altura do PNG (cabeçalho IHDR); no img2img o tamanho vem da foto. */

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { ResponseAttachments } from '../src/agent/ResponseAttachments.js';
 import { TaskContext } from '../src/llm/orchestration/TaskContext.js';
+import { TempFileManager } from '../src/utils/TempFileManager.js';
 import { ImageOutputStrategy } from '../src/canais/telegram/output/strategies/ImageOutputStrategy.js';
 import type { TelegramSender } from '../src/canais/telegram/output/TelegramSender.js';
 import { Config } from '../src/config/Config.js';
@@ -159,6 +160,32 @@ describe('Imagens: geração no ComfyUI', () => {
     const after = calls.slice(before).map((c) => c.url);
     assert.ok(after.some((u) => u.endsWith('/free')), 'ComfyUI liberado');
     assert.ok(after.filter((u) => u.endsWith('/api/generate')).length >= 2, 'Ollama descarregado (antes de gerar e na liberação)');
+  });
+
+  it('guarda só as 10 imagens mais recentes: a primeira gerada é a primeira apagada', async () => {
+    const { fetcher } = fakeServices();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rotacao-'));
+    for (let i = 0; i < 3; i++) {
+      const old = path.join(dir, `antiga-${i}.png`);
+      fs.writeFileSync(old, PNG);
+      fs.utimesSync(old, new Date(2020, 0, i + 1), new Date(2020, 0, i + 1));
+    }
+    const gen = generator(fetcher, { outputDir: dir, keep: 3 });
+    const first = await gen.generate({ description: 'boat', seed: 1 });
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['antiga-1.png', 'antiga-2.png', path.basename(first.path)].sort(), 'saiu a mais antiga');
+    await gen.generate({ description: 'boat', seed: 2 });
+    assert.ok(!fs.existsSync(path.join(dir, 'antiga-1.png')) && fs.existsSync(path.join(dir, 'antiga-2.png')));
+    assert.equal(fs.readdirSync(dir).length, 3);
+  });
+
+  it('a limpeza de início da pasta temporária preserva as imagens', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-'));
+    fs.mkdirSync(path.join(dir, 'imagens'));
+    fs.writeFileSync(path.join(dir, 'imagens', 'a.png'), PNG);
+    fs.writeFileSync(path.join(dir, 'audio-velho.ogg'), 'x');
+    new TempFileManager(dir).initialize();
+    assert.deepEqual(fs.readdirSync(dir), ['imagens']);
+    assert.ok(fs.existsSync(path.join(dir, 'imagens', 'a.png')));
   });
 
   it('ComfyUI desligado e erro de execução viram mensagens amigáveis', async () => {

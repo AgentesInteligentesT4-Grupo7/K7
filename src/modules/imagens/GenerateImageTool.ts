@@ -97,7 +97,7 @@ export class GenerateImageTool extends BaseTool {
     return {
       output: JSON.stringify({
         ok: true,
-        arquivo: path.relative(this.workspaceDir, image.path).split(path.sep).join('/'),
+        arquivo: path.basename(image.path),
         seed: image.seed,
         estilo: image.style,
         modelo: image.checkpoint,
