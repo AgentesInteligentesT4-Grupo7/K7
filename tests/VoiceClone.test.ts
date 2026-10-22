@@ -9,6 +9,7 @@ import type { ITextToSpeech } from '../src/voice/tts/TextToSpeech.js';
 import { VoiceCloneTagParser } from '../src/canais/comum/VoiceCloneTagParser.js';
 import { AudioSampleConverter, UnsupportedAudioFormatError } from '../src/voice/AudioSampleConverter.js';
 import { ChatterboxVoiceCloner } from '../src/voice/ChatterboxVoiceCloner.js';
+import { VoiceCloneService } from '../src/voice/VoiceCloneService.js';
 import { VoiceLibrary, VoiceNotFoundError } from '../src/voice/VoiceLibrary.js';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'voz-amostra.ogg');
@@ -133,6 +134,22 @@ describe('ChatterboxVoiceCloner', () => {
         error instanceof UserFacingError &&
         error.userMessage === 'o Chatterbox recusou a amostra da voz "galvao" (Reference audio duration (30.71s) exceeds maximum allowed (30s)). Grave de novo com /minhavoz galvao, de 10 a 25 segundos.',
     );
+  });
+});
+
+describe('Apagar voz', () => {
+  it('apaga pelo nome (todas as extensões), avisa quando era a padrão e dá erro claro se não existir', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vozes-'));
+    const library = new VoiceLibrary({ dir, defaultVoice: 'minha-voz' }, new AudioSampleConverter());
+    await library.save('minha-voz', silenceWav(12), 'wav');
+    await library.save('galvao', silenceWav(12), 'wav');
+    fs.writeFileSync(path.join(dir, 'galvao.mp3'), 'mp3');
+    const service = new VoiceCloneService(library, {} as never);
+
+    assert.equal(service.remove('Galvao'), '🗑️ Voz "galvao" apagada. Restam: minha-voz.');
+    assert.deepEqual(fs.readdirSync(dir), ['minha-voz.wav'], 'some o .wav e o .mp3 de mesmo nome');
+    assert.equal(service.remove('minha-voz'), '🗑️ Voz "minha-voz" apagada. Nenhuma voz cadastrada agora. Ela era a voz padrão: grave outra com /minhavoz minha-voz.');
+    assert.throws(() => service.remove('raul'), (e: unknown) => e instanceof VoiceNotFoundError && /Voz "raul" não encontrada\. Nenhuma voz cadastrada\./.test(e.userMessage));
   });
 });
 

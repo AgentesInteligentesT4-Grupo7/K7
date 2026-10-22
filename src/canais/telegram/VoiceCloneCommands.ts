@@ -30,6 +30,7 @@ const AUDIO_DOCUMENT = /\.(ogg|oga|opus|mp3|wav)$/i;
  *   /minhavoz [nome] — o próximo áudio enviado vira a amostra da voz (salva em VOICE_CLONE_DIR)
  *   /falar [@voz] texto — devolve um voice note com a voz clonada falando exatamente o texto
  *   /vozes — lista as vozes da pasta
+ *   /apagarvoz nome — apaga uma voz da pasta
  *   /cancelar — cancela o cadastro pendente
  */
 export class VoiceCloneCommands {
@@ -42,6 +43,7 @@ export class VoiceCloneCommands {
     bot.command('minhavoz', (ctx) => this.handleEnroll(ctx));
     bot.command('falar', (ctx) => this.handleSpeak(ctx));
     bot.command('vozes', (ctx) => this.handleList(ctx));
+    bot.command('apagarvoz', (ctx) => this.handleRemove(ctx));
     bot.command('cancelar', (ctx) => this.handleCancel(ctx));
     bot.on(['message:voice', 'message:audio', 'message:document'], (ctx, next) => this.captureSample(ctx, next));
   }
@@ -79,9 +81,26 @@ export class VoiceCloneCommands {
     const voices = this.deps.service.list();
     const dir = this.deps.service.voicesDir;
     const text = voices.length
-      ? `🗣️ Vozes cadastradas (${voices.length}):\n\n${voices.map((voice) => `- ${voice.name} (${path.basename(voice.filePath)})`).join('\n')}\n\nPasta: ${dir}\nUse: /falar @nome texto`
+      ? `🗣️ Vozes cadastradas (${voices.length}):\n\n${voices.map((voice) => `- ${voice.name} (${path.basename(voice.filePath)})`).join('\n')}\n\nPasta: ${dir}\nUse: /falar @nome texto\nApagar: /apagarvoz nome`
       : `🗣️ Nenhuma voz cadastrada.\n\nUse /minhavoz e envie um áudio, ou coloque arquivos .wav/.mp3/.ogg em:\n${dir}`;
     await this.deps.output.notify(ctx.chat!.id, text);
+  }
+
+  private async handleRemove(ctx: Context): Promise<void> {
+    const name = String(ctx.match ?? '').trim().replace(/^@/, '');
+    const chatId = ctx.chat!.id;
+    if (!name) {
+      const voices = this.deps.service.list().map((v) => v.name);
+      await this.deps.output.notify(chatId, `Uso: /apagarvoz <nome>${voices.length ? `\nVozes: ${voices.join(', ')}` : ''}`);
+      return;
+    }
+    try {
+      const message = this.deps.service.remove(name);
+      this.logger.info(`🗑️ Voz "${name}" apagada`);
+      await this.deps.output.notify(chatId, message);
+    } catch (error) {
+      await this.deps.output.sendError(chatId, error);
+    }
   }
 
   private async handleCancel(ctx: Context): Promise<void> {

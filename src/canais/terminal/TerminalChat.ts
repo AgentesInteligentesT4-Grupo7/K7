@@ -38,7 +38,7 @@ export const TERMINAL_HELP = [
   '  /anexos                         lista as imagens e documentos guardados',
   '  /audio <caminho> [legenda]      transcreve um áudio e envia como mensagem de voz',
   '  /falar [@voz] <texto>           gera um áudio com a voz clonada',
-  '  /vozes                          lista as vozes cadastradas',
+  '  /vozes   /apagarvoz <nome>      lista as vozes cadastradas / apaga uma',
   '  /nova                           inicia uma nova conversa',
   '  /skills                         lista as skills',
   '  /memoria   /esquecer <n>|tudo   o que o agente lembra (resumo e fatos) / apagar',
@@ -92,6 +92,16 @@ export class TerminalChat {
             ? `${voices.map((v) => `- ${v.name}`).join('\n')}\nPasta: ${voiceClone.voicesDir}`
             : `Nenhuma voz cadastrada. Coloque .wav/.mp3/.ogg em: ${voiceClone.voicesDir}`,
         );
+      }
+      case '/apagarvoz': {
+        const { voiceClone } = this.deps;
+        if (!voiceClone) return this.deps.output.sendError(0, new ModuleDisabledError('voz-clonada', 'A clonagem de voz'));
+        if (!rest.trim()) return this.say('Uso: /apagarvoz <nome>');
+        try {
+          return this.say(voiceClone.remove(rest.trim().replace(/^@/, '')));
+        } catch (error) {
+          return this.deps.output.sendError(0, error);
+        }
       }
       case '/falar': {
         const match = /^@(\S+)\s+([\s\S]+)$/.exec(rest);

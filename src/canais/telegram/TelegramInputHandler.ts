@@ -112,7 +112,7 @@ export class TelegramInputHandler {
         '/anexos — imagens e documentos guardados (o agente consulta quando você citar)',
         '/minhavoz — cadastra sua voz (envie um áudio de 10 a 30 s em seguida)',
         '/falar <texto> — devolve um áudio com a sua voz clonada',
-        '/vozes — lista as vozes cadastradas',
+        '/vozes — lista as vozes cadastradas;  /apagarvoz <nome> — apaga uma',
       ].join('\n'),
     );
   }

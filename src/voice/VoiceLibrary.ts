@@ -60,6 +60,26 @@ export class VoiceLibrary {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  /**
+   * Apaga a voz pelo nome exato (sem a padrão como atalho: apagar exige dizer qual).
+   * Remove todos os arquivos com esse nome (.wav, .mp3, .ogg...) e avisa se era a voz padrão.
+   */
+  remove(name: string): { removed: string; wasDefault: boolean; remaining: VoiceSample[] } {
+    const key = VoiceLibrary.sanitizeName(name);
+    const voices = this.list();
+    const matches = voices.filter((voice) => voice.name.toLowerCase() === key);
+    if (!key || matches.length === 0) {
+      const available = voices.map((v) => v.name).join(', ');
+      throw new VoiceNotFoundError(`Voz "${name.trim()}" não encontrada.${available ? ` Disponíveis: ${available}.` : ' Nenhuma voz cadastrada.'}`);
+    }
+    for (const voice of matches) fs.rmSync(voice.filePath, { force: true });
+    return {
+      removed: matches[0]!.name,
+      wasDefault: VoiceLibrary.sanitizeName(this.options.defaultVoice ?? '') === key,
+      remaining: this.list(),
+    };
+  }
+
   /** Resolve a voz pelo nome (sem diferenciar maiúsculas); sem nome usa a padrão ou a única existente. */
   resolve(name?: string): VoiceSample {
     const voices = this.list();

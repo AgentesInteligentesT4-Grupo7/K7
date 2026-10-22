@@ -20,7 +20,19 @@ export class VoiceCloneService {
     return this.library.list();
   }
 
-  enroll(name: string, audio: Buffer, extension: string): Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
+  /** Apaga a voz e devolve a mensagem para o usuário (a mesma no Telegram e no terminal). */
+  remove(name: string): string {
+    const { removed, wasDefault, remaining } = this.library.remove(name);
+    const left = remaining.length ? `Restam: ${remaining.map((v) => v.name).join(', ')}.` : 'Nenhuma voz cadastrada agora.';
+    const hint = wasDefault
+      ? remaining.length
+        ? ` Ela era a voz padrão: agora use /falar @nome, ou grave outra com /minhavoz ${removed}.`
+        : ` Ela era a voz padrão: grave outra com /minhavoz ${removed}.`
+      : '';
+    return `🗑️ Voz "${removed}" apagada. ${left}${hint}`;
+  }
+
+  enroll(name: string, audio: Buffer, extension: string):Promise<{ sample: VoiceSample; durationSeconds: number | null; trimmedFromSeconds?: number }> {
     return this.library.save(name, audio, extension);
   }
 

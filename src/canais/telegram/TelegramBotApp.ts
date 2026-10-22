@@ -21,6 +21,7 @@ export class TelegramBotApp {
       { command: 'falar', description: 'Gerar áudio com a sua voz clonada: /falar <texto>' },
       { command: 'minhavoz', description: 'Cadastrar sua voz (envie um áudio em seguida)' },
       { command: 'vozes', description: 'Listar vozes cadastradas' },
+      { command: 'apagarvoz', description: 'Apagar uma voz: /apagarvoz <nome>' },
       { command: 'skills', description: 'Listar skills instaladas' },
       { command: 'modelos', description: 'Ranking dos modelos gratuitos (orquestrador)' },
       { command: 'modelo', description: 'Qual modelo respondeu a última mensagem' },
