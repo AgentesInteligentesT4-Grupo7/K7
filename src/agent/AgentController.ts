@@ -67,6 +67,9 @@ export class AgentController {
 
     const history = memory.getContextWindow(conversation.id);
     if (!saved) history.push({ role: 'user', content: input.text });
+    // Imagens vão só na mensagem atual (o histórico guarda a referência "[Anexo #id]", não a imagem).
+    const current = history.at(-1);
+    if (input.images?.length && current?.role === 'user') current.images = input.images;
 
     // Hot-reload: as skills são relidas do disco a cada requisição.
     const skills = this.deps.skillLoader.loadAll();
@@ -76,7 +79,7 @@ export class AgentController {
       this.deps.skillRouter.routeWithTask(input.text, skills),
     );
     const skill = routed.skill;
-    const task: Task = routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text);
+    const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const { result, images } = await ResponseAttachments.collect(() =>
       TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input })),

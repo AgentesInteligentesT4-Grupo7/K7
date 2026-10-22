@@ -156,12 +156,12 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       <div id="attachment"><span class="file" id="attachment-name"></span><button type="button" id="attachment-remove" title="Remover anexo">✕</button></div>
       <textarea id="input" rows="1" placeholder="Mensagem…" autofocus></textarea>
       <div id="tools">
-        <button class="tool" type="button" id="attach" title="Anexar PDF ou .md">📎</button>
+        <button class="tool" type="button" id="attach" title="Anexar imagem, PDF ou texto">📎</button>
         <button class="tool hidden" type="button" id="mic" title="Gravar áudio">🎤</button>
         <button class="tool hidden" type="button" id="speak" title="Responder em áudio">🔊 <small>áudio</small></button>
         <button id="send" type="submit" title="Enviar (Enter)">↑</button>
       </div>
-      <input type="file" id="file" accept=".pdf,.md,application/pdf,text/markdown" class="hidden">
+      <input type="file" id="file" accept="image/*,.pdf,.md,.txt,.csv,.json,.html,application/pdf,text/markdown,text/plain" class="hidden">
     </form>
     <div id="hint">Enter envia · Shift+Enter quebra linha · tudo roda no seu computador</div>
   </div>

@@ -14,6 +14,9 @@ import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
+import { AttachmentService } from '../modules/anexos/AttachmentService.js';
+import { AttachmentStore } from '../modules/anexos/AttachmentStore.js';
+import { createAttachmentTools } from '../modules/anexos/AttachmentTools.js';
 import { ComfyUIClient } from '../modules/imagens/ComfyUIClient.js';
 import { GenerateImageTool } from '../modules/imagens/GenerateImageTool.js';
 import { ImageGenerator } from '../modules/imagens/ImageGenerator.js';
@@ -71,6 +74,8 @@ export interface Core {
   ffmpeg: FfmpegConverter;
   /** Ausente quando o módulo "voz-clonada" está desligado. */
   voiceClone?: VoiceCloneService;
+  /** Ausente quando o módulo "anexos" está desligado (imagens são recusadas e documentos vão inteiros). */
+  attachments?: AttachmentService;
   documents: DocumentExtractor;
   /** Cria o Facade ligado ao `IOutputHandler` do canal. */
   createController(output: IOutputHandler): AgentController;
@@ -115,6 +120,15 @@ export function createCore(config: Config, options: CoreOptions): Core {
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
   if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
   if (modules.has('pesquisa-web')) for (const tool of createWebTools(config)) registry.register(tool);
+  // Módulo anexos: biblioteca ao lado do banco do perfil; a retenção roda só no processo principal (o bot).
+  const attachments = modules.has('anexos') ? new AttachmentService(new AttachmentStore(db, config.attachments.dir), llm) : undefined;
+  if (attachments) {
+    for (const tool of createAttachmentTools(attachments)) registry.register(tool);
+    if (options.databaseMaintenance) {
+      const removed = attachments.store.cleanup(config.attachments.retentionDays, config.attachments.maxBytes);
+      if (removed) logger.info(`🧹 Anexos: ${removed} removido(s) pela retenção`);
+    }
+  }
   const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
   if (images) registry.register(new GenerateImageTool(images, config.workspaceDir));
   if (modules.has('http') && config.httpToolsDir) {
@@ -164,6 +178,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     stt,
     ffmpeg,
     voiceClone,
+    attachments,
     documents: new DocumentExtractor(),
     createController: (output) =>
       new AgentController({

@@ -1,6 +1,7 @@
+import type { ImagePart } from '../llm/types.js';
 import type { GeneratedImage } from './ResponseAttachments.js';
 
-export type InputSource = 'text' | 'document' | 'voice';
+export type InputSource = 'text' | 'document' | 'voice' | 'image';
 export type Channel = 'telegram' | 'terminal' | 'web';
 
 /** Entrada já normalizada em texto pelo TelegramInputHandler. */
@@ -16,6 +17,8 @@ export interface AgentInput {
   requiresAudioReply: boolean;
   voiceId?: string;
   attachmentName?: string;
+  /** Imagens da mensagem atual (módulo anexos): vão ao LLM com visão junto do texto. */
+  images?: ImagePart[];
 }
 
 /** Resultado final da pipeline, entregue ao TelegramOutputHandler. */

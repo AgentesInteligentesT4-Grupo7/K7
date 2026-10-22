@@ -9,9 +9,17 @@ export interface ToolCall {
   extraContent?: unknown;
 }
 
+/** Imagem anexada a uma mensagem do usuário (visão; spec attachments RF-06). */
+export interface ImagePart {
+  mime: string;
+  base64: string;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   content: string | null;
+  /** Só em mensagens do usuário: imagens enviadas junto do texto (o provider precisa ter visão). */
+  images?: ImagePart[];
   toolCalls?: ToolCall[];
   toolCallId?: string;
   /** Nome da ferramenta (mensagens role=tool). */

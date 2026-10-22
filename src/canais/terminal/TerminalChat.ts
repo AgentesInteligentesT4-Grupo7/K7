@@ -4,6 +4,7 @@ import type { AgentController } from '../../agent/AgentController.js';
 import type { AgentInput } from '../../agent/types.js';
 import { DocumentParseError, EmptyAudioError, ModuleDisabledError, UnsupportedAttachmentError, UserFacingError } from '../../errors/AppErrors.js';
 import type { OrchestratorCommands } from '../../llm/orchestration/OrchestratorCommands.js';
+import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
 import { AudioIntentDetector } from '../../voice/AudioIntentDetector.js';
 import type { DocumentExtractor } from '../../documents/DocumentExtractor.js';
 import type { ISpeechToText } from '../../voice/stt/WhisperTranscriber.js';
@@ -24,6 +25,8 @@ export interface TerminalChatDeps {
   voiceId: string;
   maxDocumentChars: number;
   write?: (text: string) => void;
+  /** Módulo anexos: /imagem, /anexos e /arquivo passando pela biblioteca. */
+  attachments?: AttachmentService;
   /** Presente com LLM_ORCHESTRATOR=on: /modelos, /modelo, /bom, /ruim. */
   orchestratorCommands?: OrchestratorCommands;
 }
@@ -31,6 +34,8 @@ export interface TerminalChatDeps {
 export const TERMINAL_HELP = [
   'Comandos:',
   '  /arquivo <caminho> [instrução]  envia um PDF ou .md (ex.: /arquivo "C:\\docs\\relatório.pdf" resuma)',
+  '  /imagem <caminho> [pergunta]    envia uma imagem (print, foto, recibo) para o agente olhar',
+  '  /anexos                         lista as imagens e documentos guardados',
   '  /audio <caminho> [legenda]      transcreve um áudio e envia como mensagem de voz',
   '  /falar [@voz] <texto>           gera um áudio com a voz clonada',
   '  /vozes                          lista as vozes cadastradas',
@@ -108,7 +113,16 @@ export class TerminalChat {
         if (lower === '/modelo') return this.say(commands.lastDecision(this.deps.userId));
         return this.say(commands.feedback(this.deps.userId, lower === '/bom' ? 1 : -1));
       }
+      case '/imagem':
+        return this.withInput(() => this.attachmentInput(rest));
+      case '/anexos': {
+        const { attachments } = this.deps;
+        if (!attachments) return this.deps.output.sendError(0, new ModuleDisabledError('anexos', 'A biblioteca de anexos'));
+        const items = attachments.store.list(this.deps.userId, { limit: 20 });
+        return this.say(items.length ? items.map((a) => `#${a.id} · ${a.name} · ${a.kind} · ${a.createdAt.slice(0, 16)}`).join('\n') : 'Nenhum anexo guardado.');
+      }
       case '/arquivo':
+        if (this.deps.attachments) return this.withInput(() => this.attachmentInput(rest));
         return this.withInput(() => this.documentInput(rest));
       case '/audio':
         return this.withInput(() => this.audioInput(rest));
@@ -133,6 +147,26 @@ export class TerminalChat {
     }
     this.write('\x1b[2m⏳ pensando...\x1b[0m\n');
     await this.deps.controller.handle(input);
+  }
+
+  /** Imagem ou documento pela biblioteca de anexos (referência + trecho, imagem para visão). */
+  private async attachmentInput(rest: string): Promise<AgentInput> {
+    const { attachments } = this.deps;
+    if (!attachments) throw new ModuleDisabledError('anexos', 'Imagens');
+    const { filePath, remainder } = TerminalChat.parsePathArgument(rest);
+    if (!filePath) throw new UserFacingError('Informe o caminho: /imagem <caminho> [pergunta]');
+    TerminalChat.assertFile(filePath);
+    const name = path.basename(filePath);
+    if (!AttachmentService.supports(name)) throw new UnsupportedAttachmentError(name);
+    const item = await attachments.ingest({ userId: this.deps.userId, name, mime: '', data: fs.readFileSync(filePath), caption: remainder });
+    const built = attachments.buildInput([item], remainder);
+    return this.input({
+      text: built.text,
+      source: built.images.length ? 'image' : 'document',
+      requiresAudioReply: AudioIntentDetector.resolve(remainder, false),
+      attachmentName: built.attachmentName,
+      ...(built.images.length ? { images: built.images } : {}),
+    });
   }
 
   private async documentInput(rest: string): Promise<AgentInput> {

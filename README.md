@@ -211,6 +211,22 @@ cita as URLs ("Fontes:"). Ferramentas: `pesquisar_web`, `ler_pagina` (HTML e PDF
 - Skills podem pedir mais passos com `max_iterations` no frontmatter (até `MAX_ITERATIONS_HARD_CAP`); ao
   estourar, o agente entrega o que já levantou em vez de um erro.
 
+## Imagens e documentos enviados (módulo `anexos`)
+
+Mande uma foto, print, recibo, PDF ou arquivo de texto (Telegram, `/imagem` e `/arquivo` no terminal, 📎 no
+navegador) e pergunte sobre ele. Tudo vai para uma **biblioteca de anexos** com ID, então dá para voltar
+depois sem reenviar ("naquele recibo de ontem, qual era o CNPJ?").
+
+- **Imagens** vão para um modelo com visão: o orquestrador escolhe um gratuito que enxergue imagem. Álbuns do
+  Telegram chegam como uma mensagem só.
+- **Documentos grandes** entram no histórico como referência + trecho; o agente lê o resto quando precisa.
+- Ferramentas: `listar_anexos`, `ler_anexo` (OCR da imagem por visão, com cache), `buscar_nos_anexos` (busca
+  por palavra, sem diferenciar acentos) e `analisar_imagem`. Comandos: `/anexos`, `/apagar_anexo <id>`.
+- Ficam em `dados/<perfil>/anexos/`, por usuário, sem duplicar arquivo igual. Retenção:
+  `ATTACHMENTS_RETENTION_DAYS` (90) e `ATTACHMENTS_MAX_GB` (5).
+- **Privacidade:** a imagem é enviada ao modelo com visão escolhido (na nuvem, se não houver um local).
+- Ainda não: OCR local (PP-OCRv5) e Word/Excel/PowerPoint (exigem pacotes e modelos extras).
+
 ## Imagens na GPU (módulo `imagens`)
 
 O agente desenha ilustrações, HQ, anime e mangá com modelos SDXL no [ComfyUI](https://github.com/comfyanonymous/ComfyUI),

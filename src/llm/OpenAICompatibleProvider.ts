@@ -113,6 +113,13 @@ export class OpenAICompatibleProvider implements ILlmProvider {
 
   private toWireMessage(message: ChatMessage): Record<string, unknown> {
     const wire: Record<string, unknown> = { role: message.role, content: message.content };
+    if (message.role === 'user' && message.images?.length) {
+      // Formato multimodal OpenAI: partes de texto e de imagem (data URI). Gemini, Groq, OpenRouter e Ollama aceitam.
+      wire.content = [
+        ...(message.content ? [{ type: 'text', text: message.content }] : []),
+        ...message.images.map((image) => ({ type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.base64}` } })),
+      ];
+    }
     if (message.role === 'assistant' && message.toolCalls?.length) {
       wire.tool_calls = message.toolCalls.map((call) => ({
         id: call.id,

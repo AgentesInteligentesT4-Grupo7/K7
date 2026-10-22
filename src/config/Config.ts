@@ -118,6 +118,8 @@ export class Config {
   /** Clonagem de voz (Chatterbox na GPU) e pasta das amostras. */
   /** Canal web (chat no navegador): só em 127.0.0.1 por padrão, protegido por token. */
   readonly web: { host: string; port: number; token: string | undefined; userId: string };
+  /** Módulo anexos (spec attachments): biblioteca ao lado do banco, isolada por perfil. */
+  readonly attachments: { dir: string; retentionDays: number; maxBytes: number };
   /** Módulo pesquisa-web (spec web-search). */
   readonly search: {
     providers: string[];
@@ -242,6 +244,11 @@ export class Config {
       langCode: env.KOKORO_LANG?.trim() || 'p',
     };
     this.ttsVoice = env.TTS_VOICE?.trim() || 'pt-BR-ThalitaMultilingualNeural';
+    this.attachments = {
+      dir: path.resolve(rootDir, env.ATTACHMENTS_DIR?.trim() || path.join(path.dirname(this.dbPath), 'anexos')),
+      retentionDays: Config.positiveInt(env.ATTACHMENTS_RETENTION_DAYS, 90),
+      maxBytes: Config.positiveInt(env.ATTACHMENTS_MAX_GB, 5) * 1024 ** 3,
+    };
     this.search = {
       providers: Config.list(env.SEARCH_PROVIDERS || 'searxng,duckduckgo,tavily').map((p) => p.toLowerCase()),
       searxngUrl: (env.SEARXNG_BASE_URL?.trim() || 'http://localhost:8888').replace(/\/+$/, ''),

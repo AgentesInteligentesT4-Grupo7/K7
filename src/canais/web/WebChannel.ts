@@ -8,6 +8,7 @@ import type { Core } from '../../app/createCore.js';
 import { DocumentParseError, EmptyAudioError, UnsupportedAttachmentError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
 import { Logger } from '../../utils/Logger.js';
 import { sanitizeText, truncate } from '../../utils/text.js';
+import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
 import { AudioIntentDetector } from '../../voice/AudioIntentDetector.js';
 import { renderPage } from './page.js';
 import { type WebReply, WebOutputHandler } from './WebOutputHandler.js';
@@ -188,6 +189,25 @@ export class WebChannel {
       if (!transcript) throw new EmptyAudioError();
       const spoken = text ? `${text}\n\n${transcript}` : transcript;
       return { ...base, text: spoken, source: 'voice', ...withVoice(audioReply(spoken, true)) };
+    }
+
+    // Módulo anexos: imagem ou documento vai para a biblioteca (referência + trecho, imagem para visão).
+    if (body.anexo && this.core.attachments) {
+      const name = path.basename(body.anexo.nome || 'arquivo');
+      if (!AttachmentService.supports(name, body.anexo.tipo)) throw new UnsupportedAttachmentError(name);
+      const data = Buffer.from(body.anexo.base64, 'base64');
+      if (data.length === 0) throw new UserFacingError('Arquivo vazio.');
+      if (data.length > this.core.config.maxDocumentBytes) throw new UserFacingError('Arquivo grande demais.');
+      const item = await this.core.attachments.ingest({ userId: this.options.userId, name, mime: body.anexo.tipo ?? '', data, caption: text });
+      const built = this.core.attachments.buildInput([item], text);
+      return {
+        ...base,
+        text: built.text,
+        source: built.images.length ? 'image' : 'document',
+        attachmentName: built.attachmentName,
+        ...(built.images.length ? { images: built.images } : {}),
+        ...withVoice(audioReply(text, false)),
+      };
     }
 
     if (body.anexo) {

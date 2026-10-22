@@ -55,6 +55,7 @@ async function main(): Promise<void> {
     documents: core.documents,
     stt: core.stt,
     voiceClone: core.voiceClone,
+    attachments: core.attachments,
     userId,
     voiceId: core.tts.voice,
     maxDocumentChars: config.maxDocumentChars,

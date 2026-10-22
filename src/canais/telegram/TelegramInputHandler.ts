@@ -95,11 +95,12 @@ export class TelegramInputHandler {
       [
         `${(this.deps.identity ?? DEFAULT_IDENTITY).emoji} ${(this.deps.identity ?? DEFAULT_IDENTITY).name} online, rodando localmente.`,
         '',
-        'Envie texto, PDF, arquivo .md ou áudio (voice note) que eu processo por aqui.',
+        'Envie texto, imagem, PDF, arquivo .md ou áudio (voice note) que eu processo por aqui.',
         '',
         'Comandos:',
         '/nova — inicia uma nova conversa (arquiva o histórico atual)',
         '/skills — lista as skills instaladas',
+        '/anexos — imagens e documentos guardados (o agente consulta quando você citar)',
         '/minhavoz — cadastra sua voz (envie um áudio de 10 a 30 s em seguida)',
         '/falar <texto> — devolve um áudio com a sua voz clonada',
         '/vozes — lista as vozes cadastradas',

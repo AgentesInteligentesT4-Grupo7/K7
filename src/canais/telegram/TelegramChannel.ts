@@ -12,6 +12,7 @@ import { ImageOutputStrategy } from './output/strategies/ImageOutputStrategy.js'
 import { TextOutputStrategy } from './output/strategies/TextOutputStrategy.js';
 import { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
 import { TelegramSender } from './output/TelegramSender.js';
+import { TelegramAttachmentHandler } from './TelegramAttachmentHandler.js';
 import { TelegramBotApp } from './TelegramBotApp.js';
 import { TelegramInputHandler } from './TelegramInputHandler.js';
 import { VoiceCloneCommands } from './VoiceCloneCommands.js';
@@ -65,6 +66,21 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     maxDocumentChars: config.maxDocumentChars,
     voiceId: core.tts.voice,
     extraCommands: [
+      ...(core.attachments
+        ? [
+            new TelegramAttachmentHandler({
+              attachments: core.attachments,
+              controller,
+              output,
+              downloader,
+              tmp: core.tmp,
+              queue,
+              notifier,
+              maxBytes: config.maxDocumentBytes,
+              voiceId: core.tts.voice,
+            }),
+          ]
+        : []),
       ...(voiceCommands ? [voiceCommands] : []),
       ...(core.orchestrator
         ? [

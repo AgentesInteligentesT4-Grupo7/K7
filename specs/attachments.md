@@ -1,7 +1,7 @@
 # Spec: Anexos — Imagens, Documentos, OCR e Biblioteca de Arquivos
 
 **Versão:** 1.0
-**Status:** Em Revisão
+**Status:** Implementada em parte (MVP: RF-01, RF-02, RF-04, RF-05, RF-06, RF-10 parcial, RF-11; OCR por visão no lugar do PP-OCRv5; sem DOCX/XLSX/PPTX)
 **Autor:** ParreiraClaw Agent
 **Data:** 2026-10-19
 **Reviewers:** Parreira

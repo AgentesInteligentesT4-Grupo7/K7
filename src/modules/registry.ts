@@ -18,6 +18,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   { id: 'refinamento', descricao: 'Loop criador ↔ crítico com modelos distintos (skill idealizador-analisador)' },
   { id: 'http', descricao: 'Ferramentas HTTP declaradas pelo perfil em ferramentas/*.yaml (APIs REST, sem código)' },
   { id: 'pesquisa-web', descricao: 'Pesquisa na internet, leitura de páginas e notícias (SearXNG/DuckDuckGo, Google News)' },
+  { id: 'anexos', descricao: 'Imagens e documentos enviados: visão, OCR, biblioteca com busca (listar_anexos, ler_anexo...)' },
   { id: 'imagens', descricao: 'Geração de imagens na GPU (ComfyUI + SDXL): ilustração, HQ, anime e mangá' },
 ];
 

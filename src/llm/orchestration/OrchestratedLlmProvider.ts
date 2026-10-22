@@ -216,7 +216,9 @@ export class OrchestratedLlmProvider implements ILlmProvider {
   /** Requisitos da chamada: tools se houver ferramentas; contexto ≈ caracteres/4 + folga de saída. */
   static requirementsFor(request: LlmRequest): Requirements {
     const chars = request.messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
-    return { tools: Boolean(request.tools?.length), vision: false, minContext: Math.ceil(chars / 4) + 2_048 };
+    // Cada imagem custa cerca de 1.000–1.500 tokens de contexto nos modelos com visão.
+    const images = request.messages.reduce((sum, m) => sum + (m.images?.length ?? 0), 0);
+    return { tools: Boolean(request.tools?.length), vision: images > 0, minContext: Math.ceil(chars / 4) + images * 1_500 + 2_048 };
   }
 
   static msUntilMidnight(now = new Date()): number {
