@@ -93,7 +93,9 @@ export class SkillExecutor {
       retrieved: request.retrieved,
     });
 
-    const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });
+    // exige_ferramenta: true no frontmatter → resposta sem nenhuma ação volta para o modelo (não finge o resultado).
+    const requireToolUse = request.skill?.frontmatter?.exige_ferramenta === true;
+    const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill), ...(requireToolUse ? { requireToolUse } : {}) });
     return { ...result, skillName: activeSkill?.name ?? null };
   }
 

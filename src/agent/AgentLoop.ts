@@ -13,7 +13,15 @@ export interface AgentRunInput {
   maxIterations?: number;
   /** Ao estourar o limite, pede uma resposta final com o que já foi levantado em vez de falhar (spec web-search EC-08). */
   finishOnLimit?: boolean;
+  /**
+   * A skill só funciona via ferramenta (ex.: gerar imagem): resposta sem nenhuma chamada e que não é pergunta
+   * volta para o modelo uma vez. Modelos menores "fingem" o resultado imitando respostas do histórico.
+   */
+  requireToolUse?: boolean;
 }
+
+export const NO_TOOL_CORRECTION =
+  'Atenção: você respondeu sem chamar nenhuma ferramenta, então NADA foi feito (nenhuma imagem foi gerada). Não descreva resultados, seeds ou tempos que não aconteceram. Se o pedido é uma ação, chame a ferramenta agora; se falta uma informação essencial, faça só a pergunta.';
 
 export interface AgentStep {
   iteration: number;
@@ -54,6 +62,7 @@ export class AgentLoop {
     const steps: AgentStep[] = [];
 
     const limit = input.maxIterations ?? this.maxIterations;
+    let corrected = false;
     for (let iteration = 1; iteration <= limit; iteration++) {
       this.logger.info(`── Iteração ${iteration}/${limit} ──`);
       const response = await this.provider.chat({ messages, tools });
@@ -72,6 +81,12 @@ export class AgentLoop {
         if (!answer) {
           this.logger.warn('LLM retornou resposta vazia; solicitando nova resposta');
           messages.push({ role: 'user', content: 'Sua resposta anterior veio vazia. Responda ao usuário agora.' });
+          continue;
+        }
+        if (input.requireToolUse && steps.length === 0 && !corrected && !answer.trimEnd().endsWith('?')) {
+          corrected = true;
+          this.logger.warn('⚠️ Resposta sem chamar ferramenta numa skill que exige ação; pedindo para executar de verdade');
+          messages.push({ role: 'assistant', content: answer }, { role: 'user', content: NO_TOOL_CORRECTION });
           continue;
         }
         this.logger.info(`✅ Answer (${response.providerName}): ${preview(answer, 200)}`);

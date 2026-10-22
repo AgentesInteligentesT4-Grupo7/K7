@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AgentLoop, INVALID_JSON_OBSERVATION } from '../src/agent/AgentLoop.js';
+import { AgentLoop, INVALID_JSON_OBSERVATION, NO_TOOL_CORRECTION } from '../src/agent/AgentLoop.js';
 import { MaxIterationsError } from '../src/errors/AppErrors.js';
 import type { JsonSchema } from '../src/llm/types.js';
 import { BaseTool, type ToolResult } from '../src/tools/BaseTool.js';
@@ -49,6 +49,21 @@ describe('AgentLoop', () => {
     assert.equal(provider.requests[1]!.messages.at(-1)!.content, 'eco: oi');
     const plain = setup([{ content: '{"name": "inexistente", "arguments": {}}' }]);
     assert.equal((await plain.loop.run({ systemPrompt: 's', history })).text, '{"name": "inexistente", "arguments": {}}', 'ferramenta que não existe: é só texto');
+  });
+
+  it('skill que exige ação: resposta sem ferramenta (que finge o resultado) volta uma vez; pergunta passa direto', async () => {
+    const { loop, echo, provider } = setup([{ content: 'Imagem gerada! Seed: 123.' }, { toolCalls: [toolCall('eco', '{"texto":"x"}')] }, { content: 'Pronto.' }]);
+    const result = await loop.run({ systemPrompt: 's', history, requireToolUse: true });
+    assert.equal(echo.calls, 1);
+    assert.equal(result.text, 'Pronto.');
+    assert.equal(provider.requests[1]!.messages.at(-1)!.content, NO_TOOL_CORRECTION);
+
+    const question = setup([{ content: 'Qual personagem você quer: o clássico ou o Alien Force?' }]);
+    assert.match((await question.loop.run({ systemPrompt: 's', history, requireToolUse: true })).text, /Alien Force\?$/);
+    assert.equal(question.provider.requests.length, 1, 'pergunta não é corrigida');
+
+    const stubborn = setup([{ content: 'Gerei.' }, { content: 'Gerei mesmo.' }]);
+    assert.equal((await stubborn.loop.run({ systemPrompt: 's', history, requireToolUse: true })).text, 'Gerei mesmo.', 'corrige uma vez só');
   });
 
   it('retorna resposta direta quando não há tool call', async () => {

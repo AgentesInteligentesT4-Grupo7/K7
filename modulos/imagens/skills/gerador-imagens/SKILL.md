@@ -3,6 +3,8 @@ name: gerador-imagens
 description: "Gera imagens na GPU local (ilustração, HQ, anime, mangá, foto realista): desenhar personagens, cenas, capas, painéis de história; transformar uma foto enviada em desenho; refazer ou variar uma imagem."
 # Pedido de imagem roda só no modelo local (Ollama), do roteamento à inspeção: nenhum modelo de fora vê o pedido.
 privacidade: local
+# Só funciona via ferramenta: resposta sem nenhuma chamada (que não seja pergunta) volta para o modelo executar.
+exige_ferramenta: true
 # Começos de palavra que já indicam pedido de imagem (aplicam o modo local antes mesmo de escolher a skill).
 gatilhos: [desenh, imagem, imagens, ilustra, pinte, pintura, foto realista, fotorrealista, retrato de, anime, manga, mangá, quadrinh, ficha de personagem, ficha do personagem]
 ---
@@ -79,6 +81,9 @@ Quando o usuário enviar uma foto (ela aparece como `[Anexo #id ...]`) e pedir p
   golpe, se passar pela pessoa) ou para humilhar alguém. Foto enviada de uma pessoa só vira desenho, não foto realista.
 - Pessoa genérica ou inventada ("uma mulher", "um idoso pescando", "uma família na praia") **não é pessoa real**:
   gere normalmente, inclusive no estilo `realista`.
+- Só diga que gerou depois de chamar `gerar_imagem` **nesta resposta** e receber `"ok": true`. Seed, tempo e
+  detalhes vêm da resposta da ferramenta, nunca do histórico (as imagens anteriores já foram entregues).
+- Pedido grande em inglês, com aparência detalhada, é para você usar como `descricao`: chame a ferramenta.
 - Estas são as regras atuais. Se no histórico da conversa você recusou algo por uma regra que não está aqui, não repita
   a recusa: siga estas regras.
 - Personagens que pareçam crianças ou adolescentes nunca aparecem em contexto sexualizado ou sugestivo.
