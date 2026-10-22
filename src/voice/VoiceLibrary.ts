@@ -124,8 +124,14 @@ export class VoiceLibrary {
     }
     const key = VoiceLibrary.sanitizeName(wanted);
     const found = voices.find((voice) => voice.name.toLowerCase() === key);
-    if (!found) throw new VoiceNotFoundError(`Voz "${wanted}" não encontrada. Disponíveis: ${voices.map((v) => v.name).join(', ')}.`);
-    return found;
+    if (found) return found;
+    const available = voices.map((v) => v.name).join(', ');
+    if (!name?.trim()) {
+      // A voz padrão (VOICE_CLONE_DEFAULT) foi apagada: com uma voz só, ela é a escolha óbvia.
+      if (voices.length === 1) return voices[0]!;
+      throw new VoiceNotFoundError(`A voz padrão "${wanted}" não existe mais. Diga qual usar (ex.: /falar @${voices[0]!.name} texto). Disponíveis: ${available}.`);
+    }
+    throw new VoiceNotFoundError(`Voz "${wanted}" não encontrada. Disponíveis: ${available}.`);
   }
 
   /** Converte e salva uma amostra; substitui a voz de mesmo nome. */

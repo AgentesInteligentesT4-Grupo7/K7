@@ -259,4 +259,25 @@ export class ImageGenerator {
     }, this.options.idleUnloadMs);
     this.idleTimer.unref();
   }
+
+  /**
+   * Resposta com imagem entregue: libera a GPU (modelo do ComfyUI e modelos do Ollama) em `delayMs`,
+   * para não sobrar memória presa entre um pedido e outro (voz, conversa local). Um novo pedido de imagem
+   * dentro do prazo cancela a liberação (quadros seguidos de uma HQ não recarregam o modelo).
+   */
+  releaseGpuSoon(delayMs = 10_000): void {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      void this.queue.then(async () => {
+        try {
+          await this.options.comfy.free();
+          await this.freeOllama();
+          this.logger.info('🧹 GPU liberada depois da entrega da imagem (ComfyUI e Ollama)');
+        } catch (error) {
+          this.logger.debug(`GPU não liberada: ${errorMessage(error)}`);
+        }
+      });
+    }, delayMs);
+    this.idleTimer.unref();
+  }
 }

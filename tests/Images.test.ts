@@ -145,6 +145,22 @@ describe('Imagens: geração no ComfyUI', () => {
     assert.match(String(workflow['7']!.inputs.text), /cartoon, anime/);
   });
 
+  it('depois da entrega libera a GPU (ComfyUI + Ollama); nova imagem dentro do prazo cancela a liberação', async () => {
+    const { calls, fetcher } = fakeServices();
+    const gen = generator(fetcher);
+    await gen.generate({ description: 'lighthouse', seed: 1 });
+    const before = calls.length;
+    gen.releaseGpuSoon(5);
+    await gen.generate({ description: 'lighthouse again', seed: 2 });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(calls.slice(before).filter((c) => c.url.endsWith('/free')).length, 0, 'cancelada pela nova geração');
+    gen.releaseGpuSoon(5);
+    await new Promise((r) => setTimeout(r, 30));
+    const after = calls.slice(before).map((c) => c.url);
+    assert.ok(after.some((u) => u.endsWith('/free')), 'ComfyUI liberado');
+    assert.ok(after.filter((u) => u.endsWith('/api/generate')).length >= 2, 'Ollama descarregado (antes de gerar e na liberação)');
+  });
+
   it('ComfyUI desligado e erro de execução viram mensagens amigáveis', async () => {
     const off = (async () => {
       throw new TypeError('fetch failed');

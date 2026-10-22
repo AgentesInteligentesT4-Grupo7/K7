@@ -274,6 +274,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
         guardrails,
         reasoning: new ReasoningStrategies(llm),
         defaultMode: config.defaultMode,
+        // Depois de entregar imagem, a GPU fica livre para voz e conversa local (IMAGE_RELEASE_AFTER_SEC).
+        ...(images && config.images.releaseAfterMs ? { onImagesDelivered: () => images.releaseGpuSoon(config.images.releaseAfterMs) } : {}),
         ...(contextProviders.length ? { contextProviders } : {}),
       }),
   };

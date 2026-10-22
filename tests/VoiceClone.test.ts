@@ -83,6 +83,17 @@ describe('VoiceLibrary', () => {
     assert.throws(() => library.resolve('zzz'), /não encontrada/);
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('voz padrão apagada: com uma voz só, usa ela; com várias, explica e mostra como escolher', async () => {
+    const dir = tempDir();
+    const library = new VoiceLibrary({ dir, defaultVoice: 'minha-voz' }, converter);
+    fs.writeFileSync(path.join(dir, 'mulher.wav'), silenceWav(5));
+    assert.equal(library.resolve().name, 'mulher');
+    assert.throws(() => library.resolve('minha-voz'), /Voz "minha-voz" não encontrada/, 'pedida pelo nome continua sendo erro');
+    fs.writeFileSync(path.join(dir, 'galvao.wav'), silenceWav(5));
+    assert.throws(() => library.resolve(), /A voz padrão "minha-voz" não existe mais\. Diga qual usar \(ex\.: \/falar @galvao texto\)/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe('ChatterboxVoiceCloner', () => {

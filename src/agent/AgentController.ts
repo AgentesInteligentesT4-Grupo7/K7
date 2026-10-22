@@ -43,6 +43,8 @@ export interface AgentControllerDeps {
   /** Modos de raciocínio (RaR, CoVe) e o padrão da fita (modo_padrao). */
   reasoning?: ReasoningStrategies;
   defaultMode?: ReasoningMode;
+  /** Chamado depois de montar uma resposta com imagens (ex.: liberar a GPU usada pelo gerador). */
+  onImagesDelivered?: () => void;
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -197,6 +199,7 @@ export class AgentController {
     );
 
     this.deps.summarizer?.schedule(conversation.id, memoryUserId);
+    if (images.length) this.deps.onImagesDelivered?.();
     return { text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
   }
 

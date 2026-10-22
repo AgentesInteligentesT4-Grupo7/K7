@@ -187,6 +187,8 @@ export class Config {
     idleUnloadMs: number;
     /** Versões geradas quando há personagem, para a inspeção escolher a melhor (IMAGE_CANDIDATES, até 4). */
     candidates: number;
+    /** Libera a GPU (ComfyUI + Ollama) este tempo depois de entregar a imagem (IMAGE_RELEASE_AFTER_SEC; 0 = não). */
+    releaseAfterMs: number;
   };
   readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
   readonly logLevel: string;
@@ -333,6 +335,8 @@ export class Config {
       timeoutMs: Config.positiveInt(env.IMAGE_TIMEOUT_MS, 300_000),
       idleUnloadMs: Number(env.IMAGE_IDLE_UNLOAD_MIN ?? 2) * 60_000 || 0,
       candidates: Math.min(4, Config.positiveInt(env.IMAGE_CANDIDATES, 3)),
+      // 0 desliga; padrão 10 s depois de entregar a resposta com imagem.
+      releaseAfterMs: Number(env.IMAGE_RELEASE_AFTER_SEC ?? 10) * 1000 || 0,
     };
     this.web = {
       host: env.WEB_HOST?.trim() || '127.0.0.1',
