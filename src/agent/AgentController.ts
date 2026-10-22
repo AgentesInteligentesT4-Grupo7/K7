@@ -1,6 +1,7 @@
 import { UserFacingError, errorMessage } from '../errors/AppErrors.js';
 import { TaskClassifier } from '../llm/orchestration/TaskClassifier.js';
 import { TaskContext } from '../llm/orchestration/TaskContext.js';
+import type { ConversationSummarizer } from '../memory/ConversationSummarizer.js';
 import { ResponseAttachments } from './ResponseAttachments.js';
 import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
@@ -21,6 +22,8 @@ export interface AgentControllerDeps {
   privacyDefault?: PrivacyLevel;
   /** false quando o módulo "voz" está desligado: pedidos de resposta em áudio viram texto. */
   audioReplies?: boolean;
+  /** Resumo incremental em segundo plano (memória v1.1). */
+  summarizer?: ConversationSummarizer;
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -65,7 +68,7 @@ export class AgentController {
       ...(input.attachmentName ? { attachment: input.attachmentName } : {}),
     });
 
-    const history = memory.getContextWindow(conversation.id);
+    const { history, memory: memoryText } = memory.buildContext(conversation.id, userId);
     if (!saved) history.push({ role: 'user', content: input.text });
     // Imagens vão só na mensagem atual (o histórico guarda a referência "[Anexo #id]", não a imagem).
     const current = history.at(-1);
@@ -82,7 +85,7 @@ export class AgentController {
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const { result, images } = await ResponseAttachments.collect(() =>
-      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input })),
+      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText })),
     );
 
     for (const step of result.steps) {
@@ -108,6 +111,7 @@ export class AgentController {
       result.providerName,
     );
 
+    this.deps.summarizer?.schedule(conversation.id, userId);
     return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
   }
 
@@ -124,6 +128,38 @@ export class AgentController {
       })
       .filter(Boolean);
     return urls.length ? { sources: [...new Set(urls)] } : {};
+  }
+
+  /** `/memoria`: o que o agente lembra desta conversa e do usuário (spec memory v1.1 RF-11). */
+  memoryReport(userId: number | string): string {
+    const { memory } = this.deps;
+    const id = String(userId);
+    const conversation = memory.getOrCreateActiveConversation(id, this.deps.providerName);
+    const summary = memory.summaries.latest(conversation.id)?.summary.trim();
+    const facts = memory.summaries.facts(id);
+    return [
+      '🧠 Memória desta conversa:',
+      summary || '(ainda sem resumo: ele é criado quando a conversa fica longa)',
+      '',
+      '📌 Fatos sobre você (valem em todas as conversas):',
+      facts.length ? facts.map((f, i) => `${i + 1}. ${f.fact}`).join('\n') : '(nenhum)',
+      '',
+      'Apagar: /esquecer <número> ou /esquecer tudo',
+    ].join('\n');
+  }
+
+  /** `/esquecer <n>` remove um fato; `/esquecer tudo` limpa fatos e o resumo da conversa ativa. */
+  forget(userId: number | string, arg: string): string {
+    const { memory } = this.deps;
+    const id = String(userId);
+    if (/^tudo$/i.test(arg.trim())) {
+      memory.summaries.clearFacts(id);
+      memory.summaries.clear(memory.getOrCreateActiveConversation(id, this.deps.providerName).id);
+      return '🧹 Esqueci os fatos e o resumo desta conversa.';
+    }
+    const n = Number(arg.trim());
+    const removed = Number.isInteger(n) ? memory.summaries.removeFact(id, n) : undefined;
+    return removed ? `🧹 Esqueci: "${removed}"` : 'Use /esquecer <número do fato> (veja em /memoria) ou /esquecer tudo.';
   }
 
   newConversation(userId: number | string): void {

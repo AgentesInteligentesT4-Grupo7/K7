@@ -14,6 +14,8 @@ export interface SkillExecutionRequest {
   availableSkills: SkillMetadata[];
   history: ChatMessage[];
   input: AgentInput;
+  /** Bloco de memória (resumo + fatos) para o system prompt. */
+  memory?: string;
 }
 
 export interface SkillExecutionResult extends AgentRunResult {
@@ -75,6 +77,7 @@ export class SkillExecutor {
       availableSkills: request.availableSkills,
       activeSkill,
       input: request.input,
+      memory: request.memory,
     });
 
     const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });

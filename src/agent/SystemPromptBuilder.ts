@@ -7,6 +7,8 @@ export interface PromptContext {
   availableSkills: SkillMetadata[];
   activeSkill: { name: string; content: string } | null;
   input: Pick<AgentInput, 'source' | 'requiresAudioReply' | 'attachmentName' | 'channel'>;
+  /** Resumo da conversa + fatos do usuário (memória em camadas). */
+  memory?: string;
 }
 
 /** Monta o System Prompt de cada execução do AgentLoop. */
@@ -19,6 +21,7 @@ export class SystemPromptBuilder {
   build(context: PromptContext): string {
     const sections = [
       this.identitySection(context.input.channel ?? 'telegram'),
+      context.memory ?? '',
       this.reasoningRules(),
       this.toolsSection(),
       this.researchRules(),

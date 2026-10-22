@@ -73,6 +73,8 @@ export class TelegramInputHandler {
     bot.command('start', (ctx) => this.handleStart(ctx));
     bot.command(['nova', 'new', 'reset'], (ctx) => this.handleNewConversation(ctx));
     bot.command('skills', (ctx) => this.handleListSkills(ctx));
+    bot.command('memoria', (ctx) => this.deps.output.notify(ctx.chat.id, this.deps.controller.memoryReport(ctx.from!.id)));
+    bot.command('esquecer', (ctx) => this.deps.output.notify(ctx.chat.id, this.deps.controller.forget(ctx.from!.id, String(ctx.match ?? ''))));
 
     bot.on('message:text', (ctx) => this.handleText(ctx));
     bot.on('message:document', (ctx) => this.handleDocument(ctx));
@@ -100,6 +102,7 @@ export class TelegramInputHandler {
         'Comandos:',
         '/nova — inicia uma nova conversa (arquiva o histórico atual)',
         '/skills — lista as skills instaladas',
+        '/memoria — o que eu lembro desta conversa e de você;  /esquecer <n> | tudo',
         '/anexos — imagens e documentos guardados (o agente consulta quando você citar)',
         '/minhavoz — cadastra sua voz (envie um áudio de 10 a 30 s em seguida)',
         '/falar <texto> — devolve um áudio com a sua voz clonada',

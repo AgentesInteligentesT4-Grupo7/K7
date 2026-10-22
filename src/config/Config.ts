@@ -76,6 +76,17 @@ export class Config {
 
   readonly dbPath: string;
   readonly memoryWindowSize: number;
+  /** Memória em camadas (spec memory v1.1); MEMORY_LAYERED=false volta à janela fixa da v1.0. */
+  readonly memoryLayers: {
+    enabled: boolean;
+    recentMessages: number;
+    summaryTrigger: number;
+    summaryMaxChars: number;
+    compactThreshold: number;
+    tokenBudget: number;
+    factsEnabled: boolean;
+    summaryProvider: ProviderName | undefined;
+  };
   readonly maxMessageChars: number;
 
   /** Pasta de skills do perfil/base (a última camada: sobrescreve as dos módulos). */
@@ -202,6 +213,16 @@ export class Config {
 
     this.dbPath = path.resolve(rootDir, env.DB_PATH?.trim() || './data/parreiraclaw.db');
     this.memoryWindowSize = Config.positiveInt(env.MEMORY_WINDOW_SIZE, 20);
+    this.memoryLayers = {
+      enabled: Config.bool(env.MEMORY_LAYERED, true),
+      recentMessages: Config.positiveInt(env.MEMORY_RECENT_MESSAGES, 8),
+      summaryTrigger: Config.positiveInt(env.MEMORY_SUMMARY_TRIGGER, 10),
+      summaryMaxChars: Config.positiveInt(env.MEMORY_SUMMARY_MAX_CHARS, 2_000),
+      compactThreshold: Config.positiveInt(env.MEMORY_COMPACT_THRESHOLD, 2_000),
+      tokenBudget: Config.positiveInt(env.MEMORY_TOKEN_BUDGET, 6_000),
+      factsEnabled: Config.bool(env.USER_FACTS_ENABLED, true),
+      summaryProvider: env.MEMORY_SUMMARY_PROVIDER?.trim() ? Config.parseProvider(env.MEMORY_SUMMARY_PROVIDER, 'MEMORY_SUMMARY_PROVIDER') : undefined,
+    };
     this.maxMessageChars = Config.positiveInt(env.MAX_MESSAGE_CHARS, 100_000);
 
     this.skillsDir = path.resolve(rootDir, env.SKILLS_DIR?.trim() || './.agents/skills');

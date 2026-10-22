@@ -1,7 +1,7 @@
 # Spec: Memory Module (SQLite Persistence)
 
 **Versão:** 1.1
-**Status:** v1.0 Aprovada · v1.1 (memória resumida) Em Revisão
+**Status:** v1.0 Aprovada · v1.1 (memória resumida) Implementada
 **Autor:** ParreiraClaw Agent
 **Data:** 2026-03-06 (v1.0) · 2026-10-19 (v1.1)
 

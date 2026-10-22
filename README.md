@@ -396,6 +396,20 @@ apenas no log do terminal.
 
 Para entregar um documento como anexo, o LLM envolve o conteúdo em `<arquivo nome="x.md">...</arquivo>`.
 
+## Memória em camadas
+
+Conversas longas não estouram o contexto nem esquecem o começo:
+
+- **Resumo incremental:** quando a conversa cresce, um LLM barato (o do roteamento) resume em segundo plano o
+  que saiu da janela recente: assunto, pedidos (repetidos viram um só), decisões, entregas e pendências.
+- **Compactação:** respostas longas antigas entram no contexto só com o começo, e documentos gerados viram
+  `[documento gerado: x]`. O original fica intacto no banco.
+- **Fatos duradouros:** preferências e dados de projetos ("prefiro respostas curtas", "o app usa Postgres")
+  valem em todas as conversas, inclusive depois do `/nova`.
+- `/memoria` mostra o que o agente lembra; `/esquecer <n>` apaga um fato; `/esquecer tudo` limpa fatos e resumo.
+- Segredos (chaves, tokens, senhas, cartões) nunca entram no resumo. Se o resumo falhar, vale o anterior.
+- `MEMORY_LAYERED=false` volta à janela fixa de `MEMORY_WINDOW_SIZE` mensagens.
+
 ## Dados locais
 
 | Caminho | Conteúdo |

@@ -4,13 +4,27 @@ import { Logger } from '../utils/Logger.js';
 import { sanitizeText, truncate } from '../utils/text.js';
 import { type Conversation, ConversationRepository, type ConversationSummary } from './ConversationRepository.js';
 import type { SqliteDatabase } from './DatabaseConnection.js';
+import { buildHistory, memorySection } from './ContextBuilder.js';
 import { type MessageRole, MessageRepository, type StoredMessage } from './MessageRepository.js';
+import { SummaryRepository } from './SummaryRepository.js';
 
 export interface MemoryOptions {
   /** Quantidade de mensagens recentes repassadas ao AgentLoop (MEMORY_WINDOW_SIZE). */
   windowSize: number;
   /** Limite de caracteres por mensagem persistida (EC-03). */
   maxMessageChars: number;
+  /** Memória em camadas (spec memory v1.1). Ausente = comportamento v1.0 (janela fixa). */
+  layered?: {
+    compactThreshold: number;
+    tokenBudget: number;
+    factsEnabled: boolean;
+  };
+}
+
+export interface BuiltContext {
+  history: ChatMessage[];
+  /** Resumo da conversa + fatos do usuário, para o system prompt (vazio se não houver). */
+  memory: string;
 }
 
 /**
@@ -22,6 +36,7 @@ export class MemoryManager {
   private readonly logger = new Logger('Memory');
   private readonly conversations: ConversationRepository;
   private readonly messages: MessageRepository;
+  readonly summaries: SummaryRepository;
 
   constructor(
     db: SqliteDatabase,
@@ -29,6 +44,7 @@ export class MemoryManager {
   ) {
     this.conversations = new ConversationRepository(db);
     this.messages = new MessageRepository(db);
+    this.summaries = new SummaryRepository(db);
   }
 
   getOrCreateActiveConversation(userId: string, provider: string): Conversation {
@@ -65,6 +81,32 @@ export class MemoryManager {
       this.logger.warn(`Falha ao persistir mensagem (${role}); descartada: ${errorMessage(error)}`);
       return false;
     }
+  }
+
+  /**
+   * Contexto em camadas (spec memory v1.1 RF-05): resumo + fatos no system prompt e, no histórico, as mensagens
+   * ainda não resumidas (longas compactadas) dentro do orçamento. Sem resumo, usa a janela da v1.0 compactada.
+   */
+  buildContext(conversationId: string, userId: string): BuiltContext {
+    const layered = this.options.layered;
+    if (!layered) return { history: this.getContextWindow(conversationId), memory: '' };
+    try {
+      const summary = this.summaries.latest(conversationId);
+      const facts = layered.factsEnabled ? this.summaries.facts(userId).map((f) => f.fact) : [];
+      const pending = summary
+        ? this.messages.findAfter(conversationId, summary.coversUntil, ['user', 'assistant'])
+        : this.messages.findRecent(conversationId, this.options.windowSize, ['user', 'assistant']);
+      const memory = memorySection(summary?.summary, facts);
+      return { history: buildHistory(pending, memory, layered), memory };
+    } catch (error) {
+      this.logger.warn(`Falha ao montar a memória em camadas; usando a janela simples: ${errorMessage(error)}`);
+      return { history: this.getContextWindow(conversationId), memory: '' };
+    }
+  }
+
+  /** Mensagens user/assistant ainda não cobertas por resumo (entrada do ConversationSummarizer). */
+  unsummarized(conversationId: string): StoredMessage[] {
+    return this.messages.findAfter(conversationId, this.summaries.latest(conversationId)?.coversUntil ?? 0, ['user', 'assistant'], 500);
   }
 
   /** Janela de contexto (somente user/assistant) pronta para o LLM. */

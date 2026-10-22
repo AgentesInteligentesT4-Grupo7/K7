@@ -157,6 +157,12 @@ export class WebChannel {
   }
 
   private async message(body: MessageBody): Promise<WebReply & { modelo?: string; transcricao?: string }> {
+    // Comandos de memória respondem direto, sem passar pelo LLM.
+    const command = /^\/(memoria|esquecer)\b\s*(.*)$/is.exec((body.texto ?? '').trim());
+    if (command && !body.anexo && !body.audio) {
+      const texto = command[1]!.toLowerCase() === 'memoria' ? this.controller.memoryReport(this.options.userId) : this.controller.forget(this.options.userId, command[2] ?? '');
+      return { texto, arquivos: [], audios: [], imagens: [], avisos: [] };
+    }
     let input: AgentInput;
     try {
       input = await this.buildInput(body);

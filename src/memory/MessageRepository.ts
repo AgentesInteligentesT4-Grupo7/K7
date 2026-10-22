@@ -54,6 +54,17 @@ export class MessageRepository {
     return rows.reverse().map(MessageRepository.map);
   }
 
+  /** Mensagens depois de `afterId` (as ainda não resumidas), em ordem cronológica. */
+  findAfter(conversationId: string, afterId: number, roles: MessageRole[], limit = 200): StoredMessage[] {
+    const placeholders = roles.map(() => '?').join(', ');
+    return this.db
+      .prepare<unknown[], MessageRow>(
+        `SELECT * FROM messages WHERE conversation_id = ? AND id > ? AND role IN (${placeholders}) ORDER BY id LIMIT ?`,
+      )
+      .all(conversationId, afterId, ...roles, limit)
+      .map(MessageRepository.map);
+  }
+
   countByConversation(conversationId: string): number {
     const row = this.db
       .prepare<[string], { total: number }>('SELECT COUNT(*) AS total FROM messages WHERE conversation_id = ?')

@@ -41,6 +41,7 @@ export const TERMINAL_HELP = [
   '  /vozes                          lista as vozes cadastradas',
   '  /nova                           inicia uma nova conversa',
   '  /skills                         lista as skills',
+  '  /memoria   /esquecer <n>|tudo   o que o agente lembra (resumo e fatos) / apagar',
   '  /verbose                        mostra/esconde os passos do agente (Thought/Action/Observation)',
   '  /play                           abre os áudios gerados automaticamente no player',
   '  /modelos [tarefa]  /modelo      ranking dos modelos gratuitos / quem respondeu (orquestrador)',
@@ -113,6 +114,10 @@ export class TerminalChat {
         if (lower === '/modelo') return this.say(commands.lastDecision(this.deps.userId));
         return this.say(commands.feedback(this.deps.userId, lower === '/bom' ? 1 : -1));
       }
+      case '/memoria':
+        return this.say(this.deps.controller.memoryReport(this.deps.userId));
+      case '/esquecer':
+        return this.say(this.deps.controller.forget(this.deps.userId, rest));
       case '/imagem':
         return this.withInput(() => this.attachmentInput(rest));
       case '/anexos': {

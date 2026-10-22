@@ -11,6 +11,7 @@ import type { ILlmProvider } from '../llm/types.js';
 import { ProviderFactory } from '../llm/ProviderFactory.js';
 import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
+import { ConversationSummarizer } from '../memory/ConversationSummarizer.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
@@ -100,7 +101,12 @@ export function createCore(config: Config, options: CoreOptions): Core {
       intervalMs: 24 * 60 * 60 * 1000,
     }).start();
   }
-  const memory = new MemoryManager(db, { windowSize: config.memoryWindowSize, maxMessageChars: config.maxMessageChars });
+  const layers = config.memoryLayers;
+  const memory = new MemoryManager(db, {
+    windowSize: config.memoryWindowSize,
+    maxMessageChars: config.maxMessageChars,
+    ...(layers.enabled ? { layered: { compactThreshold: layers.compactThreshold, tokenBudget: layers.tokenBudget, factsEnabled: layers.factsEnabled } } : {}),
+  });
   const runner = new ProcessRunner();
   const ffmpeg = new FfmpegConverter(config.ffmpegBin, runner);
 
@@ -137,6 +143,17 @@ export function createCore(config: Config, options: CoreOptions): Core {
   }
   const agentLoop = new AgentLoop(llm, registry, config.maxIterations);
   const skillLoader = new SkillLoader(config.skillsDirs, config.identity);
+  // Memória v1.1: o resumo usa o LLM barato do roteamento (ou MEMORY_SUMMARY_PROVIDER).
+  const summaryLlm = !orchestrator && layers.summaryProvider ? providerFactory.createWithFallback(layers.summaryProvider) : routerLlm;
+  const summarizer = layers.enabled
+    ? new ConversationSummarizer(memory, summaryLlm, {
+        recentMessages: layers.recentMessages,
+        trigger: layers.summaryTrigger,
+        maxChars: layers.summaryMaxChars,
+        factsEnabled: layers.factsEnabled,
+        privacy: config.orchestrator.privacyDefault,
+      })
+    : undefined;
   const skillRouter = new SkillRouter(routerLlm);
   const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry, config.identity), agentLoop, {
     roleProviders: providerFactory,
@@ -190,6 +207,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
         providerName: llm.name,
         privacyDefault: config.orchestrator.privacyDefault,
         audioReplies: voice,
+        summarizer,
       }),
   };
 }
