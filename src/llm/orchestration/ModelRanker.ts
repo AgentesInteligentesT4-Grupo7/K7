@@ -28,6 +28,8 @@ export class ModelRanker {
     private readonly catalog: ModelCatalog,
     private readonly scores: ScoreStore,
     private readonly guard: CostGuard,
+    /** Modelos locais preferidos (ORCHESTRATOR_LOCAL_PREFER), na ordem: ganham pontos sobre os outros locais. */
+    private readonly localPreference: string[] = [],
   ) {}
 
   rank(task: Task, privacy: PrivacyLevel, requirements: Requirements, options: { includeCooling?: boolean } = {}): RankedModel[] {
@@ -44,7 +46,7 @@ export class ModelRanker {
       if (cooldown && !options.includeCooling) continue;
 
       const stats = this.scores.get(task, key);
-      const prior = ModelRanker.prior(candidate, task);
+      const prior = ModelRanker.prior(candidate, task) + this.preferenceBonus(candidate);
       const measured = stats.evalScore !== null && stats.evalSamples >= 3;
       // Medido vence estimado: com avaliação, a nota é só a medição (empate real → local, no sort).
       const quality = measured ? stats.evalScore! : prior;
@@ -62,6 +64,14 @@ export class ModelRanker {
         Number(b.candidate.local) - Number(a.candidate.local) ||
         (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity),
     );
+  }
+
+  /** O primeiro preferido ganha 0,5; o segundo 0,45... (só locais): a escolha declarada vence o tamanho; a medição real ainda corrige. */
+  private preferenceBonus(candidate: ModelCandidate): number {
+    if (!candidate.local || !this.localPreference.length) return 0;
+    const id = candidate.modelId.toLowerCase();
+    const index = this.localPreference.findIndex((p) => id === p || id === `${p}:latest` || `${id}:latest` === p);
+    return index < 0 ? 0 : Math.max(0.3, 0.5 - index * 0.05);
   }
 
   static meets(candidate: ModelCandidate, req: Requirements, privacy: PrivacyLevel): boolean {
@@ -95,6 +105,8 @@ export class ModelRanker {
       if (candidate.releaseDate && Date.now() - Date.parse(candidate.releaseDate) < 6 * MONTH) score += 0.03;
     }
     if (task === 'codigo' && /coder|code|devstral|codestral/.test(id)) score += 0.08;
+    // Modelo de programação em conversa, imagem ou roteamento: fraco em seguir instruções gerais e em ferramentas.
+    if (task !== 'codigo' && /coder|devstral|codestral/.test(id)) score -= 0.15;
     if ((task === 'raciocinio' || task === 'codigo') && candidate.reasoning) score += 0.03;
     if (task === 'visao' && candidate.vision) score += 0.02;
     if (/\b(base)\b|-base$|:.*-base/.test(id)) score -= 0.25; // modelos "base" não seguem instruções

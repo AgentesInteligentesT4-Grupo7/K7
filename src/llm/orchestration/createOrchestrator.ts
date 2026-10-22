@@ -19,7 +19,7 @@ export function createOrchestrator(config: Config, db: SqliteDatabase, runner?: 
   const oc = config.orchestrator;
   const catalog = new ModelCatalog(oc, config.providers.ollama.baseUrl ?? 'http://localhost:11434/v1', runner);
   const scores = new ScoreStore(db);
-  const ranker = new ModelRanker(catalog, scores, new CostGuard(new Set(oc.freeSources)));
+  const ranker = new ModelRanker(catalog, scores, new CostGuard(new Set(oc.freeSources)), oc.localPreference);
   const provider = new OrchestratedLlmProvider({
     catalog,
     ranker,

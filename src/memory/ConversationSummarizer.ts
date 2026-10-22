@@ -4,6 +4,10 @@ import type { PrivacyLevel } from '../llm/orchestration/types.js';
 import type { ILlmProvider } from '../llm/types.js';
 import { Logger } from '../utils/Logger.js';
 import { compactMessage } from './ContextBuilder.js';
+
+const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
+const strictest = (current: PrivacyLevel, other: unknown): PrivacyLevel =>
+  PRIVACY_ORDER.indexOf(other as PrivacyLevel) > PRIVACY_ORDER.indexOf(current) ? (other as PrivacyLevel) : current;
 import type { MemoryManager } from './MemoryManager.js';
 
 export interface SummarizerOptions {
@@ -55,7 +59,9 @@ export class ConversationSummarizer {
       const transcript = outside
         .map((m) => `#${m.id} ${m.role === 'user' ? 'usuário' : 'assistente'}: ${compactMessage(m, 600).slice(0, 2_000)}`)
         .join('\n');
-      const response = await TaskContext.run({ task: 'resumo', privacy: this.options.privacy, userId }, () =>
+      // Trecho que rodou com privacidade maior (ex.: pedido de imagem só no modelo local) é resumido no mesmo nível.
+      const privacy = pending.reduce((level, m) => strictest(level, m.metadata?.privacy), this.options.privacy);
+      const response = await TaskContext.run({ task: 'resumo', privacy, userId }, () =>
         this.llm.chat({ messages: [{ role: 'user', content: this.prompt(previous, facts, transcript) }], temperature: 0 }),
       );
       const parsed = ConversationSummarizer.parse(response.content ?? '', this.options.maxChars);

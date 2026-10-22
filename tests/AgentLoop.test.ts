@@ -41,6 +41,16 @@ function setup(script: ConstructorParameters<typeof FakeLlmProvider>[0], max = 5
 }
 
 describe('AgentLoop', () => {
+  it('chamada de ferramenta escrita como JSON no texto (modelos locais) é executada; texto comum não', async () => {
+    const { loop, echo, provider } = setup([{ content: '```json\n{"name": "eco", "arguments": {"texto": "oi"}}\n```' }, { content: 'Feito.' }]);
+    const result = await loop.run({ systemPrompt: 's', history });
+    assert.equal(echo.calls, 1);
+    assert.equal(result.text, 'Feito.');
+    assert.equal(provider.requests[1]!.messages.at(-1)!.content, 'eco: oi');
+    const plain = setup([{ content: '{"name": "inexistente", "arguments": {}}' }]);
+    assert.equal((await plain.loop.run({ systemPrompt: 's', history })).text, '{"name": "inexistente", "arguments": {}}', 'ferramenta que não existe: é só texto');
+  });
+
   it('retorna resposta direta quando não há tool call', async () => {
     const { loop, provider } = setup([{ content: 'Olá!' }]);
     const result = await loop.run({ systemPrompt: 'sys', history });

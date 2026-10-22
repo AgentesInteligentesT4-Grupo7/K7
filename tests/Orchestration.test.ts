@@ -76,6 +76,7 @@ function config(overrides: Partial<OrchestratorConfig> = {}): OrchestratorConfig
     privacyDefault: 'publico',
     sourcesTrainingOnData: ['opencode', 'openrouter', 'nvidia', 'gemini', 'ollama-cloud'],
     maxAttempts: 4,
+    localPreference: [],
     ...overrides,
   };
 }
@@ -187,6 +188,21 @@ describe('ModelRanker', () => {
     const local = (paramsB: number, gpuFit: boolean): ModelCandidate => ({ source: 'ollama', modelId: `m${paramsB}`, name: '', local: true, toolCall: true, vision: false, context: 0, trainsOnData: false, paramsB, gpuFit, freeRule: 'x' });
     assert.ok(ModelRanker.prior(local(70, false), 'conversa') < ModelRanker.prior(local(70, true), 'conversa'));
     assert.equal(scores.recordFeedback('conversa', 'ollama/m7', -1), -1);
+  });
+
+  it('modelo de programação perde fora de código; ORCHESTRATOR_LOCAL_PREFER põe o preferido na frente do maior', async () => {
+    const model = (modelId: string, paramsB: number): ModelCandidate => ({ source: 'ollama', modelId, name: '', local: true, toolCall: true, vision: true, context: 0, trainsOnData: false, paramsB, gpuFit: true, freeRule: 'x' });
+    assert.ok(ModelRanker.prior(model('qwen2.5-coder:14b', 14.8), 'conversa') < ModelRanker.prior(model('qwen3.5:9b', 9.7), 'conversa'));
+    assert.ok(ModelRanker.prior(model('qwen2.5-coder:14b', 14.8), 'codigo') > ModelRanker.prior(model('qwen3.5:9b', 9.7), 'codigo'));
+
+    const candidates = [model('gigante:70b', 70), model('qwen3.5:9b', 9.7), model('gemma4:latest', 8)];
+    const catalog = { list: () => candidates } as never;
+    const scores = { cooldown: () => undefined, get: () => ({ evalScore: null, evalSamples: 0, successes: 0, failures: 0, feedback: 0, latencyMs: null }) } as never;
+    const guard = { assertFree: () => undefined } as never;
+    const req = { tools: true, vision: false, minContext: 0 };
+    assert.equal(new ModelRanker(catalog, scores, guard).rank('conversa', 'local', req)[0]!.candidate.modelId, 'gigante:70b', 'sem preferência, o maior');
+    const preferred = new ModelRanker(catalog, scores, guard, ['qwen3.5:9b', 'gemma4']).rank('conversa', 'local', req).map((r) => r.candidate.modelId);
+    assert.deepEqual(preferred, ['qwen3.5:9b', 'gemma4:latest', 'gigante:70b']);
   });
 });
 

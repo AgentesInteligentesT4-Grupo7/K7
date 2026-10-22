@@ -57,6 +57,15 @@ export class AgentLoop {
     for (let iteration = 1; iteration <= limit; iteration++) {
       this.logger.info(`── Iteração ${iteration}/${limit} ──`);
       const response = await this.provider.chat({ messages, tools });
+      // Modelos locais menores às vezes escrevem a chamada como JSON no texto em vez de usar tool calling.
+      if (response.toolCalls.length === 0) {
+        const textCall = this.textToolCall(response.content, iteration);
+        if (textCall) {
+          this.logger.info(`🔧 Chamada de ferramenta escrita como texto reconhecida: ${textCall.name}`);
+          response.toolCalls = [textCall];
+          response.content = null;
+        }
+      }
 
       if (response.toolCalls.length === 0) {
         const answer = response.content?.trim();
@@ -93,6 +102,24 @@ export class AgentLoop {
     }
     this.logger.warn(`⛔ MAX_ITERATIONS (${limit}) atingido; abortando loop`);
     throw new MaxIterationsError(limit);
+  }
+
+  /**
+   * Resposta que é só um JSON {"name": "<ferramenta>", "arguments": {...}} (com ou sem bloco ```json),
+   * de uma ferramenta registrada, vira tool call. Texto comum com JSON no meio não é tocado.
+   */
+  private textToolCall(content: string | null, iteration: number): ToolCall | undefined {
+    const text = content?.trim().replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    if (!text?.startsWith('{') || !text.endsWith('}')) return undefined;
+    try {
+      const parsed = JSON.parse(text) as { name?: unknown; arguments?: unknown; parameters?: unknown };
+      const name = typeof parsed.name === 'string' ? parsed.name : undefined;
+      const args = parsed.arguments ?? parsed.parameters ?? {};
+      if (!name || !this.registry.get(name) || typeof args !== 'object' || args === null) return undefined;
+      return { id: `texto-${iteration}`, name, arguments: JSON.stringify(args) };
+    } catch {
+      return undefined;
+    }
   }
 
   /** Executa uma tool call e SEMPRE devolve uma observação (nunca lança). */

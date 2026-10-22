@@ -1,6 +1,10 @@
 ---
 name: gerador-imagens
 description: "Gera imagens na GPU local (ilustração, HQ, anime, mangá, foto realista): desenhar personagens, cenas, capas, painéis de história; transformar uma foto enviada em desenho; refazer ou variar uma imagem."
+# Pedido de imagem roda só no modelo local (Ollama), do roteamento à inspeção: nenhum modelo de fora vê o pedido.
+privacidade: local
+# Começos de palavra que já indicam pedido de imagem (aplicam o modo local antes mesmo de escolher a skill).
+gatilhos: [desenh, imagem, imagens, ilustra, pinte, pintura, foto realista, fotorrealista, retrato de, anime, manga, mangá, quadrinh, ficha de personagem, ficha do personagem]
 ---
 
 # Skill: Gerador de Imagens

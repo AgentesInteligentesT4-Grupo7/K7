@@ -113,7 +113,14 @@ export class AgentController {
       this.logger.info(`🎭 ${persona ? `persona ${persona.name}` : 'agente'}${style ? ` · estilo ${style.name}` : ''}${controls ? ` · ${formatControls(controls)}` : ''}`);
     }
     // Privacidade: documentos e anexos são dados pessoais (spec llm-orchestration RF-09).
-    const privacy = input.source === 'document' ? stricter(this.deps.privacyDefault ?? 'publico', 'pessoal') : (this.deps.privacyDefault ?? 'publico');
+    let privacy = input.source === 'document' ? stricter(this.deps.privacyDefault ?? 'publico', 'pessoal') : (this.deps.privacyDefault ?? 'publico');
+    // Skill que exige privacidade maior (ex.: imagens → só modelo local) e cujos gatilhos aparecem na mensagem:
+    // vale desde o roteamento, para nenhum modelo de fora ver o pedido.
+    const triggered = skills.find((s) => AgentController.skillPrivacy(s) && AgentController.matchesTriggers(s, input.text));
+    if (triggered) {
+      privacy = stricter(privacy, AgentController.skillPrivacy(triggered)!);
+      this.logger.info(`🔒 Privacidade ${privacy}: pedido com gatilho da skill ${triggered.name}`);
+    }
 
     // Guardrails de entrada: injeção e tópico. Documento enviado é conteúdo externo (só avisa).
     const { guardrails } = this.deps;
@@ -133,6 +140,11 @@ export class AgentController {
       : await TaskContext.run({ task: 'roteamento', privacy, userId }, () => this.deps.skillRouter.routeWithTask(input.text, skills));
     if (ongoing) this.logger.info('🧭 Sessão interativa em andamento: sem troca de skill');
     const skill = routed.skill;
+    const skillPrivacy = skill ? AgentController.skillPrivacy(skill) : undefined;
+    if (skillPrivacy && stricter(privacy, skillPrivacy) !== privacy) {
+      privacy = stricter(privacy, skillPrivacy);
+      this.logger.info(`🔒 Privacidade ${privacy}: exigida pela skill ${skill!.name}`);
+    }
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const { reasoning } = this.deps;
@@ -186,6 +198,24 @@ export class AgentController {
 
     this.deps.summarizer?.schedule(conversation.id, memoryUserId);
     return { text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
+  }
+
+  /** `privacidade:` no frontmatter da skill (publico | pessoal | local). */
+  private static skillPrivacy(skill: SkillMetadata): PrivacyLevel | undefined {
+    const value = String(skill.frontmatter?.privacidade ?? '').trim().toLowerCase();
+    return PRIVACY_ORDER.includes(value as PrivacyLevel) ? (value as PrivacyLevel) : undefined;
+  }
+
+  /** `gatilhos:` no frontmatter: começos de palavra que, na mensagem, já indicam a skill (sem acento, sem caixa). */
+  private static matchesTriggers(skill: SkillMetadata, text: string): boolean {
+    const triggers = skill.frontmatter?.gatilhos;
+    if (!Array.isArray(triggers) || !triggers.length) return false;
+    const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const message = plain(text);
+    return triggers.some((t) => {
+      const word = plain(String(t)).trim();
+      return word.length > 2 && new RegExp(`(?<![a-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(message);
+    });
   }
 
   /** Contexto dos provedores (falha de um não derruba a resposta). */

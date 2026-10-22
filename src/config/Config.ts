@@ -61,6 +61,8 @@ export interface OrchestratorConfig {
   privacyDefault: 'publico' | 'pessoal' | 'local';
   sourcesTrainingOnData: string[];
   maxAttempts: number;
+  /** Modelos do Ollama preferidos para tarefas locais, em ordem (ORCHESTRATOR_LOCAL_PREFER). */
+  localPreference: string[];
 }
 
 export class ConfigError extends Error {
@@ -393,6 +395,7 @@ export class Config {
       // Planos gratuitos que declaram (ou não descartam) usar os dados para treino.
       sourcesTrainingOnData: Config.list(env.SOURCES_TRAINING_ON_DATA || 'opencode,openrouter,nvidia,gemini,ollama-cloud').map((s) => s.toLowerCase()),
       maxAttempts: Config.positiveInt(env.ORCHESTRATOR_MAX_ATTEMPTS, 4),
+      localPreference: Config.list(env.ORCHESTRATOR_LOCAL_PREFER ?? '').map((s) => s.toLowerCase()),
     };
   }
 
