@@ -74,3 +74,16 @@ describe('Pedido de imagem só no modelo local', () => {
 });
 
 const input = (text: string): AgentInput => ({ userId: 3, chatId: 1, text, source: 'text', requiresAudioReply: false });
+
+describe('Teste de funcionamento', () => {
+  it('"teste", "ping", "tá funcionando?" respondem na hora, sem LLM e sem entrar no histórico', async () => {
+    const { controller, memory, seen } = setup(IMAGE_SKILL);
+    for (const text of ['Teste', 'teste!', 'ping', 'tá funcionando?', 'Está funcionando?']) {
+      assert.equal((await controller.process(input(text))).text, '✅ Estou funcionando! Pode mandar o que precisar.', text);
+    }
+    assert.equal(seen.length, 0, 'nenhum LLM chamado');
+    assert.equal(memory.listConversations('3').length, 0, 'nada salvo');
+    await controller.process(input('teste de imagem com um gato'));
+    assert.ok(seen.length > 0, 'frase maior segue o fluxo normal');
+  });
+});

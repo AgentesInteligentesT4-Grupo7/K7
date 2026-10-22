@@ -20,6 +20,9 @@ export interface AgentRunInput {
   requireToolUse?: boolean;
 }
 
+export const PROMISE_CORRECTION =
+  'Sua resposta anuncia uma ação ("vou ...") que não foi feita: nenhuma ferramenta foi chamada. Se o usuário pediu essa ação, chame a ferramenta agora. Se ele não pediu (ex.: só cumprimentou ou testou se você está funcionando), responda direto, sem prometer nada.';
+
 export const NO_TOOL_CORRECTION =
   'Atenção: você respondeu sem chamar nenhuma ferramenta, então NADA foi feito (nenhuma imagem foi gerada). Não descreva resultados, seeds ou tempos que não aconteceram. Se o pedido é uma ação, chame a ferramenta agora; se falta uma informação essencial, faça só a pergunta.';
 
@@ -89,6 +92,13 @@ export class AgentLoop {
           messages.push({ role: 'assistant', content: answer }, { role: 'user', content: NO_TOOL_CORRECTION });
           continue;
         }
+        // Promessa sem ação ("Vou gerar agora!") no fim da resposta e nenhuma ferramenta chamada nesta volta.
+        if (!corrected && tools.length && AgentLoop.promisesAction(answer)) {
+          corrected = true;
+          this.logger.warn('⚠️ Resposta anunciou uma ação sem executar; pedindo para fazer ou responder sem prometer');
+          messages.push({ role: 'assistant', content: answer }, { role: 'user', content: PROMISE_CORRECTION });
+          continue;
+        }
         this.logger.info(`✅ Answer (${response.providerName}): ${preview(answer, 200)}`);
         return { text: answer, iterations: iteration, steps, providerName: response.providerName };
       }
@@ -117,6 +127,18 @@ export class AgentLoop {
     }
     this.logger.warn(`⛔ MAX_ITERATIONS (${limit}) atingido; abortando loop`);
     throw new MaxIterationsError(limit);
+  }
+
+  /** A última frase promete uma ação para já ("Vou gerar agora!", "Já vou criar...", "Gerando..."). */
+  static promisesAction(answer: string): boolean {
+    const sentences = answer
+      .replace(/[\p{Extended_Pictographic}️]/gu, '')
+      .trim()
+      .split(/(?<=[.!?…])\s+|\n+/)
+      .filter((s) => s.trim());
+    const last = (sentences.at(-1) ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    if (!last || last.endsWith('?')) return false;
+    return /^(agora\s+|ja\s+|entao\s+)?(vou|irei|ja vou)\s+(gerar|criar|fazer|desenhar|buscar|pesquisar|procurar|ler|salvar|enviar|montar|preparar|transformar)\b/.test(last) || /^(gerando|criando|desenhando|buscando|pesquisando)\b.*(\.\.\.|…|agora)/.test(last);
   }
 
   /**

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AgentLoop, INVALID_JSON_OBSERVATION, NO_TOOL_CORRECTION } from '../src/agent/AgentLoop.js';
+import { AgentLoop, INVALID_JSON_OBSERVATION, NO_TOOL_CORRECTION, PROMISE_CORRECTION } from '../src/agent/AgentLoop.js';
 import { MaxIterationsError } from '../src/errors/AppErrors.js';
 import type { JsonSchema } from '../src/llm/types.js';
 import { BaseTool, type ToolResult } from '../src/tools/BaseTool.js';
@@ -64,6 +64,17 @@ describe('AgentLoop', () => {
 
     const stubborn = setup([{ content: 'Gerei.' }, { content: 'Gerei mesmo.' }]);
     assert.equal((await stubborn.loop.run({ systemPrompt: 's', history, requireToolUse: true })).text, 'Gerei mesmo.', 'corrige uma vez só');
+  });
+
+  it('resposta que promete ação ("Vou gerar agora!") sem chamar ferramenta volta uma vez; frase comum não', async () => {
+    const { loop, provider } = setup([{ content: 'Entendido! Vou gerar agora! 🎨' }, { content: 'Estou funcionando! Quer que eu gere alguma imagem?' }]);
+    const result = await loop.run({ systemPrompt: 's', history });
+    assert.match(result.text, /Estou funcionando/);
+    assert.equal(provider.requests[1]!.messages.at(-1)!.content, PROMISE_CORRECTION);
+    assert.equal(AgentLoop.promisesAction('Gerando a imagem...'), true);
+    assert.equal(AgentLoop.promisesAction('A capital da França é Paris.'), false);
+    assert.equal(AgentLoop.promisesAction('Quer que eu gere outra?'), false);
+    assert.equal(AgentLoop.promisesAction('Eu vou te explicar: o céu é azul.'), false);
   });
 
   it('retorna resposta direta quando não há tool call', async () => {

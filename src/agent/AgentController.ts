@@ -48,6 +48,8 @@ export interface AgentControllerDeps {
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
+/** Mensagem que só testa se o bot está no ar. */
+const PING = /^(teste|testando|test|ping|al[oô]|t[aá] (funcionando|on|online|a[ií])|est[aá] (funcionando|on|online|a[ií])|funcionando|funciona|on|online)\s*[.!?]*$/i;
 const stricter = (a: PrivacyLevel, b: PrivacyLevel): PrivacyLevel =>
   PRIVACY_ORDER.indexOf(a) >= PRIVACY_ORDER.indexOf(b) ? a : b;
 
@@ -78,6 +80,12 @@ export class AgentController {
   async process(original: AgentInput): Promise<AgentResponse> {
     const { memory } = this.deps;
     const userId = String(original.userId);
+    // "teste", "ping", "tá funcionando?": confirmação na hora, sem LLM e sem entrar no histórico (com o histórico
+    // cheio de pedidos de imagem, o modelo local entendia "teste" como "teste a geração de imagem").
+    if (PING.test(original.text.trim()) && !original.images?.length && original.source === 'text') {
+      this.logger.info('🏓 Teste de funcionamento: resposta direta');
+      return { text: '✅ Estou funcionando! Pode mandar o que precisar.', isAudio: false };
+    }
     // Persona: "@nome mensagem" vale só para esta mensagem; senão, a escolhida com /persona.
     const mention = this.deps.personas?.mention(original.text);
     const persona = mention?.persona ?? this.activePersona(userId);
