@@ -142,7 +142,7 @@ describe('Carregamento de perfil', () => {
     const config = loadConfig({ argv: [], env: ROOT_ENV, rootDir: setupPlayer() });
     assert.equal(config.profileName, undefined);
     assert.equal(config.identity.name, 'ParreiraClaw');
-    assert.equal(config.modules.size, 4);
+    assert.equal(config.modules.size, 5);
   });
 
   it('variável obrigatória vazia e perfil com Telegram sem bot próprio dão erro acionável', () => {

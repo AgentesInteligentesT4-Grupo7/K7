@@ -48,6 +48,16 @@ Você é {{AGENT_NAME}}, {{AGENT_PURPOSE}} de {{OWNER_NAME}}.
 
 Descreva aqui, passo a passo, como o agente deve agir quando esta skill for escolhida.
 `,
+    'ferramentas/exemplo.yaml.off': `# Ferramenta HTTP declarativa (módulo "http"): renomeie para .yaml e ligue "http" em modulos.
+nome: cotacao_moeda
+descricao: Cotação atual de moedas em reais (ex.: USD-BRL, EUR-BRL)
+url: https://economia.awesomeapi.com.br/json/last/{pares}
+parametros:
+  pares: { tipo: string, descricao: "Pares de moedas, ex.: USD-BRL" }
+# fixos: { chave: valor }                                              # parâmetros sempre enviados
+# autenticacao: { tipo: header, nome: X-Api-Key, variavel: MINHA_API_KEY }   # chave no .env
+# resposta: { campos: [USDBRL.bid], limite_kb: 20 }
+`,
     '.env.example': `# Segredos deste perfil (copie para .env; o .env nunca vai para o Git).
 # Valores aqui sobrescrevem o .env do tocador.
 

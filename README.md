@@ -140,6 +140,21 @@ npm run perfil -- remover <nome>      # pede confirmação; --apagar-dados apaga
 - **Skills em camadas:** as dos módulos ligados + as do perfil; com o mesmo nome, vale a do perfil.
 - **Módulo desligado some de verdade:** sem `arquivos`, nenhuma ferramenta de arquivo; sem `voz`, áudios são
   recusados com aviso e as respostas saem em texto; sem `voz-clonada`, sem `/minhavoz`, `/falar` e a skill.
+- **APIs sem código (módulo `http`):** a fita descreve uma API em `ferramentas/<nome>.yaml` e o tocador a
+  transforma em ferramenta do agente. Exemplo (`pessoal/ferramentas/previsao_do_tempo.yaml`):
+  ```yaml
+  nome: previsao_do_tempo
+  descricao: Tempo atual e previsão para uma coordenada
+  url: https://api.open-meteo.com/v1/forecast        # só https; {param} permitido no caminho
+  parametros:
+    latitude: { tipo: number, descricao: Latitude }
+    longitude: { tipo: number, descricao: Longitude }
+  fixos: { current: "temperature_2m,weather_code", timezone: auto }
+  autenticacao: { tipo: header, nome: X-Api-Key, variavel: CLIMA_API_KEY }   # opcional; a chave fica no .env
+  resposta: { campos: [current], limite_kb: 30 }
+  ```
+  Garantias: só o host declarado, nunca endereços da rede local (DNS validado na conexão), sem
+  redirecionamentos, timeout de 15 s, resposta limitada e marcada como dado externo, chave nunca exposta ao LLM.
 - **Instalação segura:** o instalador recusa perfis com código ou links (`.js`, `.ts`, `.py`, `.sh`, `.ps1`,
   `package.json`…), baixa pacotes npm com `--ignore-scripts` e nunca executa nada do perfil.
 

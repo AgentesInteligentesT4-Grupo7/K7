@@ -21,7 +21,8 @@ O ParreiraClaw passa a ser um **tocador**: um núcleo estável (loop do agente, 
 | Instalador (RF-04, RF-05, RF-10, RF-12) | ✅ `npm run perfil -- novo|instalar|listar|info|atualizar|remover`. Git só por `https://`, `ssh://` ou `git@` (transportes `ext`/`file` bloqueados); npm por `npm pack --ignore-scripts` e extração própria do `.tgz` (sem links, sem caminhos fora do destino). |
 | Migração (RF-11) | ✅ Perfis `pessoal`, `promo` e `historias` em `../ParreiraClaw-perfis`; o `pessoal` aponta para o banco e as vozes antigos. |
 | Canais em `src/canais/<canal>/` | ✅ `telegram`, `terminal`, `comum`. Previsto: `web` (chat no navegador no estilo do app desktop do Claude). |
-| Ferramentas HTTP declarativas (RF-13), módulos externos/MCP (RF-14) | ⏳ Pendentes. |
+| Ferramentas HTTP declarativas (RF-13) | ✅ Módulo `http` (`src/modules/http/`): `ferramentas/*.yaml` do perfil; https, hosts declarados, DNS validado na conexão contra rede interna, sem redirecionamentos, 15 s, limite de resposta, chave do `.env` omitida da resposta. |
+| Módulos externos/MCP (RF-14) | ⏳ Pendente. |
 | Módulo `imagens` | ⏳ Pendente (spec image-generation); fica no tocador, para todos os perfis. |
 
 ---

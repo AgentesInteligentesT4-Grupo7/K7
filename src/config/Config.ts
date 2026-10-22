@@ -89,6 +89,10 @@ export class Config {
   readonly profileName: string | undefined;
   /** Pasta do perfil em uso (evals/ e skills/ próprios). */
   readonly profileDir: string | undefined;
+  /** Pasta das ferramentas HTTP declarativas (módulo "http"); com perfil, `<perfil>/ferramentas`. */
+  readonly httpToolsDir: string | undefined;
+  /** Ambiente efetivo (com perfil, já mesclado): de onde as ferramentas HTTP leem suas chaves. */
+  readonly env: Readonly<Record<string, string | undefined>>;
   readonly tmpDir: string;
   readonly workspaceDir: string;
 
@@ -178,6 +182,8 @@ export class Config {
     this.skillsDirs = [...moduleSkillDirs(rootDir, this.modules), this.skillsDir];
     this.profileName = env.PERFIL_NOME?.trim() || undefined;
     this.profileDir = env.PERFIL_DIR?.trim() ? path.resolve(rootDir, env.PERFIL_DIR.trim()) : undefined;
+    this.httpToolsDir = env.FERRAMENTAS_DIR?.trim() ? path.resolve(rootDir, env.FERRAMENTAS_DIR.trim()) : undefined;
+    this.env = env;
     this.tmpDir = path.resolve(rootDir, env.TMP_DIR?.trim() || './tmp');
     this.workspaceDir = path.resolve(rootDir, env.WORKSPACE_DIR?.trim() || './workspace');
 

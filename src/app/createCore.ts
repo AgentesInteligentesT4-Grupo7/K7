@@ -12,6 +12,7 @@ import { ProviderFactory } from '../llm/ProviderFactory.js';
 import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
+import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { SkillExecutor } from '../skills/SkillExecutor.js';
 import { SkillLoader } from '../skills/SkillLoader.js';
 import { SkillRouter } from '../skills/SkillRouter.js';
@@ -109,6 +110,10 @@ export function createCore(config: Config, options: CoreOptions): Core {
   // Ferramentas, ReAct e skills (camadas: módulos ligados → perfil)
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
   if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
+  if (modules.has('http') && config.httpToolsDir) {
+    const reserved = new Set(registry.list().map((t) => t.name));
+    for (const tool of loadHttpTools(config.httpToolsDir, config.env, reserved)) registry.register(tool);
+  }
   const agentLoop = new AgentLoop(llm, registry, config.maxIterations);
   const skillLoader = new SkillLoader(config.skillsDirs, config.identity);
   const skillRouter = new SkillRouter(routerLlm);

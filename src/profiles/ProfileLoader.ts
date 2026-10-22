@@ -105,6 +105,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     TMP_DIR: path.join(rootDir, 'tmp', profile.name),
     WORKSPACE_DIR: path.join(rootDir, 'workspace', profile.name),
     SKILLS_DIR: path.join(profile.dir, 'skills'),
+    FERRAMENTAS_DIR: path.join(profile.dir, 'ferramentas'),
   });
 
   const { manifest } = profile;

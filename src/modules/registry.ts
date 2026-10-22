@@ -16,6 +16,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   { id: 'voz', descricao: 'Mensagens de voz: transcrição (Whisper) e respostas em áudio (Kokoro/Edge)' },
   { id: 'voz-clonada', descricao: 'Clonagem de voz (Chatterbox): /minhavoz, /falar e skill voz-clonada' },
   { id: 'refinamento', descricao: 'Loop criador ↔ crítico com modelos distintos (skill idealizador-analisador)' },
+  { id: 'http', descricao: 'Ferramentas HTTP declaradas pelo perfil em ferramentas/*.yaml (APIs REST, sem código)' },
 ];
 
 export const MODULE_IDS: readonly string[] = MODULES.map((m) => m.id);
