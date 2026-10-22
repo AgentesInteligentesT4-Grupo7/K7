@@ -106,6 +106,8 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     WORKSPACE_DIR: path.join(rootDir, 'workspace', profile.name),
     SKILLS_DIR: path.join(profile.dir, 'skills'),
     FERRAMENTAS_DIR: path.join(profile.dir, 'ferramentas'),
+    PERSONAS_DIR: path.join(profile.dir, 'personas'),
+    ESTILOS_DIR: path.join(profile.dir, 'estilos'),
   });
 
   const { manifest } = profile;
@@ -119,6 +121,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     MODULES: manifest.modulos.join(','),
     CHANNELS: manifest.canais?.join(','),
     PRIVACY_DEFAULT: manifest.privacidade,
+    ESTILO_PADRAO: manifest.estiloPadrao,
   };
   for (const [key, value] of Object.entries(fromManifest)) if (value !== undefined) env[key] = value;
 

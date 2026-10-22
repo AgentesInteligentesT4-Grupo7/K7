@@ -9,6 +9,8 @@ export interface PromptContext {
   input: Pick<AgentInput, 'source' | 'requiresAudioReply' | 'attachmentName' | 'channel'>;
   /** Resumo da conversa + fatos do usuário (memória em camadas). */
   memory?: string;
+  persona?: { name: string; body: string };
+  style?: { name: string; body: string };
 }
 
 /** Monta o System Prompt de cada execução do AgentLoop. */
@@ -21,6 +23,7 @@ export class SystemPromptBuilder {
   build(context: PromptContext): string {
     const sections = [
       this.identitySection(context.input.channel ?? 'telegram'),
+      context.persona ? this.personaSection(context.persona) : '',
       context.memory ?? '',
       this.reasoningRules(),
       this.toolsSection(),
@@ -28,6 +31,7 @@ export class SystemPromptBuilder {
       this.fileOutputRules(),
       this.skillsSection(context.availableSkills, context.activeSkill?.name ?? null),
       context.activeSkill ? this.activeSkillSection(context.activeSkill) : '',
+      context.style ? this.styleSection(context.style) : '',
       this.inputSection(context.input),
     ];
     return sections.filter(Boolean).join('\n\n');
@@ -68,6 +72,20 @@ ${formatting}`;
     if (tools.length === 0) return '# Ferramentas\nNenhuma ferramenta disponível nesta sessão.';
     const lines = tools.map((tool) => `- ${tool.name}: ${tool.description}`);
     return `# Ferramentas disponíveis\n${lines.join('\n')}\nArquivos criados com as ferramentas ficam no workspace local (caminhos sempre relativos).`;
+  }
+
+  /** Persona ativa (spec personas-styles): fala em primeira pessoa como ela, com as mesmas regras de segurança. */
+  private personaSection(persona: { name: string; body: string }): string {
+    return `# Persona ativa: ${persona.name}
+Nesta conversa você fala COMO ${persona.name}, em primeira pessoa, com a personalidade e o jeito de falar abaixo. As regras de ferramentas, segurança e formatação continuam valendo. Se o usuário quiser voltar ao agente, oriente o comando /persona sair.
+
+${persona.body}`;
+  }
+
+  private styleSection(style: { name: string; body: string }): string {
+    return `# Estilo de escrita: ${style.name}
+Escreva a resposta (e documentos gerados) neste estilo:
+${style.body}`;
   }
 
   /** Só quando o módulo pesquisa-web está ligado (spec web-search RF-05, RF-06, RF-07). */

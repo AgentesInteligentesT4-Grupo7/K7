@@ -16,6 +16,9 @@ export interface SkillExecutionRequest {
   input: AgentInput;
   /** Bloco de memória (resumo + fatos) para o system prompt. */
   memory?: string;
+  /** Persona ativa e estilo de texto (spec personas-styles). */
+  persona?: { name: string; body: string };
+  style?: { name: string; body: string };
 }
 
 export interface SkillExecutionResult extends AgentRunResult {
@@ -78,6 +81,8 @@ export class SkillExecutor {
       activeSkill,
       input: request.input,
       memory: request.memory,
+      persona: request.persona,
+      style: request.style,
     });
 
     const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });

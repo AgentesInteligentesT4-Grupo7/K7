@@ -396,6 +396,34 @@ apenas no log do terminal.
 
 Para entregar um documento como anexo, o LLM envolve o conteúdo em `<arquivo nome="x.md">...</arquivo>`.
 
+## Personas e estilos de texto
+
+Três peças que se combinam (spec [personas-styles](specs/personas-styles.md)):
+
+| | Responde a | Onde |
+|---|---|---|
+| **Skill** | *o que fazer* | `skills/<nome>/SKILL.md` |
+| **Persona** | *quem fala*: um agente com personalidade e **memória própria** | `personas/<nome>.md` na fita |
+| **Estilo** | *como escrever*: formal, informal, técnico, didático, jornalístico, acadêmico, infantil, persuasivo, poético, conciso | `estilos/` no tocador (a fita pode ter os seus) |
+
+- **Falar com uma persona:** `/persona kael` (fica ativa), `@mira mensagem` (só aquela mensagem), `/persona sair`.
+  Conversas, resumo e fatos de cada persona ficam separados; `/memoria` e `/nova` valem para a persona ativa.
+- **Vários agentes:** o agente principal consulta uma persona (`falar_com_persona`) ou encena um diálogo entre
+  várias (`dialogo_entre_personas`), e cada uma guarda a cena na própria memória. Persona pode limitar as skills
+  (`skills: [...]`) e ter estilo padrão (`estilo: ...`).
+- **Estilo:** peça na mensagem ("reescreva em tom formal"), fixe com `/estilo formal` (`/estilo padrao` desfaz), ou
+  defina `estilo: ...` na persona ou `estilo_padrao: ...` no `perfil.yaml`. Vale nessa ordem: mensagem → persona →
+  `/estilo` → padrão da fita.
+
+```markdown
+---
+name: kael
+description: "Mecânico de 19 anos, protagonista de Neon Rain."
+estilo: informal
+---
+Você é Kael, 19 anos, mecânico numa cidade chuvosa... (personalidade, jeito de falar, história, objetivos)
+```
+
 ## Memória em camadas
 
 Conversas longas não estouram o contexto nem esquecem o começo:

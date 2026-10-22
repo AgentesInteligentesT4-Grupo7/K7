@@ -2,6 +2,9 @@ import { UserFacingError, errorMessage } from '../errors/AppErrors.js';
 import { TaskClassifier } from '../llm/orchestration/TaskClassifier.js';
 import { TaskContext } from '../llm/orchestration/TaskContext.js';
 import type { ConversationSummarizer } from '../memory/ConversationSummarizer.js';
+import type { UserSettings } from '../memory/UserSettings.js';
+import { type Persona, PersonaCatalog } from '../personas/Personas.js';
+import type { StyleCatalog, TextStyle } from '../personas/Styles.js';
 import { ResponseAttachments } from './ResponseAttachments.js';
 import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
@@ -24,6 +27,12 @@ export interface AgentControllerDeps {
   audioReplies?: boolean;
   /** Resumo incremental em segundo plano (memória v1.1). */
   summarizer?: ConversationSummarizer;
+  /** Personas e estilos de texto (spec personas-styles). */
+  personas?: PersonaCatalog;
+  styles?: StyleCatalog;
+  settings?: UserSettings;
+  /** estilo_padrao da fita / ESTILO_PADRAO. */
+  defaultStyle?: string;
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -54,10 +63,16 @@ export class AgentController {
     }
   }
 
-  async process(input: AgentInput): Promise<AgentResponse> {
+  async process(original: AgentInput): Promise<AgentResponse> {
     const { memory } = this.deps;
-    const userId = String(input.userId);
-    const conversation = memory.getOrCreateActiveConversation(userId, this.deps.providerName);
+    const userId = String(original.userId);
+    // Persona: "@nome mensagem" vale só para esta mensagem; senão, a escolhida com /persona.
+    const mention = this.deps.personas?.mention(original.text);
+    const persona = mention?.persona ?? this.activePersona(userId);
+    const input: AgentInput = mention ? { ...original, text: mention.text } : original;
+    // Memória isolada por persona; anexos, roteamento e orquestrador seguem com o usuário real.
+    const memoryUserId = PersonaCatalog.memoryUserId(userId, persona);
+    const conversation = memory.getOrCreateActiveConversation(memoryUserId, this.deps.providerName);
 
     // A entrada é persistida ANTES do LLM: se o provider cair, o texto (ex.: transcrição) não se perde.
     const saved = memory.saveMessage(conversation.id, 'user', input.text, {
@@ -68,14 +83,17 @@ export class AgentController {
       ...(input.attachmentName ? { attachment: input.attachmentName } : {}),
     });
 
-    const { history, memory: memoryText } = memory.buildContext(conversation.id, userId);
+    const { history, memory: memoryText } = memory.buildContext(conversation.id, memoryUserId);
     if (!saved) history.push({ role: 'user', content: input.text });
     // Imagens vão só na mensagem atual (o histórico guarda a referência "[Anexo #id]", não a imagem).
     const current = history.at(-1);
     if (input.images?.length && current?.role === 'user') current.images = input.images;
 
     // Hot-reload: as skills são relidas do disco a cada requisição.
-    const skills = this.deps.skillLoader.loadAll();
+    // Persona com "skills: [...]" só enxerga essas skills.
+    const skills = this.deps.skillLoader.loadAll().filter((s) => !persona?.skills.length || persona.skills.includes(s.name));
+    const style = this.resolveStyle(userId, input.text, persona);
+    if (persona || style) this.logger.info(`🎭 ${persona ? `persona ${persona.name}` : 'agente'}${style ? ` · estilo ${style.name}` : ''}`);
     // Privacidade: documentos e anexos são dados pessoais (spec llm-orchestration RF-09).
     const privacy = input.source === 'document' ? stricter(this.deps.privacyDefault ?? 'publico', 'pessoal') : (this.deps.privacyDefault ?? 'publico');
     const routed = await TaskContext.run({ task: 'roteamento', privacy, userId }, () =>
@@ -85,7 +103,7 @@ export class AgentController {
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
     const { result, images } = await ResponseAttachments.collect(() =>
-      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText })),
+      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style })),
     );
 
     for (const step of result.steps) {
@@ -103,6 +121,8 @@ export class AgentController {
         skill: result.skillName,
         task,
         privacy,
+        ...(persona ? { persona: persona.name } : {}),
+        ...(style ? { style: style.name } : {}),
         iterations: result.iterations,
         ...result.details,
         ...(images.length ? { images: images.map((i) => i.path) } : {}),
@@ -111,7 +131,7 @@ export class AgentController {
       result.providerName,
     );
 
-    this.deps.summarizer?.schedule(conversation.id, userId);
+    this.deps.summarizer?.schedule(conversation.id, memoryUserId);
     return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
   }
 
@@ -133,7 +153,7 @@ export class AgentController {
   /** `/memoria`: o que o agente lembra desta conversa e do usuário (spec memory v1.1 RF-11). */
   memoryReport(userId: number | string): string {
     const { memory } = this.deps;
-    const id = String(userId);
+    const id = this.memoryUserId(userId);
     const conversation = memory.getOrCreateActiveConversation(id, this.deps.providerName);
     const summary = memory.summaries.latest(conversation.id)?.summary.trim();
     const facts = memory.summaries.facts(id);
@@ -151,7 +171,7 @@ export class AgentController {
   /** `/esquecer <n>` remove um fato; `/esquecer tudo` limpa fatos e o resumo da conversa ativa. */
   forget(userId: number | string, arg: string): string {
     const { memory } = this.deps;
-    const id = String(userId);
+    const id = this.memoryUserId(userId);
     if (/^tudo$/i.test(arg.trim())) {
       memory.summaries.clearFacts(id);
       memory.summaries.clear(memory.getOrCreateActiveConversation(id, this.deps.providerName).id);
@@ -162,8 +182,76 @@ export class AgentController {
     return removed ? `🧹 Esqueci: "${removed}"` : 'Use /esquecer <número do fato> (veja em /memoria) ou /esquecer tudo.';
   }
 
+  /** `/persona`: lista, ativa (`/persona kael`) ou volta ao agente (`/persona sair`). */
+  personaCommand(userId: number | string, arg: string): string {
+    const { personas, settings } = this.deps;
+    const available = personas?.list() ?? [];
+    if (!personas || !settings || available.length === 0) return 'Esta fita não tem personas (crie arquivos em personas/<nome>.md).';
+    const id = String(userId);
+    const wanted = arg.trim().toLowerCase().replace(/^@/, '');
+    if (!wanted) {
+      const active = this.activePersona(id)?.name;
+      const list = available.map((p) => `${p.name === active ? '▶' : '-'} ${p.name}: ${p.description}`).join('\n');
+      return `🎭 Personas (${active ? `ativa: ${active}` : 'falando com o agente'}):\n${list}\n\nUse /persona <nome>, /persona sair ou "@nome mensagem".`;
+    }
+    if (['sair', 'nenhuma', 'agente'].includes(wanted)) {
+      settings.set(id, 'persona', undefined);
+      return '🎭 De volta ao agente.';
+    }
+    const persona = personas.get(wanted);
+    if (!persona) return `Persona "${wanted}" não existe. Disponíveis: ${available.map((p) => p.name).join(', ')}.`;
+    settings.set(id, 'persona', persona.name);
+    return `🎭 Agora você fala com ${persona.name} (memória própria). /persona sair volta ao agente.`;
+  }
+
+  /** `/estilo`: lista, fixa (`/estilo formal`) ou volta ao padrão (`/estilo padrao`). */
+  styleCommand(userId: number | string, arg: string): string {
+    const { styles, settings } = this.deps;
+    if (!styles || !settings) return 'Estilos não disponíveis.';
+    const id = String(userId);
+    const wanted = arg.trim().toLowerCase();
+    if (!wanted) {
+      const active = settings.get(id, 'estilo') ?? this.deps.defaultStyle;
+      const list = styles.list().map((s) => `${s.name === active ? '▶' : '-'} ${s.name}: ${s.description}`).join('\n');
+      return `✍️ Estilos (${active ? `ativo: ${active}` : 'nenhum fixo'}):\n${list}\n\nUse /estilo <nome>, /estilo padrao, ou peça na mensagem ("em tom formal").`;
+    }
+    if (['padrao', 'padrão', 'nenhum', 'sair'].includes(wanted)) {
+      settings.set(id, 'estilo', undefined);
+      return '✍️ Estilo de volta ao padrão.';
+    }
+    const style = styles.get(wanted);
+    if (!style) return `Estilo "${wanted}" não existe. Disponíveis: ${styles.list().map((s) => s.name).join(', ')}.`;
+    settings.set(id, 'estilo', style.name);
+    return `✍️ Estilo fixado: ${style.name}. /estilo padrao desfaz.`;
+  }
+
+  private activePersona(userId: string): Persona | undefined {
+    const name = this.deps.settings?.get(userId, 'persona');
+    if (!name) return undefined;
+    const persona = this.deps.personas?.get(name);
+    if (!persona) this.logger.warn(`Persona "${name}" não existe mais na fita; usando o agente`);
+    return persona;
+  }
+
+  private memoryUserId(userId: number | string): string {
+    return PersonaCatalog.memoryUserId(String(userId), this.activePersona(String(userId)));
+  }
+
+  /** Precedência (spec personas-styles §5.2): pedido na mensagem → persona → /estilo → padrão da fita. */
+  private resolveStyle(userId: string, text: string, persona: Persona | undefined): TextStyle | undefined {
+    const { styles, settings } = this.deps;
+    if (!styles) return undefined;
+    const requested = styles.detect(text);
+    if (requested) return requested;
+    for (const name of [persona?.style, settings?.get(userId, 'estilo'), this.deps.defaultStyle]) {
+      const style = name ? styles.get(name) : undefined;
+      if (style) return style;
+    }
+    return undefined;
+  }
+
   newConversation(userId: number | string): void {
-    const conversation = this.deps.memory.startNewConversation(String(userId), this.deps.providerName);
+    const conversation = this.deps.memory.startNewConversation(this.memoryUserId(userId), this.deps.providerName);
     this.logger.info(`🆕 Conversa reiniciada para user=${userId} (${conversation.id.slice(0, 8)})`);
   }
 

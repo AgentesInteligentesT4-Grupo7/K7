@@ -157,11 +157,17 @@ export class WebChannel {
   }
 
   private async message(body: MessageBody): Promise<WebReply & { modelo?: string; transcricao?: string }> {
-    // Comandos de memória respondem direto, sem passar pelo LLM.
-    const command = /^\/(memoria|esquecer)\b\s*(.*)$/is.exec((body.texto ?? '').trim());
+    // Comandos de memória, persona e estilo respondem direto, sem passar pelo LLM.
+    const command = /^\/(memoria|esquecer|persona|estilo)\b\s*(.*)$/is.exec((body.texto ?? '').trim());
     if (command && !body.anexo && !body.audio) {
-      const texto = command[1]!.toLowerCase() === 'memoria' ? this.controller.memoryReport(this.options.userId) : this.controller.forget(this.options.userId, command[2] ?? '');
-      return { texto, arquivos: [], audios: [], imagens: [], avisos: [] };
+      const arg = command[2] ?? '';
+      const commands: Record<string, () => string> = {
+        memoria: () => this.controller.memoryReport(this.options.userId),
+        esquecer: () => this.controller.forget(this.options.userId, arg),
+        persona: () => this.controller.personaCommand(this.options.userId, arg),
+        estilo: () => this.controller.styleCommand(this.options.userId, arg),
+      };
+      return { texto: commands[command[1]!.toLowerCase()]!(), arquivos: [], audios: [], imagens: [], avisos: [] };
     }
     let input: AgentInput;
     try {

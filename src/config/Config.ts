@@ -99,6 +99,12 @@ export class Config {
   readonly channels: ReadonlySet<ChannelId>;
   /** Perfil ativo (definido pelo carregador de perfis), ou undefined no modo sem perfil. */
   readonly profileName: string | undefined;
+  /** Personas (spec personas-styles): pasta da fita com `<nome>.md`. */
+  readonly personasDir: string;
+  /** Estilos de texto em camadas: tocador `estilos/` → fita (ESTILOS_DIR). */
+  readonly stylesDirs: string[];
+  /** Estilo usado quando nada mais escolhe um (ESTILO_PADRAO / estilo_padrao da fita). */
+  readonly defaultStyle: string | undefined;
   /** Pasta do perfil em uso (evals/ e skills/ próprios). */
   readonly profileDir: string | undefined;
   /** Pasta das ferramentas HTTP declarativas (módulo "http"); com perfil, `<perfil>/ferramentas`. */
@@ -229,6 +235,9 @@ export class Config {
     this.modules = Config.parseSet(env.MODULES ?? DEFAULT_MODULES, MODULE_IDS, 'MODULES');
     this.skillsDirs = [...moduleSkillDirs(rootDir, this.modules), this.skillsDir];
     this.profileName = env.PERFIL_NOME?.trim() || undefined;
+    this.personasDir = path.resolve(rootDir, env.PERSONAS_DIR?.trim() || './personas');
+    this.stylesDirs = [path.resolve(rootDir, 'estilos'), ...(env.ESTILOS_DIR?.trim() ? [path.resolve(rootDir, env.ESTILOS_DIR.trim())] : [])];
+    this.defaultStyle = env.ESTILO_PADRAO?.trim().toLowerCase() || undefined;
     this.profileDir = env.PERFIL_DIR?.trim() ? path.resolve(rootDir, env.PERFIL_DIR.trim()) : undefined;
     this.httpToolsDir = env.FERRAMENTAS_DIR?.trim() ? path.resolve(rootDir, env.FERRAMENTAS_DIR.trim()) : undefined;
     this.env = env;

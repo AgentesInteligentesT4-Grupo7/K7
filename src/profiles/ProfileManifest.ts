@@ -34,6 +34,8 @@ export interface ProfileManifest {
   /** Canais que o perfil usa (padrão: telegram e terminal; web é opcional). */
   canais?: ChannelId[];
   privacidade?: PrivacyLevel;
+  /** Estilo de texto padrão da fita (ex.: formal, infantil). */
+  estiloPadrao?: string;
   /** Variáveis de ambiente que o `.env` do perfil precisa ter, com a descrição de cada uma. */
   variaveis: Record<string, string>;
 }
@@ -106,6 +108,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     opcoesModulos,
     canais,
     privacidade,
+    ...(str(raw.estilo_padrao) ? { estiloPadrao: str(raw.estilo_padrao)!.toLowerCase() } : {}),
     variaveis,
   };
 }

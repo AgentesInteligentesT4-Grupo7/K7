@@ -13,6 +13,11 @@ import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { ConversationSummarizer } from '../memory/ConversationSummarizer.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
+import { UserSettings } from '../memory/UserSettings.js';
+import { MarkdownCatalog } from '../personas/MarkdownCatalog.js';
+import { PersonaCatalog } from '../personas/Personas.js';
+import { PersonaAgents, PersonaDialogueTool, TalkToPersonaTool } from '../personas/PersonaTools.js';
+import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { AttachmentService } from '../modules/anexos/AttachmentService.js';
@@ -143,6 +148,10 @@ export function createCore(config: Config, options: CoreOptions): Core {
   }
   const agentLoop = new AgentLoop(llm, registry, config.maxIterations);
   const skillLoader = new SkillLoader(config.skillsDirs, config.identity);
+  // Personas (agentes com memória própria) e estilos de texto, em camadas tocador → fita.
+  const personas = new PersonaCatalog(new MarkdownCatalog([config.personasDir], 'Personas', config.identity));
+  const styles = new StyleCatalog(new MarkdownCatalog(config.stylesDirs, 'Estilos', config.identity));
+  const settings = new UserSettings(db);
   // Memória v1.1: o resumo usa o LLM barato do roteamento (ou MEMORY_SUMMARY_PROVIDER).
   const summaryLlm = !orchestrator && layers.summaryProvider ? providerFactory.createWithFallback(layers.summaryProvider) : routerLlm;
   const summarizer = layers.enabled
@@ -154,6 +163,11 @@ export function createCore(config: Config, options: CoreOptions): Core {
         privacy: config.orchestrator.privacyDefault,
       })
     : undefined;
+  // Ferramentas multiagente só quando a fita tem a pasta personas/ (o registro é lido a cada execução).
+  if (fs.existsSync(config.personasDir)) {
+    const agents = new PersonaAgents({ personas, styles, memory, llm, summarizer });
+    registry.register(new TalkToPersonaTool(agents)).register(new PersonaDialogueTool(agents));
+  }
   const skillRouter = new SkillRouter(routerLlm);
   const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry, config.identity), agentLoop, {
     roleProviders: providerFactory,
@@ -208,6 +222,10 @@ export function createCore(config: Config, options: CoreOptions): Core {
         privacyDefault: config.orchestrator.privacyDefault,
         audioReplies: voice,
         summarizer,
+        personas,
+        styles,
+        settings,
+        defaultStyle: config.defaultStyle,
       }),
   };
 }
