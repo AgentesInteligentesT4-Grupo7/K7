@@ -17,7 +17,8 @@
     "chat": "tsx src/canais/terminal/chat.ts",
     "eval": "tsx src/cli/eval.ts",
     "perfil": "tsx src/cli/perfil.ts",
-    "web": "tsx src/canais/web/web.ts"
+    "web": "tsx src/canais/web/web.ts",
+    "imagens:modelo": "tsx src/cli/imagens.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

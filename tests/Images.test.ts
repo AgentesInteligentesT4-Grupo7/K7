@@ -16,7 +16,7 @@ import { IMAGE_STYLES, SAFETY_NEGATIVE, buildPrompt, parseImageModels } from '..
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 
 /** ComfyUI + Ollama falsos: registra as chamadas; a imagem fica pronta na 2ª consulta ao histórico. */
-function fakeServices(checkpoints: string[] = ['dreamshaperXL_v21TurboDPMSDE.safetensors', 'animagineXLV31_v31.safetensors']) {
+function fakeServices(checkpoints: string[] = ['dreamshaperXL_v21TurboDPMSDE.safetensors', 'animagine-xl-4.0-opt.safetensors']) {
   const calls: Array<{ url: string; body?: unknown }> = [];
   let polls = 0;
   const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } });
@@ -96,7 +96,7 @@ describe('Imagens: geração no ComfyUI', () => {
     const { calls, fetcher } = fakeServices();
     const image = await generator(fetcher).generate({ description: 'red fox in a snowy forest', style: 'anime', aspect: 'retrato', seed: 42 });
     assert.equal(fs.readFileSync(image.path).toString('hex'), PNG.toString('hex'));
-    assert.equal(image.checkpoint, 'animagineXLV31_v31.safetensors');
+    assert.equal(image.checkpoint, 'animagine-xl-4.0-opt.safetensors');
     assert.deepEqual([image.width, image.height, image.seed], [832, 1216, 42]);
     assert.deepEqual(calls.find((c) => c.url.endsWith('/api/generate'))?.body, { model: 'qwen3:8b', keep_alive: 0 });
     const ollamaFreed = calls.findIndex((c) => c.url.endsWith('/api/generate'));

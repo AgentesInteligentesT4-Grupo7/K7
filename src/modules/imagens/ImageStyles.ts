@@ -56,11 +56,12 @@ export const IMAGE_STYLES: Record<string, ImageStyle> = {
   anime: {
     id: 'anime',
     descricao: 'anime colorido (estilo de série japonesa)',
-    checkpoint: 'animagineXL',
-    prefix: 'masterpiece, best quality, very aesthetic, anime style,',
+    checkpoint: 'animagine',
+    // Animagine XL 4.0: tags de qualidade e de nota próprias.
+    prefix: 'masterpiece, high score, great score, absurdres, anime style,',
     suffix: ', safe',
-    negative: `${QUALITY_NEGATIVE}, nsfw, lowres, bad anatomy, worst quality, low quality, displeasing`,
-    clipSkip: 2,
+    negative: `${QUALITY_NEGATIVE}, nsfw, low score, bad score, average score, username`,
+    clipSkip: 1,
     sampler: 'euler_ancestral',
     scheduler: 'normal',
     cfg: 5,

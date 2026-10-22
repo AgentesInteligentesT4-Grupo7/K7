@@ -207,12 +207,23 @@ navegador e no terminal (`workspace/imagens/`).
 | Estilo | Modelo (checkpoint) | Passos |
 |---|---|---|
 | `hq`, `ilustracao` | DreamShaper XL (versão Turbo/Lightning) | 6–8 |
-| `anime` | Animagine XL | 20–28 |
+| `anime` | Animagine XL 4.0 | 20–28 |
 | `manga` | Pony Diffusion V6 XL | 20–28 |
+
+Para ligar (uma vez; baixa ~5,4 GB da imagem e ~6,9 GB do modelo):
+
+```bash
+docker compose -f servicos/comfyui/docker-compose.yml up -d   # ComfyUI na GPU, só em 127.0.0.1:8188
+npm run imagens:modelo                  # DreamShaper XL Turbo V2 SFW (estilos hq e ilustracao), SHA-256 conferido
+npm run imagens:modelo -- anime         # opcional: Animagine XL 4.0
+docker stop comfyui | docker start comfyui                     # desligar / religar (não reinicia sozinho)
+```
 
 - Ligue o módulo no perfil (`modulos: imagens`, como no `historias`) ou em `MODULES`. Sem o ComfyUI no ar,
   o agente avisa e o resto continua funcionando.
-- Coloque os `.safetensors` em `ComfyUI/models/checkpoints`; `IMAGE_MODELS` liga estilo → trecho do nome.
+- Modelos e caches ficam em volumes Docker (`comfyui_*`). O ComfyUI roda com `--lowvram` por padrão
+  (`COMFYUI_CLI_ARGS` muda), para caber ao lado de outros serviços na GPU.
+- Outros checkpoints (ex.: Pony para `manga`, do Civitai): `docker cp arquivo.safetensors comfyui:/root/ComfyUI/models/checkpoints/`; `IMAGE_MODELS` liga estilo → trecho do nome.
   Estilo sem modelo cai para o padrão, com aviso.
 - **VRAM:** uma geração por vez; antes de gerar, os modelos do Ollama são descarregados da GPU; depois de
   `IMAGE_IDLE_UNLOAD_MIN` minutos ocioso, o modelo de imagem também sai.

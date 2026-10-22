@@ -1,0 +1,41 @@
+# ComfyUI na GPU para o módulo "imagens" (spec image-generation).
+#   Subir:               docker compose -f servicos/comfyui/docker-compose.yml up -d
+#   Parar / religar:     docker stop comfyui   |   docker start comfyui
+#   Baixar o modelo:     npm run imagens:modelo   (DreamShaper XL Turbo V2 SFW, ~6,9 GB)
+#   Interface:           http://127.0.0.1:8188
+#
+# Modelos e caches ficam em volumes Docker (carregar 7 GB de uma pasta do Windows montada é lento).
+# Sem restart automático: o ComfyUI só ocupa a GPU quando você liga.
+name: comfyui
+services:
+  comfyui:
+    image: yanwk/comfyui-boot:cu130-slim-v2
+    container_name: comfyui
+    ports:
+      - "127.0.0.1:8188:8188"
+    environment:
+      # --lowvram: com outros serviços na GPU, carrega o SDXL em partes em vez de falhar por falta de VRAM.
+      CLI_ARGS: ${COMFYUI_CLI_ARGS:---lowvram}
+    volumes:
+      - comfyui-models:/root/ComfyUI/models
+      - comfyui-output:/root/ComfyUI/output
+      - comfyui-custom-nodes:/root/ComfyUI/custom_nodes
+      - comfyui-user:/root/ComfyUI/user
+      - comfyui-local:/root/.local
+      - comfyui-cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: "no"
+
+volumes:
+  comfyui-models:
+  comfyui-output:
+  comfyui-custom-nodes:
+  comfyui-user:
+  comfyui-local:
+  comfyui-cache:
