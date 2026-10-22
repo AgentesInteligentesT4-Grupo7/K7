@@ -1,6 +1,7 @@
 import { UserFacingError, errorMessage } from '../errors/AppErrors.js';
 import { TaskClassifier } from '../llm/orchestration/TaskClassifier.js';
 import { TaskContext } from '../llm/orchestration/TaskContext.js';
+import { ResponseAttachments } from './ResponseAttachments.js';
 import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
 import type { SkillExecutor } from '../skills/SkillExecutor.js';
@@ -77,8 +78,8 @@ export class AgentController {
     const skill = routed.skill;
     const task: Task = routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text);
 
-    const result = await TaskContext.run({ task, privacy, userId }, () =>
-      this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input }),
+    const { result, images } = await ResponseAttachments.collect(() =>
+      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input })),
     );
 
     for (const step of result.steps) {
@@ -91,11 +92,19 @@ export class AgentController {
       conversation.id,
       'assistant',
       result.text,
-      { provider: result.providerName, skill: result.skillName, task, privacy, iterations: result.iterations, ...result.details },
+      {
+        provider: result.providerName,
+        skill: result.skillName,
+        task,
+        privacy,
+        iterations: result.iterations,
+        ...result.details,
+        ...(images.length ? { images: images.map((i) => i.path) } : {}),
+      },
       result.providerName,
     );
 
-    return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true) };
+    return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
   }
 
   newConversation(userId: number | string): void {

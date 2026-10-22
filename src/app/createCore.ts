@@ -13,6 +13,9 @@ import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
+import { ComfyUIClient } from '../modules/imagens/ComfyUIClient.js';
+import { GenerateImageTool } from '../modules/imagens/GenerateImageTool.js';
+import { ImageGenerator } from '../modules/imagens/ImageGenerator.js';
 import { SkillExecutor } from '../skills/SkillExecutor.js';
 import { SkillLoader } from '../skills/SkillLoader.js';
 import { SkillRouter } from '../skills/SkillRouter.js';
@@ -110,6 +113,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
   // Ferramentas, ReAct e skills (camadas: módulos ligados → perfil)
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
   if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
+  const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
+  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir));
   if (modules.has('http') && config.httpToolsDir) {
     const reserved = new Set(registry.list().map((t) => t.name));
     for (const tool of loadHttpTools(config.httpToolsDir, config.env, reserved)) registry.register(tool);
@@ -137,6 +142,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
   if (options.healthChecks) {
     void checkProviders(llm);
     if (voiceClone) void checkVoiceClone(voiceClone);
+    if (images) void checkImages(images, config.images.baseUrl);
     if (voice) {
       void checkTts(tts);
       void checkStt(stt, config.whisperEngine);
@@ -168,6 +174,30 @@ export function createCore(config: Config, options: CoreOptions): Core {
         audioReplies: voice,
       }),
   };
+}
+
+/** Módulo imagens: ComfyUI na GPU; antes de gerar, libera a VRAM do Ollama (API nativa, sem /v1). */
+function createImageGenerator(config: Config): ImageGenerator {
+  return new ImageGenerator({
+    comfy: new ComfyUIClient(config.images.baseUrl),
+    outputDir: path.join(config.workspaceDir, 'imagens'),
+    models: config.images.models,
+    defaultStyle: config.images.defaultStyle,
+    quality: config.images.quality,
+    timeoutMs: config.images.timeoutMs,
+    idleUnloadMs: config.images.idleUnloadMs,
+    ollamaUrl: config.providers.ollama.baseUrl?.replace(/\/v1$/, ''),
+  });
+}
+
+async function checkImages(images: ImageGenerator, baseUrl: string): Promise<void> {
+  try {
+    const checkpoints = await images.healthCheck();
+    if (checkpoints.length) logger.info(`✅ Imagens (ComfyUI): ${checkpoints.length} modelo(s): ${checkpoints.join(', ')}`);
+    else logger.warn('⚠️ ComfyUI no ar, mas sem modelos em models/checkpoints');
+  } catch (error) {
+    logger.warn(`⚠️ Gerador de imagens indisponível em ${baseUrl}: ${errorMessage(error)}`);
+  }
 }
 
 function createVoiceClone(config: Config): VoiceCloneService {

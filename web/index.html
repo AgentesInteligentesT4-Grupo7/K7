@@ -76,6 +76,8 @@ button:disabled { cursor: default; opacity: .5; }
 .file { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel); color: var(--text); text-decoration: none; width: fit-content; }
 .file:hover { border-color: var(--accent); }
 audio { width: 100%; max-width: 420px; height: 40px; }
+.shot img { display: block; max-width: min(100%, 560px); max-height: 70vh; border-radius: 12px; border: 1px solid var(--line); }
+.caption { font-size: 13px; color: var(--muted); margin-top: -4px; }
 .warn { color: var(--warn); font-size: 14px; }
 .error { color: var(--error); }
 .meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; gap: 12px; align-items: center; }
@@ -279,6 +281,12 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     if (reply.erro) body.appendChild(el('div', 'error', esc(reply.erro)));
     if (reply.texto) body.appendChild(el('div', 'md', markdown(reply.texto)));
     var extras = el('div', 'extras');
+    (reply.imagens || []).forEach(function (img) {
+      var link = el('a', 'shot'); link.href = fileUrl(img.url); link.target = '_blank'; link.rel = 'noopener';
+      var pic = el('img'); pic.src = fileUrl(img.url); pic.alt = img.legenda || 'Imagem gerada'; pic.loading = 'lazy';
+      link.appendChild(pic); extras.appendChild(link);
+      if (img.legenda) extras.appendChild(el('div', 'caption', esc(img.legenda)));
+    });
     (reply.audios || []).forEach(function (a) { var audio = el('audio'); audio.controls = true; audio.src = fileUrl(a.url); extras.appendChild(audio); });
     (reply.arquivos || []).forEach(function (f) { var link = el('a', 'file'); link.href = fileUrl(f.url); link.textContent = '📄 ' + f.nome; link.setAttribute('download', f.nome); extras.appendChild(link); });
     (reply.avisos || []).forEach(function (w) { extras.appendChild(el('div', 'warn', esc(w))); });

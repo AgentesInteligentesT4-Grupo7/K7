@@ -1,6 +1,7 @@
 import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
+import { parseImageModels } from '../modules/imagens/ImageStyles.js';
 import { CHANNELS, type ChannelId, DEFAULT_CHANNELS, DEFAULT_MODULES, MODULE_IDS, moduleSkillDirs } from '../modules/registry.js';
 
 export type ProviderName = 'gemini' | 'deepseek' | 'groq' | 'ollama';
@@ -117,6 +118,15 @@ export class Config {
   /** Clonagem de voz (Chatterbox na GPU) e pasta das amostras. */
   /** Canal web (chat no navegador): só em 127.0.0.1 por padrão, protegido por token. */
   readonly web: { host: string; port: number; token: string | undefined; userId: string };
+  /** Módulo imagens (spec image-generation): ComfyUI na GPU. */
+  readonly images: {
+    baseUrl: string;
+    models: Record<string, string>;
+    defaultStyle: string;
+    quality: 'rapido' | 'qualidade';
+    timeoutMs: number;
+    idleUnloadMs: number;
+  };
   readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
   readonly logLevel: string;
 
@@ -219,6 +229,16 @@ export class Config {
       langCode: env.KOKORO_LANG?.trim() || 'p',
     };
     this.ttsVoice = env.TTS_VOICE?.trim() || 'pt-BR-ThalitaMultilingualNeural';
+    const quality = (env.IMAGE_QUALITY?.trim().toLowerCase() || 'rapido') as 'rapido' | 'qualidade';
+    if (quality !== 'rapido' && quality !== 'qualidade') throw new ConfigError('IMAGE_QUALITY deve ser rapido ou qualidade');
+    this.images = {
+      baseUrl: (env.COMFYUI_BASE_URL?.trim() || 'http://localhost:8188').replace(/\/+$/, ''),
+      models: parseImageModels(env.IMAGE_MODELS),
+      defaultStyle: env.IMAGE_DEFAULT_STYLE?.trim().toLowerCase() || 'hq',
+      quality,
+      timeoutMs: Config.positiveInt(env.IMAGE_TIMEOUT_MS, 300_000),
+      idleUnloadMs: Number(env.IMAGE_IDLE_UNLOAD_MIN ?? 2) * 60_000 || 0,
+    };
     this.web = {
       host: env.WEB_HOST?.trim() || '127.0.0.1',
       port: Config.positiveInt(env.WEB_PORT, 8787),

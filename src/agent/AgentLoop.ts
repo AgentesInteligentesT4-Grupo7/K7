@@ -1,4 +1,4 @@
-import { MaxIterationsError, errorMessage } from '../errors/AppErrors.js';
+import { MaxIterationsError, UserFacingError, errorMessage } from '../errors/AppErrors.js';
 import type { ChatMessage, ILlmProvider, ToolCall } from '../llm/types.js';
 import { ToolArgumentError } from '../tools/BaseTool.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
@@ -106,7 +106,7 @@ export class AgentLoop {
         return JSON.stringify({ error: error.message, hint: 'Reenvie a chamada respeitando o schema da ferramenta.' });
       }
       // EC-02: erro "hard" da ferramenta volta como observação para a IA corrigir.
-      return JSON.stringify({ error: errorMessage(error) });
+      return JSON.stringify({ error: error instanceof UserFacingError ? error.userMessage : errorMessage(error) });
     }
   }
 }

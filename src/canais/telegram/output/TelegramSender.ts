@@ -29,6 +29,20 @@ export class TelegramSender {
     return this.call(chatId, () => this.api.sendDocument(chatId, new InputFile(filePath, filename), { caption }));
   }
 
+  sendPhoto(chatId: number, filePath: string, caption?: string): Promise<unknown> {
+    return this.call(chatId, () => this.api.sendPhoto(chatId, new InputFile(filePath), caption ? { caption } : {}));
+  }
+
+  /** Álbum de 2 a 10 fotos (a legenda de cada uma aparece ao abrir). */
+  sendAlbum(chatId: number, photos: Array<{ filePath: string; caption?: string }>): Promise<unknown> {
+    return this.call(chatId, () =>
+      this.api.sendMediaGroup(
+        chatId,
+        photos.map((p) => ({ type: 'photo' as const, media: new InputFile(p.filePath), ...(p.caption ? { caption: p.caption } : {}) })),
+      ),
+    );
+  }
+
   sendVoice(chatId: number, filePath: string): Promise<unknown> {
     return this.call(chatId, () => this.api.sendVoice(chatId, new InputFile(filePath)));
   }

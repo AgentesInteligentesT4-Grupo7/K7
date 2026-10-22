@@ -13,6 +13,7 @@ export interface WebReply {
   texto: string;
   arquivos: Array<{ nome: string; url: string }>;
   audios: Array<{ url: string; voz: string }>;
+  imagens: Array<{ url: string; legenda?: string }>;
   avisos: string[];
   erro?: string;
 }
@@ -43,7 +44,7 @@ export class WebOutputHandler implements IOutputHandler {
   }
 
   async send(chatId: number, response: AgentResponse): Promise<void> {
-    const reply: WebReply = { texto: '', arquivos: [], audios: [], avisos: [] };
+    const reply: WebReply = { texto: '', arquivos: [], audios: [], imagens: [], avisos: [] };
     const cloned = VoiceCloneTagParser.parse(response.text);
     const { text, files } = FileTagParser.parse(cloned.text);
     reply.texto = text;
@@ -51,18 +52,22 @@ export class WebOutputHandler implements IOutputHandler {
       const name = this.save(file.filename, file.content);
       reply.arquivos.push({ nome: file.filename, url: WebOutputHandler.url(name) });
     }
+    for (const image of response.images ?? []) {
+      const name = this.save(path.basename(image.path), fs.readFileSync(image.path));
+      reply.imagens.push({ url: WebOutputHandler.url(name), ...(image.caption ? { legenda: image.caption } : {}) });
+    }
     if (text && response.isAudio) await this.speak(reply, text, this.options.tts, 'resposta');
     for (const segment of cloned.segments) await this.speakCloned(reply, segment.text, segment.voice);
     this.resolve(chatId, reply);
   }
 
   async sendError(chatId: number, error: unknown): Promise<void> {
-    this.resolve(chatId, { texto: '', arquivos: [], audios: [], avisos: [], erro: formatUserError(error) });
+    this.resolve(chatId, { texto: '', arquivos: [], audios: [], imagens: [], avisos: [], erro: formatUserError(error) });
   }
 
   /** Gera um áudio avulso com a voz clonada (botão "falar" da página). */
   async speakClonedOnly(text: string, voiceName?: string): Promise<WebReply> {
-    const reply: WebReply = { texto: '', arquivos: [], audios: [], avisos: [] };
+    const reply: WebReply = { texto: '', arquivos: [], audios: [], imagens: [], avisos: [] };
     await this.speakCloned(reply, text, voiceName);
     return reply;
   }

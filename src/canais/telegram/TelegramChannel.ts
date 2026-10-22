@@ -8,6 +8,7 @@ import { TelegramFileDownloader } from './input/TelegramFileDownloader.js';
 import { AudioOutputStrategy } from './output/strategies/AudioOutputStrategy.js';
 import { ErrorOutputStrategy } from './output/strategies/ErrorOutputStrategy.js';
 import { FileOutputStrategy } from './output/strategies/FileOutputStrategy.js';
+import { ImageOutputStrategy } from './output/strategies/ImageOutputStrategy.js';
 import { TextOutputStrategy } from './output/strategies/TextOutputStrategy.js';
 import { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
 import { TelegramSender } from './output/TelegramSender.js';
@@ -32,6 +33,7 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
       file: new FileOutputStrategy(sender, core.tmp, textStrategy),
       error: new ErrorOutputStrategy(sender),
       audio: new AudioOutputStrategy(sender, core.tmp, core.tts, core.ffmpeg, notifier),
+      image: new ImageOutputStrategy(sender),
     },
     core.voiceClone,
   );

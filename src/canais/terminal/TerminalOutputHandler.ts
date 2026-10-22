@@ -54,8 +54,12 @@ export class TerminalOutputHandler implements IOutputHandler {
       fs.writeFileSync(target, file.content, 'utf8');
       this.info(`📄 Documento salvo: ${target}`);
     }
+    for (const image of response.images ?? []) {
+      this.info(`🖼️ Imagem: ${image.path}${image.caption ? `  (${image.caption})` : ''}`);
+      if (this.options.autoPlay) TerminalOutputHandler.open(image.path);
+    }
     for (const segment of cloned.segments) await this.sendClonedVoice(0, segment.text, segment.voice);
-    if (!text && files.length === 0 && cloned.segments.length === 0) this.print('(resposta vazia)');
+    if (!text && files.length === 0 && cloned.segments.length === 0 && !response.images?.length) this.print('(resposta vazia)');
   }
 
   async sendClonedVoice(_chatId: number, text: string, voiceName?: string): Promise<void> {

@@ -43,6 +43,11 @@ function fakeCore(): Core {
           ? 'Pronto <arquivo nome="nota.md">conteúdo da nota</arquivo>'
           : `eco: ${input.text.slice(0, 200)}`;
         memory.saveMessage(conversation.id, 'assistant', text);
+        if (input.text === 'gere imagem') {
+          const png = path.join(dir, 'gerada.png');
+          fs.writeFileSync(png, 'PNG');
+          return output.send(input.chatId, { text: 'Aqui está', isAudio: false, images: [{ path: png, caption: 'Farol' }] });
+        }
         await output.send(input.chatId, { text, isAudio: input.requiresAudioReply });
       },
       newConversation: (userId: string) => memory.startNewConversation(String(userId), 'falso'),
@@ -129,6 +134,16 @@ describe('Canal web', () => {
     assert.equal(await (await api(reply.arquivos[0]!.url)).text(), 'conteúdo da nota');
     assert.equal((await api(`/api/arquivos/${encodeURIComponent('../agente.db')}`)).status, 404);
     assert.equal((await api('/api/arquivos/%2E%2E%5Cagente.db')).status, 404);
+  });
+
+  it('imagem gerada vira URL servida como image/png, com legenda', async () => {
+    const reply = (await (await api('/api/mensagens', { method: 'POST', body: JSON.stringify({ texto: 'gere imagem' }) })).json()) as {
+      imagens: Array<{ url: string; legenda: string }>;
+    };
+    assert.equal(reply.imagens[0]!.legenda, 'Farol');
+    const res = await api(`${reply.imagens[0]!.url}?t=${TOKEN}`, { token: null });
+    assert.equal(res.headers.get('content-type'), 'image/png');
+    assert.equal(await res.text(), 'PNG');
   });
 
   it('anexo .md é extraído para o agente; tipo não suportado e áudio sem voz dão aviso', async () => {

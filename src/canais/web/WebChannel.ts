@@ -42,6 +42,9 @@ const MEDIA_TYPES: Record<string, string> = {
   '.opus': 'audio/ogg',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
 };
 
 class HttpError extends Error {
@@ -158,7 +161,7 @@ export class WebChannel {
       input = await this.buildInput(body);
     } catch (error) {
       if (!(error instanceof UserFacingError)) throw error;
-      return { texto: '', arquivos: [], audios: [], avisos: [], erro: `⚠️ ${error.userMessage}` };
+      return { texto: '', arquivos: [], audios: [], imagens: [], avisos: [], erro: `⚠️ ${error.userMessage}` };
     }
     const { chatId, reply } = this.output.begin();
     await this.controller.handle({ ...input, chatId });
@@ -315,7 +318,7 @@ export class WebChannel {
       'content-type': type,
       'content-length': fs.statSync(file).size,
       'x-content-type-options': 'nosniff',
-      'content-disposition': `${type.startsWith('audio/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'content-disposition': `${type.startsWith('audio/') || type.startsWith('image/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
     });
     fs.createReadStream(file).pipe(res);
   }

@@ -1,3 +1,5 @@
+import type { GeneratedImage } from './ResponseAttachments.js';
+
 export type InputSource = 'text' | 'document' | 'voice';
 export type Channel = 'telegram' | 'terminal' | 'web';
 
@@ -20,6 +22,8 @@ export interface AgentInput {
 export interface AgentResponse {
   text: string;
   isAudio: boolean;
+  /** Imagens geradas por ferramentas (módulo imagens), entregues pelo canal. */
+  images?: GeneratedImage[];
 }
 
 /** Contrato do Output Handler consumido pelo AgentController. */

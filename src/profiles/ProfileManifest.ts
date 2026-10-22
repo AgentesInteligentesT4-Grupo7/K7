@@ -39,7 +39,7 @@ export interface ProfileManifest {
 }
 
 /** Módulos previstos na spec que ainda não existem neste tocador. */
-const FUTURE_MODULES = new Set(['imagens', 'historias', 'pesquisa-web', 'anexos', 'promocoes']);
+const FUTURE_MODULES = new Set(['historias', 'pesquisa-web', 'anexos', 'promocoes']);
 const PRIVACY_LEVELS: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
 const IDENTITY_KEYS: Array<keyof ProfileIdentity> = ['nome', 'emoji', 'dono', 'proposito', 'instrucoes', 'idioma'];
 export const PROFILE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;

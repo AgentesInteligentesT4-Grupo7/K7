@@ -21,6 +21,7 @@ services:
       KOKORO_BASE_URL: http://host.docker.internal:8880/v1
       WHISPER_BASE_URL: http://host.docker.internal:8890/v1
       CHATTERBOX_BASE_URL: http://host.docker.internal:8004
+      COMFYUI_BASE_URL: http://host.docker.internal:8188
       # Banco SQLite num volume Docker (o modo WAL não é confiável em pasta do Windows montada).
       DB_PATH: /app/state/parreiraclaw.db
       # Perfis: a pasta ParreiraClaw-perfis é montada em /app/perfis; dados de cada perfil no volume.

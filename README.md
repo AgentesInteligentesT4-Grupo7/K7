@@ -197,6 +197,29 @@ perfil) e `npm run dev`. A página fica em `web/index.html` (editável sem reini
   usar o agente. `WEB_TOKEN` fixa o token; vazio gera um novo a cada início.
 - A página tem CSP restritiva (só o próprio script, por nonce) e o Markdown é renderizado com escape.
 
+## Imagens na GPU (módulo `imagens`)
+
+O agente desenha ilustrações, HQ, anime e mangá com modelos SDXL no [ComfyUI](https://github.com/comfyanonymous/ComfyUI),
+na sua GPU. Peça em português ("desenhe o Kael correndo num beco com chuva neon, estilo HQ"): o LLM escreve o
+prompt técnico em inglês e a ferramenta `gerar_imagem` entrega a imagem no Telegram (foto ou álbum), no
+navegador e no terminal (`workspace/imagens/`).
+
+| Estilo | Modelo (checkpoint) | Passos |
+|---|---|---|
+| `hq`, `ilustracao` | DreamShaper XL (versão Turbo/Lightning) | 6–8 |
+| `anime` | Animagine XL | 20–28 |
+| `manga` | Pony Diffusion V6 XL | 20–28 |
+
+- Ligue o módulo no perfil (`modulos: imagens`, como no `historias`) ou em `MODULES`. Sem o ComfyUI no ar,
+  o agente avisa e o resto continua funcionando.
+- Coloque os `.safetensors` em `ComfyUI/models/checkpoints`; `IMAGE_MODELS` liga estilo → trecho do nome.
+  Estilo sem modelo cai para o padrão, com aviso.
+- **VRAM:** uma geração por vez; antes de gerar, os modelos do Ollama são descarregados da GPU; depois de
+  `IMAGE_IDLE_UNLOAD_MIN` minutos ocioso, o modelo de imagem também sai.
+- **Conteúdo:** nudez, conteúdo sexual, violência gráfica e fotos realistas de pessoas reais são recusados antes
+  de chegar à GPU, e todo prompt leva um negativo de segurança fixo.
+- Seed fixo repete a imagem; mesma descrição canônica do personagem mantém a aparência entre cenas.
+
 ## Voz clonada (sua voz a partir de texto)
 
 Você digita, o bot devolve um voice note com a **sua voz**, gerado localmente na GPU pelo

@@ -82,7 +82,8 @@ describe('Manifesto do perfil (perfil.yaml)', () => {
     assert.throws(() => parseManifest('versao: 1'), /campo "nome" é obrigatório/);
     assert.throws(() => parseManifest('nome: Promo Bot'), /letras minúsculas/);
     assert.throws(() => parseManifest('nome: x\nmodulos: [teleporte]'), /modulos.teleporte" não existe/);
-    assert.throws(() => parseManifest('nome: x\nmodulos: [imagens]'), /ainda não está disponível neste tocador/);
+    assert.throws(() => parseManifest('nome: x\nmodulos: [historias]'), /ainda não está disponível neste tocador/);
+    assert.deepEqual(parseManifest('nome: x\nmodulos: [imagens]').modulos, ['imagens']);
     assert.throws(() => parseManifest('nome: x\ncanais: [whatsapp]'), /canais" tem valores desconhecidos/);
     assert.throws(() => parseManifest('nome: x\nprivacidade: secreta'), /privacidade/);
     assert.throws(() => parseManifest('nome: [x'), ProfileError);
