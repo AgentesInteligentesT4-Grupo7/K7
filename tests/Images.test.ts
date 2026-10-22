@@ -204,7 +204,7 @@ describe('Imagens: ferramenta e entrega', () => {
         userId !== '7' ? undefined : id === 3 ? { id: 3, kind: 'image', name: 'praia.jpg' } : id === 4 ? { id: 4, kind: 'pdf', name: 'a.pdf' } : undefined,
       readFile: () => Buffer.from('foto'),
     };
-    const tool = new GenerateImageTool(generator(fetcher), os.tmpdir(), { store } as never);
+    const tool = new GenerateImageTool(generator(fetcher), os.tmpdir(), { attachments: { store } as never });
     const inChat = <T>(fn: () => Promise<T>) => TaskContext.run({ task: 'visao', privacy: 'pessoal', userId: '7' }, fn);
     const { result } = await inChat(() => ResponseAttachments.collect(() => tool.execute({ descricao: 'two friends on the beach', imagem_base: 3 })));
     const output = JSON.parse(result.output) as Record<string, unknown>;

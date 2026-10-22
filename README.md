@@ -296,6 +296,11 @@ docker stop comfyui | docker start comfyui                     # desligar / reli
 - **Conteúdo:** nudez, conteúdo sexual, violência gráfica e fotos realistas de pessoas reais são recusados antes
   de chegar à GPU, e todo prompt leva um negativo de segurança fixo.
 - Seed fixo repete a imagem; mesma descrição canônica do personagem mantém a aparência entre cenas.
+- **Fichas de personagem (HQ):** `npm run imagens:modelo -- personagens` instala o IP-Adapter (~3,5 GB). Cada
+  personagem (e cada fase dele: jovem, adulto...) ganha uma ficha com até 4 imagens de referência, buscadas na
+  internet (só as limpas: personagem sozinho, sem balão ou texto), enviadas por você ou aprovadas de uma geração.
+  Todo desenho do personagem é condicionado na ficha, para sair igual em todos os quadros. Com personagem, são
+  geradas 3 versões (`IMAGE_CANDIDATES`) e um modelo com visão escolhe a de corpo certo e mais parecida.
 - **Foto → desenho:** mande uma foto (módulo `anexos`) e peça "transforma em anime" (ou HQ, ilustração, mangá).
   O ComfyUI redesenha por cima da foto mantendo composição e cores; `intensidade` fiel, equilibrado (padrão) ou
   criativo. Com pessoas, o rosto pode mudar (use "fiel"). Foto nunca vira o estilo `realista`.

@@ -23,6 +23,9 @@ import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createSearchProvider, createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { CharacterReferenceFinder } from '../modules/imagens/CharacterReference.js';
+import { CharacterSheets } from '../modules/imagens/CharacterSheets.js';
+import { CreateCharacterSheetTool, DeleteCharacterSheetTool, ListCharacterSheetsTool } from '../modules/imagens/CharacterSheetTools.js';
+import { ImageJudge } from '../modules/imagens/ImageJudge.js';
 import { SafeHttpClient } from '../net/SafeHttpClient.js';
 import { createKnowledge } from '../modules/conhecimento/createKnowledge.js';
 import { DebateEngine, DebateStore, DebateTool, debateContext } from '../modules/refinamento/Debate.js';
@@ -150,13 +153,21 @@ export function createCore(config: Config, options: CoreOptions): Core {
       if (removed) logger.info(`🧹 Anexos: ${removed} removido(s) pela retenção`);
     }
   }
-  const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
+  const images = modules.has('imagens') ? createImageGenerator(config, llm) : undefined;
   // Personagens existentes: referências da internet (SearXNG imagens + busca) antes de desenhar.
   const references =
     images && modules.has('pesquisa-web')
       ? new CharacterReferenceFinder({ searxngUrl: config.search.searxngUrl, http: new SafeHttpClient(), llm, textSearch: createSearchProvider(config, new SafeHttpClient()) })
       : undefined;
-  if (images) registry.register(new GenerateImageTool(images, config.workspaceDir, attachments, references));
+  if (images) {
+    // Fichas de personagem nos dados do perfil: mesmo rosto e corpo em toda a história (IP-Adapter).
+    const sheets = new CharacterSheets(path.join(path.dirname(config.dbPath), 'personagens'));
+    registry.register(new GenerateImageTool(images, config.workspaceDir, { attachments, references, sheets, candidates: config.images.candidates }));
+    registry
+      .register(new CreateCharacterSheetTool({ sheets, references, attachments }))
+      .register(new ListCharacterSheetsTool(sheets))
+      .register(new DeleteCharacterSheetTool(sheets));
+  }
   // Módulo conhecimento: o CRAG completa com a internet quando o pesquisa-web está ligado.
   const webTool = registry.get('pesquisar_web');
   const knowledge = modules.has('conhecimento')
@@ -269,7 +280,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
 }
 
 /** Módulo imagens: ComfyUI na GPU; antes de gerar, libera a VRAM do Ollama (API nativa, sem /v1). */
-function createImageGenerator(config: Config): ImageGenerator {
+function createImageGenerator(config: Config, llm: ILlmProvider): ImageGenerator {
   return new ImageGenerator({
     comfy: new ComfyUIClient(config.images.baseUrl),
     outputDir: path.join(config.workspaceDir, 'imagens'),
@@ -278,6 +289,8 @@ function createImageGenerator(config: Config): ImageGenerator {
     quality: config.images.quality,
     timeoutMs: config.images.timeoutMs,
     idleUnloadMs: config.images.idleUnloadMs,
+    // Inspeção com visão: anatomia e semelhança com a ficha (escolhe a melhor de IMAGE_CANDIDATES versões).
+    judge: new ImageJudge(llm),
     ollamaUrl: config.providers.ollama.baseUrl?.replace(/\/v1$/, ''),
   });
 }

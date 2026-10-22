@@ -183,6 +183,8 @@ export class Config {
     quality: 'rapido' | 'qualidade';
     timeoutMs: number;
     idleUnloadMs: number;
+    /** Versões geradas quando há personagem, para a inspeção escolher a melhor (IMAGE_CANDIDATES, até 4). */
+    candidates: number;
   };
   readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
   readonly logLevel: string;
@@ -328,6 +330,7 @@ export class Config {
       quality,
       timeoutMs: Config.positiveInt(env.IMAGE_TIMEOUT_MS, 300_000),
       idleUnloadMs: Number(env.IMAGE_IDLE_UNLOAD_MIN ?? 2) * 60_000 || 0,
+      candidates: Math.min(4, Config.positiveInt(env.IMAGE_CANDIDATES, 3)),
     };
     this.web = {
       host: env.WEB_HOST?.trim() || '127.0.0.1',
