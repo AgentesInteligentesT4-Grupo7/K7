@@ -133,6 +133,9 @@ npm run perfil -- atualizar <nome>    # busca a versão nova (mantém .env e dad
 npm run perfil -- remover <nome>      # pede confirmação; --apagar-dados apaga dados/<nome>
 ```
 
+- **Criar uma fita conversando:** peça ao agente ("quero uma fita de receitas com uma chef mineira") e a skill
+  `criador-de-fitas` monta manifesto, skills, personas e ferramentas em `fitas/<nome>/` no workspace; depois
+  `npm run perfil -- instalar workspace/<perfil>/fitas/<nome>` (o instalador confere que não há código).
 - **Sem `--perfil`** (e `PERFIL_PADRAO` vazio), tudo funciona como antes, só com o `.env` raiz.
 - **Com perfil**, o ambiente é montado nesta ordem (o último vence): `.env` do tocador (sem identidade e sem
   token do bot) → pastas isoladas (`dados/<perfil>/agente.db`, `dados/<perfil>/vozes`, `workspace/<perfil>`,
