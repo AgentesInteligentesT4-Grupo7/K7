@@ -29,6 +29,11 @@ export interface AgentResponse {
   images?: GeneratedImage[];
 }
 
+/** Contexto extra recuperado para a mensagem (ex.: base de conhecimento no modo automático). */
+export interface IContextProvider {
+  contextFor(text: string): Promise<string | undefined>;
+}
+
 /** Contrato do Output Handler consumido pelo AgentController. */
 export interface IOutputHandler {
   send(chatId: number, response: AgentResponse): Promise<void>;

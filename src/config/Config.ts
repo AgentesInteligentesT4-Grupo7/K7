@@ -2,12 +2,29 @@ import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
 import { DEFAULT_GUARDRAILS, type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
+import type { EmbeddingsChoice } from '../modules/conhecimento/Embeddings.js';
+import type { RetrievalOptions } from '../modules/conhecimento/KnowledgeRetriever.js';
 import { parseImageModels } from '../modules/imagens/ImageStyles.js';
 import { CHANNELS, type ChannelId, DEFAULT_CHANNELS, DEFAULT_MODULES, MODULE_IDS, moduleSkillDirs } from '../modules/registry.js';
 
 export type ProviderName = 'gemini' | 'deepseek' | 'groq' | 'ollama';
 export type WhisperEngine = 'openai-whisper' | 'whisper-cpp' | 'http';
 export type TtsEngine = 'kokoro' | 'edge';
+
+export interface KnowledgeConfig {
+  /** `conhecimento/` da fita (vem com ela). */
+  dir: string;
+  /** O que o usuário guarda pelo chat (nos dados do perfil, fora da fita). */
+  userDir: string;
+  embeddings: EmbeddingsChoice;
+  ollamaModel: string;
+  geminiModel: string;
+  chunkSize: number;
+  chunkOverlap: number;
+  /** Busca em toda mensagem e põe os trechos no prompt (além da ferramenta). */
+  auto: boolean;
+  retrieval: RetrievalOptions;
+}
 
 export const SUPPORTED_TTS_ENGINES: readonly TtsEngine[] = ['kokoro', 'edge'];
 
@@ -140,6 +157,8 @@ export class Config {
   readonly web: { host: string; port: number; token: string | undefined; userId: string };
   /** Módulo anexos (spec attachments): biblioteca ao lado do banco, isolada por perfil. */
   readonly attachments: { dir: string; retentionDays: number; maxBytes: number };
+  /** Módulo conhecimento (spec knowledge-base): pastas, embeddings e técnicas de busca. */
+  readonly knowledge: KnowledgeConfig;
   /** Módulo pesquisa-web (spec web-search). */
   readonly search: {
     providers: string[];
@@ -283,6 +302,7 @@ export class Config {
       retentionDays: Config.positiveInt(env.ATTACHMENTS_RETENTION_DAYS, 90),
       maxBytes: Config.positiveInt(env.ATTACHMENTS_MAX_GB, 5) * 1024 ** 3,
     };
+    this.knowledge = Config.parseKnowledge(env, rootDir, path.dirname(this.dbPath));
     this.search = {
       providers: Config.list(env.SEARCH_PROVIDERS || 'searxng,duckduckgo,tavily').map((p) => p.toLowerCase()),
       searxngUrl: (env.SEARXNG_BASE_URL?.trim() || 'http://localhost:8888').replace(/\/+$/, ''),
@@ -369,6 +389,44 @@ export class Config {
   }
 
   /** Lista separada por vírgulas, validada contra os valores conhecidos. */
+  /**
+   * Opções do módulo conhecimento: `modulos.conhecimento` do perfil.yaml (via MODULOS_OPCOES) e,
+   * por baixo, as variáveis do .env (EMBEDDINGS_PROVIDER, CONHECIMENTO_*).
+   */
+  private static parseKnowledge(env: NodeJS.ProcessEnv, rootDir: string, dataDir: string): KnowledgeConfig {
+    let options: Record<string, unknown> = {};
+    try {
+      const all = env.MODULOS_OPCOES ? (JSON.parse(env.MODULOS_OPCOES) as Record<string, unknown>) : {};
+      if (all.conhecimento && typeof all.conhecimento === 'object') options = all.conhecimento as Record<string, unknown>;
+    } catch {
+      throw new ConfigError('MODULOS_OPCOES deve ser JSON');
+    }
+    const pick = (key: string, envKey: string) => (options[key] !== undefined ? String(options[key]) : env[envKey]);
+    // YAML lê "off" como false.
+    const raw = pick('embeddings', 'EMBEDDINGS_PROVIDER')?.trim().toLowerCase() || 'auto';
+    const embeddings = (raw === 'false' ? 'off' : raw) as EmbeddingsChoice;
+    if (!['auto', 'ollama', 'gemini', 'off'].includes(embeddings)) throw new ConfigError('embeddings (EMBEDDINGS_PROVIDER) deve ser auto, ollama, gemini ou off');
+    const fusion = pick('fusao', 'CONHECIMENTO_FUSAO');
+    return {
+      dir: path.resolve(rootDir, env.CONHECIMENTO_DIR?.trim() || './conhecimento'),
+      userDir: path.resolve(rootDir, env.CONHECIMENTO_USUARIO_DIR?.trim() || path.join(dataDir, 'conhecimento')),
+      embeddings,
+      ollamaModel: env.OLLAMA_EMBED_MODEL?.trim() || 'embeddinggemma',
+      geminiModel: env.GEMINI_EMBED_MODEL?.trim() || 'gemini-embedding-001',
+      chunkSize: Config.positiveInt(pick('trecho', 'CONHECIMENTO_TRECHO'), 900),
+      chunkOverlap: Config.positiveInt(pick('sobreposicao', 'CONHECIMENTO_SOBREPOSICAO'), 150),
+      auto: Config.bool(pick('automatico', 'CONHECIMENTO_AUTOMATICO'), false),
+      retrieval: {
+        results: Config.positiveInt(pick('resultados', 'CONHECIMENTO_RESULTADOS'), 5),
+        // "fusao: true" = 3 variações; número = quantas.
+        fusion: fusion === 'true' ? 3 : Math.max(0, Math.min(5, Number(fusion) || 0)),
+        hyde: Config.bool(pick('hyde', 'CONHECIMENTO_HYDE'), false),
+        crag: Config.bool(pick('crag', 'CONHECIMENTO_CRAG'), false),
+        adaptive: Config.bool(pick('adaptativo', 'CONHECIMENTO_ADAPTATIVO'), false),
+      },
+    };
+  }
+
   /** GUARDRAILS: JSON com o bloco `guardrails:` do perfil (validado de novo para o modo sem perfil). */
   private static parseGuardrails(value: string | undefined): GuardrailsConfig {
     if (!value?.trim()) return DEFAULT_GUARDRAILS;

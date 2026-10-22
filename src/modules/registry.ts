@@ -20,6 +20,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   { id: 'pesquisa-web', descricao: 'Pesquisa na internet, leitura de páginas e notícias (SearXNG/DuckDuckGo, Google News)' },
   { id: 'anexos', descricao: 'Imagens e documentos enviados: visão, OCR, biblioteca com busca (listar_anexos, ler_anexo...)' },
   { id: 'imagens', descricao: 'Geração de imagens na GPU (ComfyUI + SDXL): ilustração, HQ, anime e mangá' },
+  { id: 'conhecimento', descricao: 'Base de conhecimento (RAG): documentos da fita em conhecimento/, busca híbrida e citações' },
 ];
 
 export const MODULE_IDS: readonly string[] = MODULES.map((m) => m.id);

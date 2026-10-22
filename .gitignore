@@ -16,3 +16,6 @@ dados/
 
 # Livros e materiais de referência (direitos autorais; não versionar)
 livros/
+
+# Base de conhecimento do modo sem perfil (documentos pessoais)
+/conhecimento/

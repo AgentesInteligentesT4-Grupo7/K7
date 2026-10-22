@@ -21,6 +21,7 @@ import { PersonaAgents, PersonaDialogueTool, TalkToPersonaTool } from '../person
 import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createWebTools } from '../modules/pesquisa-web/createWebTools.js';
+import { createKnowledge } from '../modules/conhecimento/createKnowledge.js';
 import { AttachmentService } from '../modules/anexos/AttachmentService.js';
 import { AttachmentStore } from '../modules/anexos/AttachmentStore.js';
 import { createAttachmentTools } from '../modules/anexos/AttachmentTools.js';
@@ -143,6 +144,18 @@ export function createCore(config: Config, options: CoreOptions): Core {
   }
   const images = modules.has('imagens') ? createImageGenerator(config) : undefined;
   if (images) registry.register(new GenerateImageTool(images, config.workspaceDir));
+  // Módulo conhecimento: o CRAG completa com a internet quando o pesquisa-web está ligado.
+  const webTool = registry.get('pesquisar_web');
+  const knowledge = modules.has('conhecimento')
+    ? createKnowledge(config, {
+        db,
+        llm: routerLlm,
+        runner,
+        attachments,
+        ...(webTool ? { webSearch: async (q: string) => (await webTool.execute({ consulta: q })).output } : {}),
+      })
+    : undefined;
+  for (const tool of knowledge?.tools ?? []) registry.register(tool);
   if (modules.has('http') && config.httpToolsDir) {
     const reserved = new Set(registry.list().map((t) => t.name));
     for (const tool of loadHttpTools(config.httpToolsDir, config.env, reserved)) registry.register(tool);
@@ -230,6 +243,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
         settings,
         defaultStyle: config.defaultStyle,
         guardrails,
+        ...(knowledge?.contextProvider ? { contextProviders: [knowledge.contextProvider] } : {}),
       }),
   };
 }

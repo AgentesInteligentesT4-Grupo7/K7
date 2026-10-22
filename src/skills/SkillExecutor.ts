@@ -22,6 +22,8 @@ export interface SkillExecutionRequest {
   controls?: Record<string, number>;
   /** Seção de guardrails (limites da fita + aviso da entrada). */
   guardrails?: string;
+  /** Contexto recuperado (base de conhecimento no modo automático). */
+  retrieved?: string;
 }
 
 export interface SkillExecutionResult extends AgentRunResult {
@@ -88,6 +90,7 @@ export class SkillExecutor {
       style: request.style,
       controls: request.controls,
       guardrails: request.guardrails,
+      retrieved: request.retrieved,
     });
 
     const result = await this.agentLoop.run({ systemPrompt, history: request.history, ...this.iterationLimits(request.skill) });

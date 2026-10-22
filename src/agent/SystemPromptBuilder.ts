@@ -16,6 +16,8 @@ export interface PromptContext {
   controls?: TextControls;
   /** Limites da fita e avisos de segurança (guardrails). */
   guardrails?: string;
+  /** Contexto recuperado para esta mensagem (base de conhecimento no modo automático). */
+  retrieved?: string;
 }
 
 /** Monta o System Prompt de cada execução do AgentLoop. */
@@ -33,10 +35,12 @@ export class SystemPromptBuilder {
       context.guardrails ?? '',
       this.reasoningRules(),
       this.toolsSection(),
+      this.knowledgeRules(),
       this.researchRules(),
       this.fileOutputRules(),
       this.skillsSection(context.availableSkills, context.activeSkill?.name ?? null),
       context.activeSkill ? this.activeSkillSection(context.activeSkill) : '',
+      context.retrieved ?? '',
       context.style ? this.styleSection(context.style) : '',
       context.controls ? renderControls(context.controls) : '',
       this.inputSection(context.input),
@@ -93,6 +97,15 @@ ${persona.body}`;
     return `# Estilo de escrita: ${style.name}
 Escreva a resposta (e documentos gerados) neste estilo:
 ${style.body}`;
+  }
+
+  /** Só quando o módulo conhecimento está ligado (spec knowledge-base RF-07): a base da fita vem antes da internet. */
+  private knowledgeRules(): string {
+    if (!this.registry.get('consultar_conhecimento')) return '';
+    return `# Base de conhecimento da fita
+- Esta fita tem documentos próprios (políticas, manuais, receitas, anotações). Para perguntas que possam estar neles, chame consultar_conhecimento ANTES de responder de memória ou de pesquisar na internet.
+- Responda com base nos trechos e cite-os como [1], [2]. Se a base não tiver a resposta, diga isso; só então use a internet (se disponível) e deixe claro o que veio de fora.
+- Se o usuário pedir para lembrar ou arquivar um conteúdo, use guardar_no_conhecimento.`;
   }
 
   /** Só quando o módulo pesquisa-web está ligado (spec web-search RF-05, RF-06, RF-07). */

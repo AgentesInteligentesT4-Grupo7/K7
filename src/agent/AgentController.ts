@@ -14,7 +14,7 @@ import type { SkillExecutor } from '../skills/SkillExecutor.js';
 import type { SkillLoader, SkillMetadata } from '../skills/SkillLoader.js';
 import type { SkillRouter } from '../skills/SkillRouter.js';
 import { Logger, preview } from '../utils/Logger.js';
-import type { AgentInput, AgentResponse, IOutputHandler } from './types.js';
+import type { AgentInput, AgentResponse, IContextProvider, IOutputHandler } from './types.js';
 
 export interface AgentControllerDeps {
   memory: MemoryManager;
@@ -37,6 +37,8 @@ export interface AgentControllerDeps {
   defaultStyle?: string;
   /** Guardrails declarados na fita (spec guardrails). */
   guardrails?: Guardrails;
+  /** Contexto recuperado a cada mensagem (base de conhecimento no modo automático). */
+  contextProviders?: IContextProvider[];
 }
 
 const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
@@ -122,8 +124,9 @@ export class AgentController {
     const skill = routed.skill;
     const task: Task = input.images?.length ? 'visao' : (routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text));
 
+    const retrieved = await this.retrieve(input.text, { task, privacy, userId });
     const { result, images } = await ResponseAttachments.collect(() =>
-      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style, controls, guardrails: guardrailsPrompt })),
+      TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style, controls, guardrails: guardrailsPrompt, retrieved })),
     );
     // Guardrails de saída: palavras proibidas e dados pessoais (a versão salva na memória também sai limpa).
     const output = guardrails ? await TaskContext.run({ task, privacy, userId }, () => guardrails.checkOutput(result.text)) : undefined;
@@ -159,6 +162,23 @@ export class AgentController {
 
     this.deps.summarizer?.schedule(conversation.id, memoryUserId);
     return { text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
+  }
+
+  /** Contexto dos provedores (falha de um não derruba a resposta). */
+  private async retrieve(text: string, context: { task: Task; privacy: PrivacyLevel; userId: string }): Promise<string | undefined> {
+    const providers = this.deps.contextProviders ?? [];
+    if (!providers.length) return undefined;
+    const parts = await TaskContext.run(context, () =>
+      Promise.all(
+        providers.map((p) =>
+          p.contextFor(text).catch((error: unknown) => {
+            this.logger.warn(`Contexto indisponível: ${errorMessage(error)}`);
+            return undefined;
+          }),
+        ),
+      ),
+    );
+    return parts.filter(Boolean).join('\n\n') || undefined;
   }
 
   /** URLs lidas com ler_pagina nesta resposta (spec web-search §9: metadata.sources). */

@@ -23,6 +23,8 @@ O ParreiraClaw passa a ser um **tocador**: um núcleo estável (loop do agente, 
 | Canais em `src/canais/<canal>/` | ✅ `telegram`, `terminal`, `web` (chat no navegador: `npm run web` ou `canais: [web]`) e `comum`. |
 | Ferramentas HTTP declarativas (RF-13) | ✅ Módulo `http` (`src/modules/http/`): `ferramentas/*.yaml` do perfil; https, hosts declarados, DNS validado na conexão contra rede interna, sem redirecionamentos, 15 s, limite de resposta, chave do `.env` omitida da resposta. |
 | Módulos externos/MCP (RF-14) | ⏳ Pendente. |
+| Módulo `conhecimento` | ✅ RAG por fita (`src/modules/conhecimento/`, spec knowledge-base): `conhecimento/` com bases e `bases.yaml`, busca híbrida + RRF, RAG-Fusion, HyDE, Adaptive e CRAG por fita. Opções de módulo do manifesto chegam ao Config via `MODULOS_OPCOES`. |
+| Guardrails por fita | ✅ Bloco `guardrails:` do manifesto (spec guardrails). |
 | Módulo `imagens` | ✅ MVP no tocador (`src/modules/imagens/`): `gerar_imagem`, estilos hq/ilustracao/anime/manga, fila, liberação de VRAM, travas de conteúdo, entrega nos 3 canais. Pendentes da spec image-generation: projetos de história com IP-Adapter, poses, montagem de página e classificador NSFW. |
 
 ---

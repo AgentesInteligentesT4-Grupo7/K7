@@ -214,6 +214,37 @@ cita as URLs ("Fontes:"). Ferramentas: `pesquisar_web`, `ler_pagina` (HTML e PDF
 - Skills podem pedir mais passos com `max_iterations` no frontmatter (até `MAX_ITERATIONS_HARD_CAP`); ao
   estourar, o agente entrega o que já levantou em vez de um erro.
 
+## Base de conhecimento (módulo `conhecimento`)
+
+RAG com os documentos da própria fita: o agente consulta a base antes de responder de memória ou ir à internet,
+e cita os trechos como [1], [2] (spec [knowledge-base](specs/knowledge-base.md)).
+
+```
+minha-fita/conhecimento/
+├── bases.yaml            # loja: { descricao: "Políticas da loja", idioma: pt-BR }
+├── loja/trocas.md        # cada subpasta é uma base (.md, .txt, .pdf)
+└── faq.txt               # arquivos soltos vão para a base "geral"
+```
+
+- **Ferramentas:** `consultar_conhecimento` (busca), `listar_conhecimento` e `guardar_no_conhecimento` (texto ou
+  anexo; vai para os dados do perfil, fora da fita). Arquivos novos ou alterados são reindexados sozinhos.
+- **Busca híbrida:** palavras (FTS5/BM25, sem acento, com prefixo para plurais) + vetores, fundidas por RRF.
+- **Embeddings** (`EMBEDDINGS_PROVIDER=auto`): Ollama local se houver GPU e o modelo baixado
+  (`ollama pull embeddinggemma`, ~600 MB) → Gemini se houver chave e a privacidade for `publico` → só palavras.
+  Falta de cota ou modelo nunca quebra a busca: ela segue por palavras.
+- **Técnicas por fita** (opcionais, custam 1–2 pedidos ao modelo barato por consulta):
+
+```yaml
+modulos:
+  conhecimento:
+    fusao: 3          # RAG-Fusion: 3 reformulações da pergunta
+    hyde: true        # busca vetorial também por uma "resposta hipotética"
+    adaptativo: true  # pergunta complexa vira sub-perguntas; conversa simples não busca
+    crag: true        # avalia os trechos; se fracos, completa (ou troca) pela internet
+    automatico: false # true = busca em toda mensagem e põe os trechos no prompt
+    resultados: 5
+```
+
 ## Imagens e documentos enviados (módulo `anexos`)
 
 Mande uma foto, print, recibo, PDF ou arquivo de texto (Telegram, `/imagem` e `/arquivo` no terminal, 📎 no

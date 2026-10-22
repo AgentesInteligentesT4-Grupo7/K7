@@ -108,6 +108,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     FERRAMENTAS_DIR: path.join(profile.dir, 'ferramentas'),
     PERSONAS_DIR: path.join(profile.dir, 'personas'),
     ESTILOS_DIR: path.join(profile.dir, 'estilos'),
+    CONHECIMENTO_DIR: path.join(profile.dir, 'conhecimento'),
   });
 
   const { manifest } = profile;
@@ -124,6 +125,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     ESTILO_PADRAO: manifest.estiloPadrao,
     // Estruturado: vai como JSON já validado; o Config só o relê.
     GUARDRAILS: manifest.guardrails ? JSON.stringify(manifest.guardrails) : undefined,
+    MODULOS_OPCOES: JSON.stringify(manifest.opcoesModulos),
   };
   for (const [key, value] of Object.entries(fromManifest)) if (value !== undefined) env[key] = value;
 
