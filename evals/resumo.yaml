@@ -1,0 +1,12 @@
+- pergunta: "Resuma em uma frase: 'A reunião de segunda foi adiada para quarta às 15h porque o diretor estará viajando. A pauta continua a mesma: orçamento de 2027.' Inclua o novo dia."
+  esperado: [quarta]
+- pergunta: "Resuma em uma frase o motivo: 'O servidor caiu às 3h por falta de espaço em disco. A equipe liberou 200 GB e o serviço voltou às 4h20.'"
+  esperado: [espaço, disco]
+- pergunta: "Qual é o valor total citado neste texto? 'Compramos 2 notebooks de R$ 3.000 e um monitor de R$ 1.200.' Responda só o total."
+  esperado: ["7.200", "7200"]
+- pergunta: "Em uma palavra, qual é o sentimento do cliente? 'Pedi há três semanas, ninguém responde e o produto chegou quebrado. Péssimo.'"
+  esperado: [insatisf, negativ, raiva, frustra, irrita]
+- pergunta: "Liste só o prazo: 'O contrato deve ser assinado até 30/11 e a primeira entrega acontece em janeiro.'"
+  esperado: ["30/11", "30 de novembro"]
+- pergunta: "Resuma em até 5 palavras: 'Por causa da chuva forte, o evento ao ar livre de sábado foi transferido para o ginásio coberto.'"
+  esperado: [ginásio, ginasio]

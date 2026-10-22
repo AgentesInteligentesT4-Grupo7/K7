@@ -1,4 +1,4 @@
-import type { ITextToSpeech, SynthesizedAudio } from '../telegram/output/tts/TextToSpeech.js';
+import type { ITextToSpeech, SynthesizedAudio } from './tts/TextToSpeech.js';
 import { Logger } from '../utils/Logger.js';
 import type { ChatterboxVoiceCloner } from './ChatterboxVoiceCloner.js';
 import type { VoiceLibrary, VoiceSample } from './VoiceLibrary.js';

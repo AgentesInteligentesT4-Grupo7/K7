@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { AllProvidersFailedError, EmptyAudioError } from '../src/errors/AppErrors.js';
-import { FileTagParser } from '../src/telegram/output/FileTagParser.js';
-import { ErrorOutputStrategy } from '../src/telegram/output/strategies/ErrorOutputStrategy.js';
-import { TelegramOutputHandler } from '../src/telegram/output/TelegramOutputHandler.js';
-import { TextChunker } from '../src/telegram/output/TextChunker.js';
+import { FileTagParser } from '../src/canais/comum/FileTagParser.js';
+import { ErrorOutputStrategy } from '../src/canais/telegram/output/strategies/ErrorOutputStrategy.js';
+import { TelegramOutputHandler } from '../src/canais/telegram/output/TelegramOutputHandler.js';
+import { TextChunker } from '../src/canais/telegram/output/TextChunker.js';
 import { stripMarkdown } from '../src/utils/text.js';
 
 describe('TextChunker', () => {

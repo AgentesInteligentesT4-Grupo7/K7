@@ -6,7 +6,8 @@ import { SystemPromptBuilder } from '../agent/SystemPromptBuilder.js';
 import type { IOutputHandler } from '../agent/types.js';
 import type { Config } from '../config/Config.js';
 import { LlmProviderError, errorMessage } from '../errors/AppErrors.js';
-import type { FallbackLlmProvider } from '../llm/FallbackLlmProvider.js';
+import { type Orchestrator, createOrchestrator } from '../llm/orchestration/createOrchestrator.js';
+import type { ILlmProvider } from '../llm/types.js';
 import { ProviderFactory } from '../llm/ProviderFactory.js';
 import { DatabaseConnection } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
@@ -14,12 +15,13 @@ import { MemoryManager } from '../memory/MemoryManager.js';
 import { SkillExecutor } from '../skills/SkillExecutor.js';
 import { SkillLoader } from '../skills/SkillLoader.js';
 import { SkillRouter } from '../skills/SkillRouter.js';
-import { DocumentExtractor } from '../telegram/input/DocumentExtractor.js';
-import { WhisperHttpTranscriber } from '../telegram/input/WhisperHttpTranscriber.js';
-import { type ISpeechToText, WhisperTranscriber } from '../telegram/input/WhisperTranscriber.js';
-import { EdgeTtsSynthesizer } from '../telegram/output/tts/EdgeTtsSynthesizer.js';
-import { KokoroTtsSynthesizer } from '../telegram/output/tts/KokoroTtsSynthesizer.js';
-import { FallbackTextToSpeech, type ITextToSpeech } from '../telegram/output/tts/TextToSpeech.js';
+import { DocumentExtractor } from '../documents/DocumentExtractor.js';
+import { WhisperHttpTranscriber } from '../voice/stt/WhisperHttpTranscriber.js';
+import { DisabledSpeechToText } from '../voice/stt/DisabledSpeechToText.js';
+import { type ISpeechToText, WhisperTranscriber } from '../voice/stt/WhisperTranscriber.js';
+import { EdgeTtsSynthesizer } from '../voice/tts/EdgeTtsSynthesizer.js';
+import { KokoroTtsSynthesizer } from '../voice/tts/KokoroTtsSynthesizer.js';
+import { FallbackTextToSpeech, type ITextToSpeech } from '../voice/tts/TextToSpeech.js';
 import { ListClonedVoicesTool } from '../tools/impl/ListClonedVoicesTool.js';
 import { ToolFactory } from '../tools/ToolFactory.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
@@ -43,18 +45,27 @@ export interface CoreOptions {
   healthChecks: boolean;
 }
 
-/** Núcleo do ParreiraClaw, independente de canal (Telegram, terminal, futuro HTTP/WhatsApp). */
+/** Núcleo do agente, independente de canal (Telegram, terminal, futuro HTTP/WhatsApp). */
+/** Cadeia de LLMs usada pelo agente: fixa (FallbackLlmProvider) ou automática (orquestrador). */
+export type LlmChain = ILlmProvider & {
+  providerNames: string[];
+  healthCheckAll(): Promise<Array<{ name: string; ok: boolean; error?: unknown }>>;
+};
+
 export interface Core {
   config: Config;
   tmp: TempFileManager;
   memory: MemoryManager;
-  llm: FallbackLlmProvider;
+  llm: LlmChain;
+  /** Presente quando LLM_ORCHESTRATOR=on (comandos /modelos, /modelo, /bom, /ruim). */
+  orchestrator?: Orchestrator;
   registry: ToolRegistry;
   skillLoader: SkillLoader;
   tts: FallbackTextToSpeech;
   stt: ISpeechToText;
   ffmpeg: FfmpegConverter;
-  voiceClone: VoiceCloneService;
+  /** Ausente quando o módulo "voz-clonada" está desligado. */
+  voiceClone?: VoiceCloneService;
   documents: DocumentExtractor;
   /** Cria o Facade ligado ao `IOutputHandler` do canal. */
   createController(output: IOutputHandler): AgentController;
@@ -68,6 +79,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
   if (options.cleanTmp) tmp.initialize();
   else fs.mkdirSync(options.tmpDir, { recursive: true });
   fs.mkdirSync(config.skillsDir, { recursive: true });
+  const { modules } = config;
+  logger.info(`🧩 Módulos: ${[...modules].join(', ') || '(nenhum)'}${config.profileName ? ` | perfil: ${config.profileName}` : ''}`);
   const db = DatabaseConnection.getInstance(config.dbPath);
   if (options.databaseMaintenance) {
     new DatabaseMaintenance(db, {
@@ -83,42 +96,46 @@ export function createCore(config: Config, options: CoreOptions): Core {
 
   // Cérebros (LLM)
   const providerFactory = new ProviderFactory(config);
-  const llm = providerFactory.createWithFallback();
-  const routerLlm = config.skillRouterProvider ? providerFactory.createWithFallback(config.skillRouterProvider) : llm;
+  // LLM_ORCHESTRATOR=on: escolha automática entre modelos gratuitos; off: cadeia fixa do .env.
+  const orchestrator = config.orchestrator.enabled ? createOrchestrator(config, db, runner) : undefined;
+  const llm: LlmChain = orchestrator?.provider ?? providerFactory.createWithFallback();
+  const routerLlm: LlmChain =
+    orchestrator?.provider ?? (config.skillRouterProvider ? providerFactory.createWithFallback(config.skillRouterProvider) : llm);
   logger.info(`🧠 LLM: ${llm.providerNames.join(' → ')} | Router: ${routerLlm.providerNames.join(' → ')}`);
 
-  // Clonagem de voz (Chatterbox na GPU); amostras em VOICE_CLONE_DIR
-  fs.mkdirSync(config.voiceClone.dir, { recursive: true });
-  const voiceClone = new VoiceCloneService(
-    new VoiceLibrary({ dir: config.voiceClone.dir, defaultVoice: config.voiceClone.defaultVoice }, new AudioSampleConverter()),
-    new ChatterboxVoiceCloner(config.voiceClone),
-  );
-  logger.info(`🗣️ Clonagem de voz: ${voiceClone.list().length} voz(es) em ${path.relative(process.cwd(), config.voiceClone.dir) || config.voiceClone.dir}`);
+  // Módulo voz-clonada (Chatterbox na GPU); amostras em VOICE_CLONE_DIR
+  const voiceClone = modules.has('voz-clonada') ? createVoiceClone(config) : undefined;
 
-  // Ferramentas, ReAct e skills
-  const registry = new ToolFactory(config.workspaceDir).createRegistry();
-  registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
+  // Ferramentas, ReAct e skills (camadas: módulos ligados → perfil)
+  const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
+  if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
   const agentLoop = new AgentLoop(llm, registry, config.maxIterations);
-  const skillLoader = new SkillLoader(config.skillsDir);
+  const skillLoader = new SkillLoader(config.skillsDirs, config.identity);
   const skillRouter = new SkillRouter(routerLlm);
-  const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry), agentLoop, {
+  const skillExecutor = new SkillExecutor(skillLoader, new SystemPromptBuilder(registry, config.identity), agentLoop, {
     roleProviders: providerFactory,
     maxRefinementRounds: config.refinementMaxRounds,
   });
   const skills = skillLoader.loadAll();
   logger.info(`🔧 ${registry.size} ferramentas | 📚 ${skills.length} skills: ${skills.map((s) => s.name).join(', ') || '(nenhuma)'}`);
 
-  // Voz
+  // Módulo voz: sem ele, áudios recebidos são recusados e as respostas saem só em texto.
+  // O TTS continua montado porque a voz clonada (/falar) também entrega áudio.
+  const voice = modules.has('voz');
   const tts = createTextToSpeech(config);
-  logger.info(`🔊 TTS: ${tts.name} (voz ${tts.voice})`);
-  const stt = createSpeechToText(config, runner, ffmpeg, tmp);
-  logger.info(`🎙️ STT: whisper ${config.whisperEngine} (modelo ${config.whisperModel})`);
+  const stt = voice ? createSpeechToText(config, runner, ffmpeg, tmp) : new DisabledSpeechToText();
+  if (voice) {
+    logger.info(`🔊 TTS: ${tts.name} (voz ${tts.voice})`);
+    logger.info(`🎙️ STT: whisper ${config.whisperEngine} (modelo ${config.whisperModel})`);
+  }
 
   if (options.healthChecks) {
     void checkProviders(llm);
-    void checkVoiceClone(voiceClone);
-    void checkTts(tts);
-    void checkStt(stt, config.whisperEngine);
+    if (voiceClone) void checkVoiceClone(voiceClone);
+    if (voice) {
+      void checkTts(tts);
+      void checkStt(stt, config.whisperEngine);
+    }
   }
 
   return {
@@ -126,6 +143,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     tmp,
     memory,
     llm,
+    orchestrator,
     registry,
     skillLoader,
     tts,
@@ -134,8 +152,27 @@ export function createCore(config: Config, options: CoreOptions): Core {
     voiceClone,
     documents: new DocumentExtractor(),
     createController: (output) =>
-      new AgentController({ memory, skillLoader, skillRouter, skillExecutor, output, providerName: llm.name }),
+      new AgentController({
+        memory,
+        skillLoader,
+        skillRouter,
+        skillExecutor,
+        output,
+        providerName: llm.name,
+        privacyDefault: config.orchestrator.privacyDefault,
+        audioReplies: voice,
+      }),
   };
+}
+
+function createVoiceClone(config: Config): VoiceCloneService {
+  fs.mkdirSync(config.voiceClone.dir, { recursive: true });
+  const service = new VoiceCloneService(
+    new VoiceLibrary({ dir: config.voiceClone.dir, defaultVoice: config.voiceClone.defaultVoice }, new AudioSampleConverter()),
+    new ChatterboxVoiceCloner(config.voiceClone),
+  );
+  logger.info(`🗣️ Clonagem de voz: ${service.list().length} voz(es) em ${path.relative(process.cwd(), config.voiceClone.dir) || config.voiceClone.dir}`);
+  return service;
 }
 
 /** Monta a cadeia de TTS conforme TTS_ENGINES (ex.: kokoro na GPU → edge na nuvem). */
@@ -173,7 +210,7 @@ function createSpeechToText(config: Config, runner: ProcessRunner, ffmpeg: Ffmpe
 }
 
 /** EC-03 (PRD): loga falha de autenticação por provider sem impedir o startup. */
-async function checkProviders(llm: FallbackLlmProvider): Promise<void> {
+async function checkProviders(llm: LlmChain): Promise<void> {
   for (const result of await llm.healthCheckAll()) {
     if (result.ok) {
       logger.info(`✅ Provider ${result.name} autenticado`);

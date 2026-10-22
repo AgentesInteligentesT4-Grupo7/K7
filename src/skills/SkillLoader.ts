@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { load as parseYaml } from 'js-yaml';
+import { type AgentIdentity, DEFAULT_IDENTITY, renderIdentity } from '../config/AgentIdentity.js';
 import { errorMessage } from '../errors/AppErrors.js';
 import { Logger } from '../utils/Logger.js';
 
@@ -18,29 +19,53 @@ export interface SkillMetadata {
 const FRONTMATTER = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
 
 /**
- * Lê `.agents/skills/<pasta>/SKILL.md` de forma síncrona a cada requisição,
- * o que garante hot-reload sem reiniciar o processo.
+ * Lê `<pasta-de-skills>/<skill>/SKILL.md` de forma síncrona a cada requisição,
+ * o que garante hot-reload sem reiniciar o processo. Aceita várias pastas em camadas
+ * (módulos ligados → perfil): em nomes repetidos, vale a camada mais à direita.
  */
 export class SkillLoader {
   private readonly logger = new Logger('SkillLoader');
 
-  constructor(private readonly skillsDir: string) {}
+  private readonly skillsDirs: string[];
 
-  /** Carrega os metadados (frontmatter) de todas as skills válidas. */
+  constructor(
+    skillsDir: string | string[],
+    /** Marcadores {{AGENT_NAME}}, {{OWNER_NAME}}... dos SKILL.md são preenchidos com esta identidade. */
+    private readonly identity: AgentIdentity = DEFAULT_IDENTITY,
+  ) {
+    this.skillsDirs = Array.isArray(skillsDir) ? skillsDir : [skillsDir];
+  }
+
+  /** Carrega as skills de todas as camadas; a camada posterior sobrescreve a anterior. */
   loadAll(): SkillMetadata[] {
+    const byName = new Map<string, SkillMetadata>();
+    for (const [layer, dir] of this.skillsDirs.entries()) {
+      for (const skill of this.loadDir(dir)) {
+        const previous = byName.get(skill.name);
+        if (previous && layer > 0 && path.dirname(previous.directory) !== path.dirname(skill.directory)) {
+          this.logger.debug(`Skill "${skill.name}" de ${dir} sobrescreve a de ${path.dirname(previous.directory)}`);
+        }
+        byName.set(skill.name, skill);
+      }
+    }
+    return [...byName.values()];
+  }
+
+  /** Carrega os metadados (frontmatter) das skills válidas de uma pasta. */
+  private loadDir(skillsDir: string): SkillMetadata[] {
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(this.skillsDir, { withFileTypes: true });
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        this.logger.warn(`Não foi possível ler ${this.skillsDir}: ${errorMessage(error)}`);
+        this.logger.warn(`Não foi possível ler ${skillsDir}: ${errorMessage(error)}`);
       }
       return [];
     }
 
     const byName = new Map<string, SkillMetadata>();
     for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-      const directory = path.join(this.skillsDir, entry.name);
+      const directory = path.join(skillsDir, entry.name);
       const filePath = path.join(directory, 'SKILL.md');
 
       // EC-02: pasta "fantasma" sem SKILL.md é ignorada silenciosamente.
@@ -66,7 +91,7 @@ export class SkillLoader {
   loadContent(skill: SkillMetadata): string {
     const raw = fs.readFileSync(skill.filePath, 'utf8');
     const match = FRONTMATTER.exec(raw);
-    return (match ? match[2]! : raw).trim();
+    return renderIdentity((match ? match[2]! : raw).trim(), this.identity);
   }
 
   private parseMetadata(filePath: string, directory: string): SkillMetadata | null {
@@ -83,7 +108,7 @@ export class SkillLoader {
         return null;
       }
       const name = typeof data?.name === 'string' ? data.name.trim() : '';
-      const description = typeof data?.description === 'string' ? data.description.trim() : '';
+      const description = typeof data?.description === 'string' ? renderIdentity(data.description.trim(), this.identity) : '';
       if (!name || !description) return null;
       return { name, description, directory, filePath, frontmatter: data ?? {} };
     } catch {

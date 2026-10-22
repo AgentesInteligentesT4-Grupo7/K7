@@ -39,7 +39,7 @@ Cabeçalho do documento:
 
 **Versão:** 1.0
 **Status:** Rascunho
-**Autor:** ParreiraClaw Agent
+**Autor:** {{AGENT_NAME}} Agent
 **Data:** <data de hoje AAAA-MM-DD>
 ```
 

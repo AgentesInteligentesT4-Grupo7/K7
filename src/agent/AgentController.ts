@@ -1,4 +1,7 @@
 import { UserFacingError, errorMessage } from '../errors/AppErrors.js';
+import { TaskClassifier } from '../llm/orchestration/TaskClassifier.js';
+import { TaskContext } from '../llm/orchestration/TaskContext.js';
+import type { PrivacyLevel, Task } from '../llm/orchestration/types.js';
 import type { MemoryManager } from '../memory/MemoryManager.js';
 import type { SkillExecutor } from '../skills/SkillExecutor.js';
 import type { SkillLoader, SkillMetadata } from '../skills/SkillLoader.js';
@@ -13,7 +16,15 @@ export interface AgentControllerDeps {
   skillExecutor: SkillExecutor;
   output: IOutputHandler;
   providerName: string;
+  /** Privacidade padrão das conversas (PRIVACY_DEFAULT); documentos sobem para "pessoal". */
+  privacyDefault?: PrivacyLevel;
+  /** false quando o módulo "voz" está desligado: pedidos de resposta em áudio viram texto. */
+  audioReplies?: boolean;
 }
+
+const PRIVACY_ORDER: PrivacyLevel[] = ['publico', 'pessoal', 'local'];
+const stricter = (a: PrivacyLevel, b: PrivacyLevel): PrivacyLevel =>
+  PRIVACY_ORDER.indexOf(a) >= PRIVACY_ORDER.indexOf(b) ? a : b;
 
 /**
  * Facade da aplicação: recebe a entrada normalizada e orquestra
@@ -58,9 +69,17 @@ export class AgentController {
 
     // Hot-reload: as skills são relidas do disco a cada requisição.
     const skills = this.deps.skillLoader.loadAll();
-    const skill = await this.deps.skillRouter.route(input.text, skills);
+    // Privacidade: documentos e anexos são dados pessoais (spec llm-orchestration RF-09).
+    const privacy = input.source === 'document' ? stricter(this.deps.privacyDefault ?? 'publico', 'pessoal') : (this.deps.privacyDefault ?? 'publico');
+    const routed = await TaskContext.run({ task: 'roteamento', privacy, userId }, () =>
+      this.deps.skillRouter.routeWithTask(input.text, skills),
+    );
+    const skill = routed.skill;
+    const task: Task = routed.task ?? TaskClassifier.fromSkill(skill?.name) ?? TaskClassifier.heuristic(input.text);
 
-    const result = await this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input });
+    const result = await TaskContext.run({ task, privacy, userId }, () =>
+      this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input }),
+    );
 
     for (const step of result.steps) {
       memory.saveMessage(conversation.id, 'tool', `${step.tool}(${step.arguments}) → ${step.observation}`, {
@@ -72,11 +91,11 @@ export class AgentController {
       conversation.id,
       'assistant',
       result.text,
-      { provider: result.providerName, skill: result.skillName, iterations: result.iterations, ...result.details },
+      { provider: result.providerName, skill: result.skillName, task, privacy, iterations: result.iterations, ...result.details },
       result.providerName,
     );
 
-    return { text: result.text, isAudio: input.requiresAudioReply };
+    return { text: result.text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true) };
   }
 
   newConversation(userId: number | string): void {

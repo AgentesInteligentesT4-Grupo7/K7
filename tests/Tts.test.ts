@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import { Config, ConfigError } from '../src/config/Config.js';
 import { AudioSynthesisError } from '../src/errors/AppErrors.js';
-import { KokoroTtsSynthesizer } from '../src/telegram/output/tts/KokoroTtsSynthesizer.js';
-import { FallbackTextToSpeech, type ITextToSpeech } from '../src/telegram/output/tts/TextToSpeech.js';
+import { KokoroTtsSynthesizer } from '../src/voice/tts/KokoroTtsSynthesizer.js';
+import { FallbackTextToSpeech, type ITextToSpeech } from '../src/voice/tts/TextToSpeech.js';
 
 const realFetch = globalThis.fetch;
 const kokoro = () =>

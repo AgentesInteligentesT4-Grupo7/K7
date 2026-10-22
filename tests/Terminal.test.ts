@@ -5,10 +5,10 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import type { AgentController } from '../src/agent/AgentController.js';
 import type { AgentInput } from '../src/agent/types.js';
-import { TerminalChat } from '../src/cli/TerminalChat.js';
-import { TerminalOutputHandler } from '../src/cli/TerminalOutputHandler.js';
-import { DocumentExtractor } from '../src/telegram/input/DocumentExtractor.js';
-import type { ITextToSpeech } from '../src/telegram/output/tts/TextToSpeech.js';
+import { TerminalChat } from '../src/canais/terminal/TerminalChat.js';
+import { TerminalOutputHandler } from '../src/canais/terminal/TerminalOutputHandler.js';
+import { DocumentExtractor } from '../src/documents/DocumentExtractor.js';
+import type { ITextToSpeech } from '../src/voice/tts/TextToSpeech.js';
 import type { VoiceCloneService } from '../src/voice/VoiceCloneService.js';
 import { VoiceNotFoundError } from '../src/voice/VoiceLibrary.js';
 

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AudioIntentDetector } from '../src/telegram/input/AudioIntentDetector.js';
-import { DocumentExtractor } from '../src/telegram/input/DocumentExtractor.js';
-import { WhisperTranscriber } from '../src/telegram/input/WhisperTranscriber.js';
+import { AudioIntentDetector } from '../src/voice/AudioIntentDetector.js';
+import { DocumentExtractor } from '../src/documents/DocumentExtractor.js';
+import { WhisperTranscriber } from '../src/voice/stt/WhisperTranscriber.js';
 import { ChatQueue } from '../src/utils/ChatQueue.js';
 import { sleep } from '../src/utils/text.js';
 

@@ -33,7 +33,11 @@ Telegram ──► TelegramInputHandler (whitelist, PDF/MD, Whisper STT)
 | `src/skills` | `SkillLoader`, `SkillRouter`, `SkillExecutor`, `RefinementLoopConfig` |
 | `src/tools` | `BaseTool`, `ToolRegistry`, `ToolFactory`, sandbox do workspace |
 | `src/memory` | `DatabaseConnection` (Singleton), repositórios, `MemoryManager` (Facade) |
-| `src/telegram` | Input handler, downloader, extração de documentos, Whisper, estratégias de saída e TTS (`output/tts`: Kokoro, Edge) |
+| `src/canais` | Canais plugados no núcleo: `telegram/` (grammy, entrada, estratégias de saída), `terminal/` (chat no PC) e `comum/` (tags de arquivo/voz, texto de erro) |
+| `src/voice` | Voz independente de canal: `stt/` (Whisper), `tts/` (Kokoro, Edge), clonagem (Chatterbox) |
+| `src/documents` | Extração de texto de PDF/.md |
+| `src/modules` | Registro dos módulos (`arquivos`, `voz`, `voz-clonada`, `refinamento`); skills de cada um em `modulos/<id>/skills/` |
+| `src/profiles` | Perfis ("fitas"): manifesto `perfil.yaml`, carregamento com `--perfil` e instalador |
 
 Padrões: Facade, Factory, Repository, Singleton, Strategy, Registry.
 
@@ -78,6 +82,68 @@ Testes: `npm test`. Typecheck: `npm run typecheck`.
 - `/skills` lista as skills instaladas
 
 Usuários fora de `TELEGRAM_ALLOWED_USER_IDS` são ignorados silenciosamente.
+
+## Rodando no Docker
+
+```bash
+docker compose up -d --build     # sobe o bot (reinicia sozinho com o Docker)
+docker compose logs -f           # acompanha os logs
+docker compose down              # para o bot
+
+docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js   # chat no terminal
+docker compose run --rm parreiraclaw node dist/cli/eval.js pesquisa      # avalia os modelos
+
+PERFIL=promo docker compose up -d                                         # bot de um perfil
+docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js --perfil historias
+```
+
+- **Perfis no Docker:** a pasta `../ParreiraClaw-perfis` (ou `PERFIS_DIR_HOST`) é montada em `/app/perfis`
+  e os dados de cada perfil ficam no volume, em `/app/state/dados/<perfil>/`. Caminhos que o `.env` de um
+  perfil fixa (como `DB_PATH=./data/...` no `pessoal`) apontam para a pasta montada `data/`.
+
+- **Não rode o bot no Docker e o `npm run dev` ao mesmo tempo:** o Telegram aceita uma conexão por bot (erro 409).
+- **Serviços no host:** Ollama, Kokoro (8880), Whisper (8890) e Chatterbox (8004) são alcançados por
+  `host.docker.internal`. Os endereços do `docker-compose.yml` sobrescrevem os do `.env`. Ligue os
+  containers de voz antes: `docker start kokoro-tts whisper-stt chatterbox-tts-server-chatterbox-tts-server-1`.
+- **Banco SQLite num volume Docker (`parreiraclaw-state`)**, porque o modo WAL não é confiável numa pasta do
+  Windows montada no container. Por isso o Docker tem **memória, notas de avaliação e histórico próprios**,
+  separados do `npm run dev`. Para levar o banco do Windows para o Docker uma vez (com os dois parados):
+  ```bash
+  docker run --rm -v parreiraclaw_parreiraclaw-state:/state -v "%cd%/data:/src" alpine cp /src/parreiraclaw.db /state/
+  ```
+- **Pastas montadas do Windows** (edite normalmente): `data/` (vozes, cache, saídas do terminal), `workspace/`,
+  `.agents/skills/` (com hot-reload) e `evals/`.
+- O container não enxerga a GPU diretamente: os modelos locais continuam rodando no Ollama do Windows, que usa a GPU.
+
+## Perfis: um tocador, várias fitas
+
+O ParreiraClaw é o **tocador** (núcleo + módulos + canais). Cada finalidade é um **perfil** — uma pasta
+com `perfil.yaml` (identidade, módulos, canais, privacidade), `skills/` e `.env` próprios, **sem código**.
+Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw-perfis`).
+
+```bash
+npm run dev -- --perfil pessoal       # bot do Telegram do perfil (cada perfil tem o seu bot)
+npm run chat -- --perfil promo        # terminal
+npm run eval -- --perfil pessoal conversa
+
+npm run perfil -- listar              # perfis encontrados
+npm run perfil -- novo historias2     # cria um perfil a partir do modelo
+npm run perfil -- instalar <origem>   # pasta, URL https do Git, usuario/nome (GitHub: perfil-nome ou nome) ou @escopo/nome (npm)
+npm run perfil -- atualizar <nome>    # busca a versão nova (mantém .env e dados)
+npm run perfil -- remover <nome>      # pede confirmação; --apagar-dados apaga dados/<nome>
+```
+
+- **Sem `--perfil`** (e `PERFIL_PADRAO` vazio), tudo funciona como antes, só com o `.env` raiz.
+- **Com perfil**, o ambiente é montado nesta ordem (o último vence): `.env` do tocador (sem identidade e sem
+  token do bot) → pastas isoladas (`dados/<perfil>/agente.db`, `dados/<perfil>/vozes`, `workspace/<perfil>`,
+  `tmp/<perfil>`) → `perfil.yaml` → `.env` do perfil.
+- **Skills em camadas:** as dos módulos ligados + as do perfil; com o mesmo nome, vale a do perfil.
+- **Módulo desligado some de verdade:** sem `arquivos`, nenhuma ferramenta de arquivo; sem `voz`, áudios são
+  recusados com aviso e as respostas saem em texto; sem `voz-clonada`, sem `/minhavoz`, `/falar` e a skill.
+- **Instalação segura:** o instalador recusa perfis com código ou links (`.js`, `.ts`, `.py`, `.sh`, `.ps1`,
+  `package.json`…), baixa pacotes npm com `--ignore-scripts` e nunca executa nada do perfil.
+
+Spec: [specs/profiles-modules.md](specs/profiles-modules.md).
 
 ## Chat no terminal
 
@@ -143,6 +209,47 @@ OLLAMA_TIMEOUT_MS=300000
 - VRAM: o Ollama carrega um modelo por vez quando não cabem todos; modelos diferentes em sequência (como na skill de refinamento) são trocados a cada chamada, o que custa alguns segundos por troca.
 - O system prompt com uma skill ativa pode passar de 4k tokens. Se o modelo parecer "esquecer" instruções, aumente o contexto do servidor Ollama (`OLLAMA_CONTEXT_LENGTH=16384` antes do `ollama serve`).
 - Combinações úteis: `LLM_PROVIDER=gemini` + `LLM_FALLBACK_PROVIDERS=ollama` (nuvem com fallback local) ou `LLM_PROVIDER=ollama` + `SKILL_ROUTER_PROVIDER=ollama` com tudo offline.
+
+## Orquestrador de LLMs gratuitos
+
+Com `LLM_ORCHESTRATOR=on`, o agente escolhe **sozinho, a cada mensagem, o melhor modelo gratuito** para a tarefa
+(conversa, pesquisa, raciocínio, código, resumo), sem você referenciar modelo nenhum. Spec: [specs/llm-orchestration.md](specs/llm-orchestration.md).
+
+- **Só gratuitos (`LLM_COST_POLICY=free-only`):** uma trava bloqueia qualquer modelo pago antes da chamada.
+  Fontes: OpenCode Zen (`-free`, liga/desliga com `OPENCODE_ENABLED`), OpenRouter (`:free`), NVIDIA, planos gratuitos
+  do Gemini e do Groq, modelos da sua **GPU** (Ollama) e os `:cloud` do Ollama (exigem `ollama signin`).
+  Crie as chaves **sem cartão de crédito**: é a garantia final de custo zero.
+- **Descoberta automática:** os modelos vêm do catálogo [models.dev](https://models.dev) (renovado a cada 24 h)
+  e do seu Ollama. Um modelo gratuito novo aparece sozinho.
+- **O melhor vence, inclusive a GPU:** a ordem usa notas **medidas** com `npm run eval -- <tarefa>`
+  (perguntas de referência em `evals/`). Um modelo local só passa à frente se for tão bom quanto o melhor
+  gratuito da nuvem; em empate ganha o local (privado e sem cota). Modelos que não cabem na VRAM são penalizados.
+- **Cota esgotada?** O modelo entra em pausa e a mensagem vai para o próximo da lista.
+- **Privacidade:** `PRIVACY_DEFAULT=publico` permite gratuitos que treinam com os dados em conversas comuns;
+  documentos anexados sempre usam só fontes sem treino ou a sua GPU (`SOURCES_TRAINING_ON_DATA`).
+- **Comandos** (Telegram e terminal): `/modelos [tarefa]` (ranking), `/modelo` (quem respondeu e por quê),
+  `/bom` e `/ruim` (feedback que ajusta o ranking).
+
+```bash
+npm run eval -- pesquisa              # mede os gratuitos (e os da sua GPU) em perguntas factuais
+npm run eval -- codigo --modelos 4    # só os 4 melhores candidatos
+```
+
+## Identidade do agente (um código, vários projetos)
+
+Nome, dono e foco vêm do `.env`. Para usar o mesmo código com outra finalidade, mude só a identidade:
+
+```env
+AGENT_NAME=PromoBot
+AGENT_EMOJI=🛒
+OWNER_NAME=Equipe Promo
+AGENT_PURPOSE=assistente de promoções
+AGENT_INSTRUCTIONS=Foque em ofertas de tecnologia.\nSeja breve e sempre cite a loja.
+```
+
+Isso muda o system prompt, o `/start`, o chat do terminal e os logs. Nas skills, use os marcadores
+`{{AGENT_NAME}}`, `{{OWNER_NAME}}`, `{{AGENT_PURPOSE}}`, `{{AGENT_EMOJI}}` e `{{AGENT_LANGUAGE}}`:
+eles são preenchidos ao carregar cada `SKILL.md`.
 
 ## Criando skills
 

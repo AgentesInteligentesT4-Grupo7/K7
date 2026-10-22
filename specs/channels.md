@@ -105,7 +105,7 @@ O núcleo já é independente de transporte (AgentController recebe um `AgentInp
 ```
 
 - `src/app/createCore.ts`: composição compartilhada.
-- `src/cli/chat.ts` + `src/cli/TerminalOutputHandler.ts`: canal terminal.
+- `src/canais/terminal/chat.ts` + `TerminalOutputHandler.ts`: canal terminal (todos os canais ficam em `src/canais/<canal>/`).
 
 ---
 

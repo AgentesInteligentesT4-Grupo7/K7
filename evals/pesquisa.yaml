@@ -1,0 +1,17 @@
+# Fatos estáveis (não mudam com o tempo). Basta a resposta conter UMA das opções de "esperado".
+- pergunta: Qual é a capital da Austrália? Responda só o nome.
+  esperado: [Camberra, Canberra]
+- pergunta: Em que ano o Brasil declarou a independência?
+  esperado: ["1822"]
+- pergunta: Qual é o maior planeta do Sistema Solar?
+  esperado: [Júpiter, Jupiter]
+- pergunta: Quem escreveu "Dom Casmurro"?
+  esperado: [Machado de Assis]
+- pergunta: Qual elemento químico tem o símbolo "Fe"?
+  esperado: [ferro]
+- pergunta: Quantos títulos de Copa do Mundo a seleção brasileira masculina tinha até 2022?
+  esperado: ["5", cinco, penta]
+- pergunta: Qual é o rio mais extenso que atravessa o território brasileiro, conhecido por sua enorme vazão?
+  esperado: [Amazonas]
+- pergunta: Em que cidade fica o Cristo Redentor?
+  esperado: [Rio de Janeiro]

@@ -45,6 +45,13 @@ export class TranscriptionFailedError extends UserFacingError {
   }
 }
 
+/** Recurso de um módulo desligado no perfil atual (MODULES). */
+export class ModuleDisabledError extends UserFacingError {
+  constructor(moduleId: string, feature: string) {
+    super(`${feature} não está disponível neste perfil (módulo "${moduleId}" desligado).`, `Módulo ${moduleId} desligado`);
+  }
+}
+
 export class EmptyAudioError extends UserFacingError {
   constructor() {
     super('Áudio vazio captado. Pode reenviar?', 'Whisper retornou transcrição vazia');

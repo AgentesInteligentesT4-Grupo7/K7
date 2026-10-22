@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AudioSynthesisError, errorMessage } from '../errors/AppErrors.js';
 import { Logger } from '../utils/Logger.js';
-import type { SynthesizedAudio } from '../telegram/output/tts/TextToSpeech.js';
+import type { SynthesizedAudio } from './tts/TextToSpeech.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
 
 export interface ChatterboxOptions {

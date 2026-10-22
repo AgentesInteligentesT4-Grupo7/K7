@@ -1,3 +1,4 @@
+import { type AgentIdentity, DEFAULT_IDENTITY } from '../config/AgentIdentity.js';
 import type { SkillMetadata } from '../skills/SkillLoader.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
 import type { AgentInput } from './types.js';
@@ -10,11 +11,14 @@ export interface PromptContext {
 
 /** Monta o System Prompt de cada execução do AgentLoop. */
 export class SystemPromptBuilder {
-  constructor(private readonly registry: ToolRegistry) {}
+  constructor(
+    private readonly registry: ToolRegistry,
+    private readonly identity: AgentIdentity = DEFAULT_IDENTITY,
+  ) {}
 
   build(context: PromptContext): string {
     const sections = [
-      this.identity(context.input.channel ?? 'telegram'),
+      this.identitySection(context.input.channel ?? 'telegram'),
       this.reasoningRules(),
       this.toolsSection(),
       this.fileOutputRules(),
@@ -25,13 +29,17 @@ export class SystemPromptBuilder {
     return sections.filter(Boolean).join('\n\n');
   }
 
-  private identity(channel: string): string {
+  private identitySection(channel: string): string {
+    const { name, owner, purpose, language, instructions } = this.identity;
     const where = channel === 'terminal' ? 'pelo chat no terminal do computador dele' : 'pelo Telegram';
     const now = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short' }).format(new Date());
     return `# Identidade
-Você é o ParreiraClaw, agente pessoal de IA do Parreira. Você roda localmente no computador dele e, nesta conversa, fala com ele ${where} (também atende pelo Telegram e pelo terminal).
-Responda sempre em português do Brasil (a menos que o usuário peça outro idioma), de forma direta, útil e organizada.
-Data/hora local atual: ${now}.
+Você é o ${name}, ${purpose} de ${owner}. Você roda localmente no computador dele e, nesta conversa, fala com ele ${where} (também atende pelo Telegram e pelo terminal).
+Responda sempre em ${language} (a menos que o usuário peça outro idioma), de forma direta, útil e organizada.
+Data/hora local atual: ${now}.${instructions ? `
+
+# Foco e instruções do projeto
+${instructions}` : ''}
 
 # Formatação
 As mensagens são exibidas como texto puro (sem renderização de Markdown). Prefira parágrafos curtos, listas simples com "-" ou números e evite tabelas largas.`;

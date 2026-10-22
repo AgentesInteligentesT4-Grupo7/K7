@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { Config } from '../src/config/Config.js';
 import { TranscriptionFailedError, WhisperUnavailableError } from '../src/errors/AppErrors.js';
-import { WhisperHttpTranscriber } from '../src/telegram/input/WhisperHttpTranscriber.js';
+import { WhisperHttpTranscriber } from '../src/voice/stt/WhisperHttpTranscriber.js';
 
 const realFetch = globalThis.fetch;
 const audioFile = (): string => {

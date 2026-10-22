@@ -9,3 +9,7 @@ workspace/
 *.db
 *.db-wal
 *.db-shm
+
+# Perfis instalados e dados isolados por perfil
+perfis/
+dados/

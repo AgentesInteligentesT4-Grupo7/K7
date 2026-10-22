@@ -14,7 +14,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
-    "chat": "tsx src/cli/chat.ts"
+    "chat": "tsx src/canais/terminal/chat.ts",
+    "eval": "tsx src/cli/eval.ts",
+    "perfil": "tsx src/cli/perfil.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

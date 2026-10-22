@@ -5,17 +5,25 @@ import { ReadFileTool } from './impl/ReadFileTool.js';
 import { ToolRegistry } from './ToolRegistry.js';
 import { WorkspaceSandbox } from './WorkspaceSandbox.js';
 
-/** Instancia o conjunto padrão de ferramentas e as registra no `ToolRegistry`. */
+export interface ToolFactoryOptions {
+  /** Módulo "arquivos": criar, ler e listar arquivos no workspace. */
+  files: boolean;
+}
+
+/** Instancia as ferramentas do núcleo e dos módulos ligados e as registra no `ToolRegistry`. */
 export class ToolFactory {
-  constructor(private readonly workspaceDir: string) {}
+  constructor(
+    private readonly workspaceDir: string,
+    private readonly options: ToolFactoryOptions = { files: true },
+  ) {}
 
   createRegistry(): ToolRegistry {
-    const sandbox = new WorkspaceSandbox(this.workspaceDir);
-    sandbox.ensureRoot();
-    return new ToolRegistry()
-      .register(new CurrentDateTimeTool())
-      .register(new CreateFileTool(sandbox))
-      .register(new ReadFileTool(sandbox))
-      .register(new ListFilesTool(sandbox));
+    const registry = new ToolRegistry().register(new CurrentDateTimeTool());
+    if (this.options.files) {
+      const sandbox = new WorkspaceSandbox(this.workspaceDir);
+      sandbox.ensureRoot();
+      registry.register(new CreateFileTool(sandbox)).register(new ReadFileTool(sandbox)).register(new ListFilesTool(sandbox));
+    }
+    return registry;
   }
 }
