@@ -327,6 +327,16 @@ docker compose up -d --build
 - ou peça normalmente: "manda um áudio com a minha voz desejando feliz aniversário pra Maria" (skill `voz-clonada`);
 - `/vozes` lista as vozes cadastradas.
 
+**Jeito de falar** (`VOICE_CLONE_DIRECTION`, padrão `auto`): a fala é gerada por trechos, cada um com seu ritmo e tom,
+com silêncio de verdade entre eles. Sem marcações, o LLM local lê o texto e decide; o bot devolve, junto do áudio,
+o roteiro que usou, para copiar, editar e mandar de novo:
+```
+/falar (rápido, animado) Que notícia boa, conseguimos. (pausa) Pessoal! (pausa longa) (sério) Agora falta resolver o contrato...
+```
+Marcações: `(rápido)` `(devagar)` `(animado)` `(calmo)` `(sério)` `(triste)` `(suspense)` `(forte)` `(normal)`,
+`(pausa curta)` `(pausa)` `(pausa longa)` `(pausa 2s)`. Um tom vale até o próximo. Trechos de uma ou duas palavras
+são gerados junto do vizinho, porque sozinhos o modelo erra. `manual` usa só as marcações escritas; `off` fala tudo de uma vez.
+
 As amostras ficam em `data/`, que está no `.gitignore`. Só usuários da whitelist conseguem usar as vozes.
 
 ## Trocando o LLM

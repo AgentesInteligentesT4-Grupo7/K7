@@ -5,6 +5,8 @@ export interface SynthesizedAudio {
   audio: Buffer;
   /** `ogg` (Opus) já é o formato nativo de voice note; `mp3` pode precisar de conversão. */
   format: 'ogg' | 'mp3';
+  /** Roteiro com as marcações de direção que o LLM escreveu (voz clonada), para a pessoa copiar e editar. */
+  script?: string;
 }
 
 /** Contrato de síntese de voz (Strategy). Cada motor conhece sua própria voz. */

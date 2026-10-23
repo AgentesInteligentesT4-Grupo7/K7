@@ -55,6 +55,7 @@ import { TempFileManager } from '../utils/TempFileManager.js';
 import { AudioSampleConverter } from '../voice/AudioSampleConverter.js';
 import { ChatterboxVoiceCloner } from '../voice/ChatterboxVoiceCloner.js';
 import { VoiceCloneService } from '../voice/VoiceCloneService.js';
+import { SpeechDirector } from '../voice/SpeechDirector.js';
 import { VoiceMirror } from '../voice/VoiceMirror.js';
 import { VoiceTuner } from '../voice/VoiceTuner.js';
 import { VoiceLibrary } from '../voice/VoiceLibrary.js';
@@ -138,7 +139,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
   logger.info(`🧠 LLM: ${llm.providerNames.join(' → ')} | Router: ${routerLlm.providerNames.join(' → ')}`);
 
   // Módulo voz-clonada (Chatterbox na GPU); amostras em VOICE_CLONE_DIR
-  const voiceClone = modules.has('voz-clonada') ? createVoiceClone(config) : undefined;
+  const voiceClone = modules.has('voz-clonada') ? createVoiceClone(config, llm) : undefined;
 
   // Ferramentas, ReAct e skills (camadas: módulos ligados → perfil)
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
@@ -308,11 +309,14 @@ async function checkImages(images: ImageGenerator, baseUrl: string): Promise<voi
   }
 }
 
-function createVoiceClone(config: Config): VoiceCloneService {
+function createVoiceClone(config: Config, llm: ILlmProvider): VoiceCloneService {
   fs.mkdirSync(config.voiceClone.dir, { recursive: true });
+  const { direction } = config.voiceClone;
   const service = new VoiceCloneService(
     new VoiceLibrary({ dir: config.voiceClone.dir, defaultVoice: config.voiceClone.defaultVoice }, new AudioSampleConverter()),
     new ChatterboxVoiceCloner(config.voiceClone),
+    direction,
+    direction === 'auto' ? new SpeechDirector(llm) : undefined,
   );
   logger.info(`🗣️ Clonagem de voz: ${service.list().length} voz(es) em ${path.relative(process.cwd(), config.voiceClone.dir) || config.voiceClone.dir}`);
   return service;

@@ -77,7 +77,7 @@ export class VoiceMirror {
   /** Gera o texto do áudio enviado com a própria amostra dele ou, com `voice`, com uma voz cadastrada. */
   async render(source: MirrorSource, params: VoiceParams, voice?: string): Promise<MirrorResult> {
     const audio = voice
-      ? await this.service.speak(source.transcript, voice, params)
+      ? await this.service.speak(source.transcript, voice, params, { direction: false })
       : await this.service.speakWithReference(source.transcript, MIRROR_VOICE, source.reference, params);
     const generatedSeconds = await this.duration(audio);
     const retranscript = await this.transcribe(audio);

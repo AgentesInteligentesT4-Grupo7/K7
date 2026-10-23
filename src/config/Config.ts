@@ -203,6 +203,8 @@ export class Config {
     verifyText: boolean;
     /** VOICE_CLONE_VERIFY_MIN: parte mínima do texto que precisa ser lida (0,1–1; padrão 0,6). */
     verifyMin: number;
+    /** VOICE_CLONE_DIRECTION: auto (LLM local dirige ritmo e pausas) | manual (só marcações) | off. */
+    direction: 'auto' | 'manual' | 'off';
   };
   readonly logLevel: string;
 
@@ -369,8 +371,16 @@ export class Config {
       // Cadastro só com leitura de um texto gerado na hora (garante que a voz é de quem grava).
       verifyText: Config.bool(env.VOICE_CLONE_VERIFY_TEXT, true),
       verifyMin: Math.min(1, Math.max(0.1, Number(env.VOICE_CLONE_VERIFY_MIN ?? 0.6) || 0.6)),
+      direction: Config.speechDirection(env.VOICE_CLONE_DIRECTION),
     };
     this.logLevel = env.LOG_LEVEL?.trim() || 'info';
+  }
+
+  private static speechDirection(raw: string | undefined): 'auto' | 'manual' | 'off' {
+    const value = raw?.trim().toLowerCase();
+    if (!value) return 'auto';
+    if (value === 'auto' || value === 'manual' || value === 'off') return value;
+    throw new ConfigError(`VOICE_CLONE_DIRECTION inválido: "${raw}" (use auto, manual ou off)`);
   }
 
   private static required(env: NodeJS.ProcessEnv, key: string): string {

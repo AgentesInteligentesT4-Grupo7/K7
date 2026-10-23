@@ -33,6 +33,16 @@ Escreva o texto a ser falado dentro da tag:
 4. Fora da tag, escreva no máximo uma linha curta (ex.: "Aqui está 👇") ou nada.
 5. Textos muito longos (mais de ~1500 caracteres): divida em mais de uma tag, em pontos naturais.
 
+## Jeito de falar (ritmo, tom e pausas)
+
+O sistema já decide sozinho onde acelerar, desacelerar e pausar. Só escreva marcações quando o
+usuário pedir um jeito específico ("fala rápido no começo e dá uma pausa antes do meu nome") ou
+mandar o texto já marcado (aí copie as marcações como estão). Marcações aceitas, entre parênteses,
+dentro da tag: (rápido) (devagar) (animado) (calmo) (sério) (triste) (suspense) (forte) (normal)
+(pausa curta) (pausa) (pausa longa) (pausa 2s). Um tom vale até o próximo; para combinar: (rápido, animado).
+
+<voz_clonada>(rápido, animado) Que notícia boa, conseguimos. (pausa) Pessoal! (pausa longa) (sério) Agora falta resolver o contrato...</voz_clonada>
+
 ## Quando não houver voz cadastrada
 
 Explique em 2 a 3 linhas como cadastrar:

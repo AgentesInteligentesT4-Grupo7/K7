@@ -1,9 +1,26 @@
 import type { ITextToSpeech, SynthesizedAudio } from './tts/TextToSpeech.js';
+import { AudioSynthesisError, UserFacingError } from '../errors/AppErrors.js';
 import { Logger } from '../utils/Logger.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from './ChatterboxVoiceCloner.js';
+import { type OggOpusPart, concatOggOpus } from './OggOpusConcat.js';
+import { type SpeechSegment, mergeShortSegments, parseDirection, segmentParams } from './SpeechDirection.js';
+import type { SpeechDirector } from './SpeechDirector.js';
 import type { VoiceLibrary, VoiceSample } from './VoiceLibrary.js';
 import type { VoiceParams } from './VoiceParams.js';
+
+/**
+ * Direção da fala (VOICE_CLONE_DIRECTION): `auto` = marcações do texto ou, sem elas, o LLM local dirige;
+ * `manual` = só as marcações escritas; `off` = o texto é falado como está, de uma vez.
+ */
+export type SpeechDirectionMode = 'auto' | 'manual' | 'off';
+
+export interface ClonedSpeech extends SynthesizedAudio {
+  voice: string;
+  params: VoiceParams;
+}
+
+const newSeed = () => 1 + Math.floor(Math.random() * 2_000_000_000);
 
 /** Facade da clonagem de voz: cadastra amostras e fala com a voz escolhida. */
 export class VoiceCloneService {
@@ -12,6 +29,8 @@ export class VoiceCloneService {
   constructor(
     private readonly library: VoiceLibrary,
     private readonly cloner: ChatterboxVoiceCloner,
+    private readonly direction: SpeechDirectionMode = 'manual',
+    private readonly director?: SpeechDirector,
   ) {}
 
   get voicesDir(): string {
@@ -59,14 +78,50 @@ export class VoiceCloneService {
     return sample;
   }
 
-  /** Fala com a voz cadastrada; `override` vence os ajustes salvos dela (usado pelo /ajustar). */
-  async speak(text: string, voiceName?: string, override?: VoiceParams): Promise<SynthesizedAudio & { voice: string; params: VoiceParams }> {
+  /**
+   * Fala com a voz cadastrada; `override` vence os ajustes salvos dela (usado pelo /ajustar).
+   * Com direção, cada trecho sai com seu tom e velocidade, e as pausas viram silêncio entre eles;
+   * `script` volta quando o roteiro foi escrito pelo LLM (para a pessoa copiar e editar).
+   */
+  async speak(text: string, voiceName?: string, override?: VoiceParams, options: { direction?: boolean } = {}): Promise<ClonedSpeech> {
     const sample = this.library.resolve(voiceName);
     const params = { ...this.library.params(sample.name), ...override };
     const started = Date.now();
-    const result = await this.cloner.synthesize(text, sample.name, await this.library.load(sample), params);
-    this.logger.info(`🗣️ Voz clonada "${sample.name}" (${text.length} chars, ${Date.now() - started}ms)`);
-    return { ...result, voice: sample.name, params };
+    const reference = await this.library.load(sample);
+    const { segments, script } = await this.plan(text, options.direction !== false);
+    let result: SynthesizedAudio;
+    if (segments.length === 1) {
+      result = await this.cloner.synthesize(segments[0]!.text, sample.name, reference, segmentParams(params, segments[0]!));
+    } else {
+      // Mesma semente em todos os trechos: o timbre não muda de um para o outro.
+      const seed = params.seed ?? newSeed();
+      const parts: OggOpusPart[] = [];
+      for (const [index, segment] of segments.entries()) {
+        const piece = await this.cloner.synthesize(segment.text, sample.name, reference, { ...segmentParams(params, segment), seed });
+        if (piece.format !== 'ogg') throw new AudioSynthesisError('Chatterbox não devolveu Ogg Opus para juntar os trechos');
+        parts.push(piece.audio);
+        if (segment.pauseAfterMs && index < segments.length - 1) parts.push({ silenceMs: segment.pauseAfterMs });
+      }
+      result = { audio: concatOggOpus(parts), format: 'ogg' };
+    }
+    const directed = segments.length > 1 || segments[0]!.styles.length ? `, ${segments.length} trecho(s) dirigidos` : '';
+    this.logger.info(`🗣️ Voz clonada "${sample.name}" (${text.length} chars${directed}, ${Date.now() - started}ms)`);
+    return { ...result, voice: sample.name, params, ...(script ? { script } : {}) };
+  }
+
+  /** Trechos a gerar: as marcações do texto ou, sem elas e no modo auto, as que o LLM local escrever. */
+  private async plan(text: string, direct: boolean): Promise<{ segments: SpeechSegment[]; script?: string }> {
+    const whole: SpeechSegment[] = [{ text, params: {}, styles: [], pauseAfterMs: 0 }];
+    if (!direct || this.direction === 'off') return { segments: whole };
+    const written = parseDirection(text);
+    if (written.directed) {
+      if (!written.segments.length) throw new UserFacingError('Só encontrei marcações (como "(pausa)"), nenhum texto para falar.');
+      return { segments: mergeShortSegments(written.segments) };
+    }
+    if (this.direction !== 'auto' || !this.director) return { segments: whole };
+    const script = await this.director.direct(text);
+    const directed = parseDirection(script);
+    return directed.directed && directed.segments.length ? { segments: mergeShortSegments(directed.segments), script } : { segments: whole };
   }
 
   /** Fala com uma amostra que não está na biblioteca (teste espelho). */

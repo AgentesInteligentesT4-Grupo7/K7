@@ -14,6 +14,7 @@ import type { ISpeechToText } from '../../voice/stt/WhisperTranscriber.js';
 import type { ChatActionNotifier } from './ChatActionNotifier.js';
 import type { TelegramFileDownloader } from './input/TelegramFileDownloader.js';
 import type { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
+import { DIRECTION_HELP } from '../../voice/SpeechDirection.js';
 
 export interface VoiceCloneCommandsDeps {
   service: VoiceCloneService;
@@ -57,6 +58,7 @@ type Pending = { kind: 'cadastro'; name: string; expiresAt: number; text?: strin
  * Comandos de clonagem de voz (o áudio pode ser gravado na hora ou anexado como arquivo):
  *   /minhavoz [nome] — o próximo áudio vira a amostra da voz (salva em VOICE_CLONE_DIR)
  *   /falar [@voz] texto — devolve um voice note com a voz clonada falando exatamente o texto
+ *                          (marcações como "(rápido)" e "(pausa)" mudam o jeito de falar; ver SpeechDirection)
  *   /testarvoz [@voz] — o próximo áudio é transcrito e falado de novo (pela própria amostra ou pela voz)
  *   /ajustar <pedido> — refaz o último teste ou /falar ("mais emoção", "mais lento", "igualar"...)
  *   /salvarvoz [nome] — guarda o resultado ajustado
@@ -176,7 +178,7 @@ export class VoiceCloneCommands {
     const voice = match ? match[1] : undefined;
     const text = (match ? match[2]! : raw).trim();
     if (!text) {
-      await this.deps.output.notify(ctx.chat!.id, 'Uso: /falar <texto>  ou  /falar @nome-da-voz <texto>');
+      await this.deps.output.notify(ctx.chat!.id, `Uso: /falar <texto>  ou  /falar @nome-da-voz <texto>\n\n${DIRECTION_HELP}`);
       return;
     }
     const chatId = ctx.chat!.id;

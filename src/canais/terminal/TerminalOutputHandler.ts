@@ -8,6 +8,7 @@ import { formatUserError } from '../comum/formatUserError.js';
 import type { IClonedVoiceProvider, ITextToSpeech, SynthesizedAudio } from '../../voice/tts/TextToSpeech.js';
 import { VoiceCloneTagParser } from '../comum/VoiceCloneTagParser.js';
 import { stripMarkdown } from '../../utils/text.js';
+import { scriptMessage } from '../../voice/SpeechDirection.js';
 
 const C = { reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m', cyan: '\x1b[36m', yellow: '\x1b[33m', green: '\x1b[32m' };
 
@@ -95,7 +96,8 @@ export class TerminalOutputHandler implements IOutputHandler {
     if (!speech) return;
     try {
       this.info(`🔊 Gerando áudio (${tts.name}/${tts.voice})...`);
-      const { audio, format } = await tts.synthesize(speech);
+      const { audio, format, script } = await tts.synthesize(speech);
+      if (script) this.info(scriptMessage(script, tts.voice));
       const target = this.uniquePath(`${label}.${format}`);
       fs.writeFileSync(target, audio);
       this.info(`🔊 Áudio salvo: ${target}${this.options.autoPlay ? '' : '  (use /play para abrir automaticamente)'}`);

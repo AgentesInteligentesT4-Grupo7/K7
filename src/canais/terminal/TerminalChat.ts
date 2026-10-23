@@ -13,6 +13,7 @@ import { sanitizeText, truncate } from '../../utils/text.js';
 import type { VoiceCloneService } from '../../voice/VoiceCloneService.js';
 import type { VoiceTuner } from '../../voice/VoiceTuner.js';
 import type { TerminalOutputHandler } from './TerminalOutputHandler.js';
+import { DIRECTION_HELP } from '../../voice/SpeechDirection.js';
 
 export interface TerminalChatDeps {
   controller: AgentController;
@@ -115,7 +116,7 @@ export class TerminalChat {
       case '/falar': {
         const match = /^@(\S+)\s+([\s\S]+)$/.exec(rest);
         const text = (match ? match[2]! : rest).trim();
-        if (!text) return this.say('Uso: /falar [@voz] <texto>');
+        if (!text) return this.say(`Uso: /falar [@voz] <texto>\n${DIRECTION_HELP}`);
         try {
           this.deps.voiceTuner?.remember(`terminal:${this.deps.userId}`, text, match?.[1]);
         } catch {

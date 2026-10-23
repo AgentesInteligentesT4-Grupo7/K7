@@ -6,6 +6,7 @@ import { FileTagParser, type GeneratedFile } from '../../comum/FileTagParser.js'
 import type { IOutputStrategy } from './strategies/OutputStrategy.js';
 import type { IClonedVoiceProvider, ITextToSpeech, SynthesizedAudio } from '../../../voice/tts/TextToSpeech.js';
 import { VoiceCloneTagParser } from '../../comum/VoiceCloneTagParser.js';
+import { scriptMessage } from '../../../voice/SpeechDirection.js';
 
 /** Strategy de áudio que aceita trocar o motor de TTS por chamada (ex.: voz clonada). */
 export interface IAudioOutputStrategy {
@@ -80,7 +81,18 @@ export class TelegramOutputHandler implements IOutputHandler {
       return;
     }
     try {
-      await this.strategies.audio.send(chatId, text, this.clonedVoices.asTextToSpeech(voiceName));
+      const tts = this.clonedVoices.asTextToSpeech(voiceName);
+      let script: string | undefined;
+      await this.strategies.audio.send(chatId, text, {
+        name: tts.name,
+        voice: tts.voice,
+        synthesize: async (speech) => {
+          const audio = await tts.synthesize(speech);
+          script = audio.script;
+          return audio;
+        },
+      });
+      if (script) await this.strategies.text.send(chatId, scriptMessage(script, tts.voice));
     } catch (error) {
       if (error instanceof BotBlockedError) throw error;
       this.logger.warn(`Falha na voz clonada: ${errorMessage(error)}`);
