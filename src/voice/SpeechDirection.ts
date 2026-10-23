@@ -37,18 +37,22 @@ export interface SpeechScript {
   tones: string[];
 }
 
+/**
+ * Ritmo (cfgWeight) abaixo de ~0,45 junto com pouca emoção faz o Chatterbox às vezes não terminar a fala e
+ * esticá-la ao dobro: os tons de pouca energia ficam em 0,45 e a lentidão vem da velocidade.
+ */
 const STYLES: Array<{ names: string[]; label: string; params: StyleParams }> = [
   { names: ['rapido', 'rapida', 'acelerado', 'acelerada', 'depressa'], label: 'rápido', params: { speedFactor: 1.2 } },
-  { names: ['devagar', 'lento', 'lenta', 'pausado', 'pausada'], label: 'devagar', params: { speedFactor: 0.85, cfgWeight: 0.35 } },
+  { names: ['devagar', 'lento', 'lenta', 'pausado', 'pausada'], label: 'devagar', params: { speedFactor: 0.85, cfgWeight: 0.45 } },
   { names: ['animado', 'animada', 'empolgado', 'empolgada', 'feliz', 'alegre'], label: 'animado', params: { exaggeration: 0.9, cfgWeight: 0.4 } },
   { names: ['calmo', 'calma', 'tranquilo', 'tranquila', 'suave'], label: 'calmo', params: { exaggeration: 0.35, cfgWeight: 0.55, speedFactor: 0.95 } },
   { names: ['serio', 'seria', 'preocupado', 'preocupada'], label: 'sério', params: { exaggeration: 0.4, cfgWeight: 0.45, speedFactor: 0.95 } },
-  { names: ['triste', 'chateado', 'chateada', 'desanimado', 'desanimada'], label: 'triste', params: { exaggeration: 0.4, cfgWeight: 0.4, speedFactor: 0.9 } },
-  { names: ['doente', 'gripado', 'gripada', 'resfriado', 'resfriada', 'enfermo', 'enferma'], label: 'doente', params: { exaggeration: 0.3, cfgWeight: 0.35, speedFactor: 0.85, temperature: 0.9 } },
-  { names: ['cansado', 'cansada', 'exausto', 'exausta', 'sonolento', 'sonolenta'], label: 'cansado', params: { exaggeration: 0.3, cfgWeight: 0.4, speedFactor: 0.88 } },
+  { names: ['triste', 'chateado', 'chateada', 'desanimado', 'desanimada'], label: 'triste', params: { exaggeration: 0.4, cfgWeight: 0.45, speedFactor: 0.9 } },
+  { names: ['doente', 'gripado', 'gripada', 'resfriado', 'resfriada', 'enfermo', 'enferma'], label: 'doente', params: { exaggeration: 0.3, cfgWeight: 0.45, speedFactor: 0.88 } },
+  { names: ['cansado', 'cansada', 'exausto', 'exausta', 'sonolento', 'sonolenta'], label: 'cansado', params: { exaggeration: 0.3, cfgWeight: 0.45, speedFactor: 0.9 } },
   { names: ['bravo', 'brava', 'irritado', 'irritada', 'zangado', 'zangada'], label: 'bravo', params: { exaggeration: 1.1, cfgWeight: 0.45, speedFactor: 1.05 } },
   { names: ['nervoso', 'nervosa', 'ansioso', 'ansiosa', 'apressado', 'apressada'], label: 'nervoso', params: { exaggeration: 0.7, speedFactor: 1.15, temperature: 0.95 } },
-  { names: ['suspense', 'misterioso', 'misteriosa'], label: 'suspense', params: { exaggeration: 0.7, cfgWeight: 0.3, speedFactor: 0.9 } },
+  { names: ['suspense', 'misterioso', 'misteriosa'], label: 'suspense', params: { exaggeration: 0.7, cfgWeight: 0.35, speedFactor: 0.9 } },
   { names: ['forte', 'enfase', 'enfatico', 'enfatica', 'gritando', 'grito'], label: 'forte', params: { exaggeration: 1.3, cfgWeight: 0.35 } },
   { names: ['normal'], label: 'normal', params: {} },
 ];
@@ -272,6 +276,61 @@ export function segmentParams(base: VoiceParams, segment: SpeechSegment): VoiceP
   const params: VoiceParams = { ...base, ...rest };
   if (speedFactor !== undefined) params.speedFactor = clampParam('speedFactor', (base.speedFactor ?? 1) * speedFactor);
   return params;
+}
+
+const WORD = /[\p{L}\p{N}]+/gu;
+
+type Piece = { text: string } | { raw: string; marker: Marker };
+
+/** Texto em pedaços: trechos de texto e marcações reconhecidas (parênteses comuns ficam no texto). */
+function pieces(text: string): Piece[] {
+  const out: Piece[] = [];
+  let last = 0;
+  for (const match of text.matchAll(MARKER)) {
+    const marker = parseMarker(match[1]!);
+    if (!marker) continue;
+    out.push({ text: text.slice(last, match.index) }, { raw: match[0], marker });
+    last = match.index! + match[0].length;
+  }
+  out.push({ text: text.slice(last) });
+  return out;
+}
+
+/**
+ * O tom escrito pela pessoa vence o do diretor: tira os tons do roteiro do diretor (ficam as pausas e os
+ * efeitos dele) e recoloca os tons escritos antes da mesma palavra em que estavam. As palavras dos dois
+ * textos são as mesmas (o diretor é conferido antes), então contar palavras acha o lugar certo.
+ */
+export function keepWrittenTones(written: string, directed: string): string {
+  const anchors: Array<{ at: number; raw: string }> = [];
+  let count = 0;
+  for (const piece of pieces(extractContext(written).body)) {
+    if ('text' in piece) count += piece.text.match(WORD)?.length ?? 0;
+    else if (piece.marker.kind === 'style') anchors.push({ at: count, raw: piece.raw });
+  }
+  if (!anchors.length) return directed;
+
+  let next = 0;
+  const due = () => {
+    let out = '';
+    while (next < anchors.length && anchors[next]!.at <= count) out += `${anchors[next++]!.raw} `;
+    return out;
+  };
+  count = 0;
+  let out = due();
+  for (const piece of pieces(directed)) {
+    if (!('text' in piece)) {
+      if (piece.marker.kind !== 'style') out += piece.raw;
+      continue;
+    }
+    out += piece.text.replace(WORD, (word) => {
+      const before = due();
+      count++;
+      return before + word;
+    });
+  }
+  while (next < anchors.length) out += ` ${anchors[next++]!.raw}`;
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 /** O texto sem nenhuma marcação nem efeito: só as palavras escritas (para conferir o que o diretor devolveu). */

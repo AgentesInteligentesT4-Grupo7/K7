@@ -3,7 +3,7 @@ import { AudioSynthesisError, UserFacingError } from '../errors/AppErrors.js';
 import { Logger } from '../utils/Logger.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from './ChatterboxVoiceCloner.js';
-import { type OggOpusPart, concatOggOpus } from './OggOpusConcat.js';
+import { type OggOpusPart, concatOggOpus, oggPackets, opusPacketSamples } from './OggOpusConcat.js';
 import {
   type SpeechSegment,
   extractContext,
@@ -29,6 +29,13 @@ export interface ClonedSpeech extends SynthesizedAudio {
 }
 
 const newSeed = () => 1 + Math.floor(Math.random() * 2_000_000_000);
+
+/** Fala normal em português sai a ~13 caracteres por segundo; o tom doente, ~1,3× mais longa. */
+const CHARS_PER_SECOND = 13;
+/** Acima disso (vezes a duração esperada) a fala foi esticada pelo modelo. */
+const MAX_STRETCH = 1.6;
+/** Duração de um Ogg Opus pelos pacotes, sem decodificar. */
+const oggSeconds = (audio: Buffer) => oggPackets(audio).slice(2).reduce((sum, packet) => sum + opusPacketSamples(packet), 0) / 48_000;
 
 /** Facade da clonagem de voz: cadastra amostras e fala com a voz escolhida. */
 export class VoiceCloneService {
@@ -99,13 +106,13 @@ export class VoiceCloneService {
     const { segments, script } = await this.plan(text, options.direction !== false);
     let result: SynthesizedAudio;
     if (segments.length === 1) {
-      result = await this.cloner.synthesize(segments[0]!.text, sample.name, reference, segmentParams(params, segments[0]!));
+      result = await this.synthesizeChecked(segments[0]!.text, sample.name, reference, segmentParams(params, segments[0]!));
     } else {
       // Mesma semente em todos os trechos: o timbre não muda de um para o outro.
       const seed = params.seed ?? newSeed();
       const parts: OggOpusPart[] = [];
       for (const [index, segment] of segments.entries()) {
-        const piece = await this.cloner.synthesize(segment.text, sample.name, reference, { ...segmentParams(params, segment), seed });
+        const piece = await this.synthesizeChecked(segment.text, sample.name, reference, { ...segmentParams(params, segment), seed });
         if (piece.format !== 'ogg') throw new AudioSynthesisError('Chatterbox não devolveu Ogg Opus para juntar os trechos');
         parts.push(piece.audio);
         if (segment.pauseAfterMs && index < segments.length - 1) parts.push({ silenceMs: segment.pauseAfterMs });
@@ -115,6 +122,21 @@ export class VoiceCloneService {
     const directed = segments.length > 1 || segments[0]!.styles.length ? `, ${segments.length} trecho(s) dirigidos` : '';
     this.logger.info(`🗣️ Voz clonada "${sample.name}" (${text.length} chars${directed}, ${Date.now() - started}ms)`);
     return { ...result, voice: sample.name, params, ...(script ? { script } : {}) };
+  }
+
+  /**
+   * Gera e confere a duração: às vezes o Chatterbox não termina a fala e a estica (repete sons, arrasta).
+   * Bem acima do esperado para o tamanho do texto, gera de novo com outra semente e fica com a mais curta.
+   */
+  private async synthesizeChecked(text: string, voice: string, reference: ReferenceAudio, params: VoiceParams): Promise<SynthesizedAudio> {
+    const first = await this.cloner.synthesize(text, voice, reference, params);
+    if (first.format !== 'ogg') return first;
+    const expected = Math.max(3, text.length / CHARS_PER_SECOND / (params.speedFactor ?? 1));
+    const seconds = oggSeconds(first.audio);
+    if (seconds <= expected * MAX_STRETCH) return first;
+    this.logger.warn(`Fala esticada (${seconds.toFixed(1)}s para ~${expected.toFixed(1)}s esperados): gerando de novo com outra semente`);
+    const retry = await this.cloner.synthesize(text, voice, reference, { ...params, seed: (params.seed ?? newSeed()) + 1 });
+    return retry.format === 'ogg' && oggSeconds(retry.audio) < seconds ? retry : first;
   }
 
   /**

@@ -3,13 +3,13 @@ import { TaskContext } from '../llm/orchestration/TaskContext.js';
 import type { ILlmProvider } from '../llm/types.js';
 import { Logger } from '../utils/Logger.js';
 import { type VoiceParams, clampParam } from './VoiceParams.js';
-import { EFFECT_TAGS, PAUSE_TAGS, TONE_TAGS, parseDirection, stripDirection } from './SpeechDirection.js';
+import { EFFECT_TAGS, PAUSE_TAGS, TONE_TAGS, keepWrittenTones, parseDirection, stripDirection } from './SpeechDirection.js';
 
 /**
  * Diretor de locução (VOICE_CLONE_DIRECTION=auto): o LLM local lê o texto (e o contexto de quem fala) e marca
  * onde acelerar, desacelerar, mudar o tom, pausar e, se a situação pedir, tossir ou rir. Ele só pode inserir
- * marcações: se mudar, tirar ou acrescentar qualquer palavra, ou apagar um tom que a pessoa escreveu, o roteiro
- * é descartado e a fala sai como foi escrita, para a voz clonada nunca dizer o que não foi escrito.
+ * marcações: se mudar, tirar ou acrescentar qualquer palavra, o roteiro é descartado e a fala sai como foi escrita,
+ * para a voz clonada nunca dizer o que não foi escrito. Tom escrito pela pessoa vence o do diretor.
  */
 
 const words = (text: string) =>
@@ -29,7 +29,7 @@ const PROMPT = (text: string, context?: string) =>
     `Pausas: ${PAUSE_TAGS.join(' ')}. Efeitos: ${EFFECT_TAGS.join(' ')}.`,
     'Um tom vale até o próximo; para combinar, escreva junto: (rápido, animado). Use poucas marcações, só onde o jeito de falar muda.',
     'Efeitos só quando o contexto ou o texto pedirem (doente tosse, gripado espirra, quem conta piada ri), no máximo dois.',
-    'Mantenha as marcações que já estão no texto, no mesmo lugar.',
+    'Se o texto já tiver um tom escrito, mantenha-o no mesmo lugar e não acrescente outros tons: só pausas e efeitos.',
     'NÃO mude, não tire e não acrescente nenhuma palavra do texto: só insira as marcações. Responda só com o texto marcado, sem comentários.',
     '',
     'Exemplo:',
@@ -48,9 +48,17 @@ const PROMPT = (text: string, context?: string) =>
 const TONE_PROMPT = (description: string) =>
   [
     `Converta este jeito de falar em parâmetros de um sintetizador de voz: "${description}".`,
-    'Responda só com JSON: {"emocao": 0.25 a 2 (0.5 neutro; alto = expressivo), "velocidade": 0.6 a 1.5 (1 normal),',
-    '"ritmo": 0.1 a 1 (0.5 normal; baixo = arrastado e cadenciado), "variacao": 0.3 a 1.5 (0.8 normal; alto = instável)}.',
+    'Responda só com JSON: {"emocao": 0.3 a 1.3 (0.5 neutro; alto = expressivo, empolgado, bravo),',
+    '"velocidade": 0.8 a 1.25 (1 normal; alto = rápido, apressado, eufórico; baixo = cansado, triste, doente),',
+    '"ritmo": 0.35 a 0.7 (0.5 normal; baixo = cadenciado), "variacao": 0.6 a 1.1 (0.8 normal)}.',
+    'Exemplos: comemorando uma vitória {"emocao":1.2,"velocidade":1.15,"ritmo":0.45,"variacao":0.9};',
+    'doente, sem energia {"emocao":0.3,"velocidade":0.9,"ritmo":0.45,"variacao":0.8};',
+    'bravo, dando bronca {"emocao":1.1,"velocidade":1.05,"ritmo":0.5,"variacao":0.8};',
+    'contando um segredo {"emocao":0.4,"velocidade":0.92,"ritmo":0.45,"variacao":0.7}.',
   ].join('\n');
+
+/** Faixa segura do tom descrito: fora dela o Chatterbox fica instável ou estica a fala. */
+const TONE_LIMITS = { exaggeration: [0.3, 1.3], speedFactor: [0.8, 1.25], cfgWeight: [0.35, 0.7], temperature: [0.6, 1.1] } as const;
 
 const MAX_CHARS = 1500;
 const CACHE_SIZE = 20;
@@ -69,27 +77,27 @@ export class SpeechDirector {
     const cached = this.cache.get(key);
     if (cached) return cached;
     if (text.length > MAX_CHARS || words(stripDirection(text)).split(' ').length < 4) return text;
-    try {
-      const started = Date.now();
-      const response = await this.ask(PROMPT(text, context), 0.4);
-      const script = response.trim().replace(/^marcado:\s*/i, '').replace(/^["'«“]+|["'»”]+$/g, '');
-      if (!parseDirection(script).directed) return text;
-      if (words(stripDirection(script)) !== words(stripDirection(text))) {
-        this.logger.warn('Direção da fala descartada: o modelo mudou palavras do texto');
+    // Duas tentativas: de vez em quando o modelo troca uma palavra, e na seguinte acerta.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const started = Date.now();
+        const response = await this.ask(PROMPT(text, context), 0.4);
+        const script = response.trim().replace(/^marcado:\s*/i, '').replace(/^["'«“]+|["'»”]+$/g, '');
+        if (!parseDirection(script).directed) return text;
+        if (words(stripDirection(script)) !== words(stripDirection(text))) {
+          this.logger.warn('Direção da fala descartada: o modelo mudou palavras do texto');
+          continue;
+        }
+        const final = keepWrittenTones(text, script);
+        this.logger.info(`🎬 Direção da fala pelo modelo local (${Date.now() - started}ms)`);
+        this.remember(this.cache, key, final);
+        return final;
+      } catch (error) {
+        this.logger.warn(`Sem direção da fala (modelo local não respondeu): ${errorMessage(error).slice(0, 120)}`);
         return text;
       }
-      const kept = parseDirection(script).tones.map(words);
-      if (!parseDirection(text).tones.every((tone) => kept.includes(words(tone)))) {
-        this.logger.warn('Direção da fala descartada: o modelo apagou um tom escrito pela pessoa');
-        return text;
-      }
-      this.logger.info(`🎬 Direção da fala pelo modelo local (${Date.now() - started}ms)`);
-      this.remember(this.cache, key, script);
-      return script;
-    } catch (error) {
-      this.logger.warn(`Sem direção da fala (modelo local não respondeu): ${errorMessage(error).slice(0, 120)}`);
-      return text;
     }
+    return text;
   }
 
   /** Parâmetros de voz para um tom descrito à vontade ("voz de quem acabou de acordar"); `{}` se não der. */
@@ -100,9 +108,10 @@ export class SpeechDirector {
       const raw = await this.ask(TONE_PROMPT(description), 0.2);
       const json = JSON.parse(/\{[\s\S]*\}/.exec(raw)?.[0] ?? '{}') as Record<string, unknown>;
       const params: Omit<VoiceParams, 'seed'> = {};
-      const set = (key: 'exaggeration' | 'speedFactor' | 'cfgWeight' | 'temperature', value: unknown) => {
+      const set = (key: keyof typeof TONE_LIMITS, value: unknown) => {
         const n = Number(value);
-        if (value !== undefined && Number.isFinite(n)) params[key] = clampParam(key, n);
+        const [min, max] = TONE_LIMITS[key];
+        if (value !== undefined && Number.isFinite(n)) params[key] = clampParam(key, Math.min(max, Math.max(min, n)));
       };
       set('exaggeration', json.emocao);
       set('speedFactor', json.velocidade);
