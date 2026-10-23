@@ -18,7 +18,8 @@ export class TelegramBotApp {
   async start(): Promise<void> {
     await this.bot.api.setMyCommands([
       { command: 'nova', description: 'Iniciar nova conversa' },
-      { command: 'falar', description: 'Gerar áudio com a sua voz clonada: /falar <texto>' },
+      { command: 'falar', description: 'Áudio com sua voz clonada: /falar <texto>, com (animado) (pausa) (tosse) (contexto: ...)' },
+      { command: 'entonacao', description: 'Marcações de jeito de falar: tons, pausas, efeitos, contexto' },
       { command: 'minhavoz', description: 'Cadastrar sua voz (envie um áudio em seguida)' },
       { command: 'vozes', description: 'Listar vozes cadastradas' },
       { command: 'apagarvoz', description: 'Apagar uma voz: /apagarvoz <nome>' },

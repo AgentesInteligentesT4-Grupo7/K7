@@ -333,9 +333,23 @@ o roteiro que usou, para copiar, editar e mandar de novo:
 ```
 /falar (rápido, animado) Que notícia boa, conseguimos. (pausa) Pessoal! (pausa longa) (sério) Agora falta resolver o contrato...
 ```
-Marcações: `(rápido)` `(devagar)` `(animado)` `(calmo)` `(sério)` `(triste)` `(suspense)` `(forte)` `(normal)`,
-`(pausa curta)` `(pausa)` `(pausa longa)` `(pausa 2s)`. Um tom vale até o próximo. Trechos de uma ou duas palavras
-são gerados junto do vizinho, porque sozinhos o modelo erra. `manual` usa só as marcações escritas; `off` fala tudo de uma vez.
+Marcações (o comando `/entonacao` lista todas):
+- tons: `(rápido)` `(devagar)` `(animado)` `(calmo)` `(sério)` `(triste)` `(doente)` `(cansado)` `(bravo)` `(nervoso)`
+  `(suspense)` `(forte)` `(normal)`, ou descritos à vontade: `(voz de quem acabou de acordar)`. O modelo local traduz
+  a descrição em parâmetros de voz. Um tom vale até o próximo;
+- pausas: `(pausa curta)` `(pausa)` `(pausa longa)` `(pausa 2s)`;
+- efeitos: `(tosse)` `(espirro)` `(risada)` `(suspiro)` `(bocejo)` `(pigarro)`. O Chatterbox multilíngue não tem
+  efeitos sonoros, então eles saem como onomatopeia na mesma voz ("Cof, cof...");
+- situação: `(contexto: está gripado, de cama)` ou uma primeira linha `Contexto: ...`. O diretor usa o contexto
+  para decidir o jeito de falar (pode pôr uma tosse se a pessoa está doente), e os trechos sem tom seguem o contexto.
+
+```
+/falar (contexto: está gripado) (voz de pessoa doente) Hoje não vou conseguir ir. (tosse) Desculpa, pessoal.
+```
+
+Se você escreve só tons e contexto, o diretor ainda decide as pausas e os efeitos, mantendo o que você escreveu.
+Com pausas ou efeitos escritos, vale só o seu roteiro. Trechos de uma ou duas palavras são gerados junto do
+vizinho, porque sozinhos o modelo erra. `manual` usa só as marcações escritas; `off` fala tudo de uma vez.
 
 As amostras ficam em `data/`, que está no `.gitignore`. Só usuários da whitelist conseguem usar as vozes.
 

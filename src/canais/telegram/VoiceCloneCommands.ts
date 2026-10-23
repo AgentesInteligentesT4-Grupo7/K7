@@ -58,7 +58,9 @@ type Pending = { kind: 'cadastro'; name: string; expiresAt: number; text?: strin
  * Comandos de clonagem de voz (o áudio pode ser gravado na hora ou anexado como arquivo):
  *   /minhavoz [nome] — o próximo áudio vira a amostra da voz (salva em VOICE_CLONE_DIR)
  *   /falar [@voz] texto — devolve um voice note com a voz clonada falando exatamente o texto
- *                          (marcações como "(rápido)" e "(pausa)" mudam o jeito de falar; ver SpeechDirection)
+ *                          (marcações como "(rápido)", "(pausa)", "(tosse)" e "(contexto: ...)" mudam o jeito
+ *                          de falar; ver SpeechDirection)
+ *   /entonacao — lista as marcações de jeito de falar
  *   /testarvoz [@voz] — o próximo áudio é transcrito e falado de novo (pela própria amostra ou pela voz)
  *   /ajustar <pedido> — refaz o último teste ou /falar ("mais emoção", "mais lento", "igualar"...)
  *   /salvarvoz [nome] — guarda o resultado ajustado
@@ -74,6 +76,7 @@ export class VoiceCloneCommands {
   register(bot: Bot): void {
     bot.command('minhavoz', (ctx) => this.handleEnroll(ctx));
     bot.command('falar', (ctx) => this.handleSpeak(ctx));
+    bot.command('entonacao', (ctx) => this.deps.output.notify(ctx.chat!.id, DIRECTION_HELP));
     bot.command('testarvoz', (ctx) => this.handleTest(ctx));
     bot.command('ajustar', (ctx) => this.handleAdjust(ctx));
     bot.command('salvarvoz', (ctx) => this.handleSave(ctx));

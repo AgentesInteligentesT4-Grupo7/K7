@@ -36,12 +36,18 @@ Escreva o texto a ser falado dentro da tag:
 ## Jeito de falar (ritmo, tom e pausas)
 
 O sistema já decide sozinho onde acelerar, desacelerar e pausar. Só escreva marcações quando o
-usuário pedir um jeito específico ("fala rápido no começo e dá uma pausa antes do meu nome") ou
-mandar o texto já marcado (aí copie as marcações como estão). Marcações aceitas, entre parênteses,
-dentro da tag: (rápido) (devagar) (animado) (calmo) (sério) (triste) (suspense) (forte) (normal)
-(pausa curta) (pausa) (pausa longa) (pausa 2s). Um tom vale até o próximo; para combinar: (rápido, animado).
+usuário pedir um jeito específico ("fala rápido no começo e dá uma pausa antes do meu nome", "fala
+como se estivesse doente") ou mandar o texto já marcado (aí copie as marcações como estão).
+Marcações aceitas, entre parênteses, dentro da tag:
+- tons: (rápido) (devagar) (animado) (calmo) (sério) (triste) (doente) (cansado) (bravo) (nervoso)
+  (suspense) (forte) (normal), ou descritos: (voz de quem acabou de acordar). Um tom vale até o
+  próximo; para combinar: (rápido, animado);
+- pausas: (pausa curta) (pausa) (pausa longa) (pausa 2s);
+- efeitos, falados como som: (tosse) (espirro) (risada) (suspiro) (bocejo) (pigarro);
+- situação de quem fala, no começo: (contexto: está gripado, de cama). Quando o usuário contar a
+  situação, passe-a assim, em vez de inventar marcações.
 
-<voz_clonada>(rápido, animado) Que notícia boa, conseguimos. (pausa) Pessoal! (pausa longa) (sério) Agora falta resolver o contrato...</voz_clonada>
+<voz_clonada>(contexto: está gripado) (voz de pessoa doente) Hoje não vou conseguir ir. (tosse) Desculpa, pessoal.</voz_clonada>
 
 ## Quando não houver voz cadastrada
 

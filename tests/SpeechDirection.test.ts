@@ -7,7 +7,7 @@ import { OggOpusDecoder } from 'ogg-opus-decoder';
 import { AudioSampleConverter } from '../src/voice/AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from '../src/voice/ChatterboxVoiceCloner.js';
 import { concatOggOpus, oggPackets, opusPacketSamples, writeOggOpus } from '../src/voice/OggOpusConcat.js';
-import { mergeShortSegments, parseDirection, segmentParams, stripDirection } from '../src/voice/SpeechDirection.js';
+import { extractContext, mergeShortSegments, parseDirection, segmentParams, stripDirection } from '../src/voice/SpeechDirection.js';
 import { SpeechDirector } from '../src/voice/SpeechDirector.js';
 import { VoiceCloneService } from '../src/voice/VoiceCloneService.js';
 import { VoiceLibrary } from '../src/voice/VoiceLibrary.js';
@@ -138,5 +138,60 @@ describe('Direção da fala: diretor (LLM local) e voz clonada', () => {
     await new VoiceCloneService(library, cloner, 'off').speak('(rápido) Oi');
     assert.deepEqual(calls.map((c) => c.text), ['(rápido) Oi'], 'off: texto como está');
     await assert.rejects(service.speak('(pausa)'), /nenhum texto para falar/);
+  });
+});
+
+describe('Direção da fala: tom descrito, contexto e efeitos', () => {
+  it('descrição livre usa o tom pronto citado; sem ele, fica para o LLM; "(como eu disse)" é texto', () => {
+    const sick = parseDirection('(voz de pessoa doente) Hoje não vou conseguir ir.').segments[0]!;
+    assert.deepEqual([sick.styles, sick.params.speedFactor, sick.description], [['voz de pessoa doente'], 0.85, undefined]);
+    const sleepy = parseDirection('(voz de quem acabou de acordar) Bom dia a todos.').segments[0]!;
+    assert.equal(sleepy.description, 'voz de quem acabou de acordar');
+    assert.deepEqual(sleepy.params, {});
+    const plain = parseDirection('Isso, (como eu disse) antes, já foi resolvido.');
+    assert.equal(plain.directed, false);
+  });
+
+  it('efeitos viram som falado e contam como ritmo decidido; contexto sai do texto falado', () => {
+    const script = parseDirection('(contexto: está gripado, de cama) Hoje não vou. (tosse) Desculpa, pessoal.');
+    assert.deepEqual([script.directed, script.timed], [true, true]);
+    assert.equal(script.segments.map((s) => s.text).join(' '), 'Hoje não vou. Cof, cof... Desculpa, pessoal.');
+    assert.deepEqual(extractContext('Contexto: acabou de correr\nOi, tudo bem com vocês?'),{ context: 'acabou de correr', body: 'Oi, tudo bem com vocês?' });
+    assert.equal(stripDirection('(contexto: gripado) (doente) Oi. (tosse) (pausa) Tchau, gente.'), 'Oi. Tchau, gente.');
+  });
+
+  it('contexto dá o tom aos trechos sem tom; descrição livre vira parâmetros pelo LLM; diretor que apaga o tom escrito é descartado', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'direcao-voz-'));
+    const library = new VoiceLibrary({ dir, defaultVoice: 'minha-voz' }, new AudioSampleConverter());
+    await library.save('minha-voz', AudioSampleConverter.encodeWav([new Float32Array(24_000 * 12)], 24_000), 'wav');
+    const calls: Array<{ text: string; params: VoiceParams }> = [];
+    const cloner = {
+      synthesize: async (text: string, _voice: string, _reference: unknown, params: VoiceParams) => {
+        calls.push({ text, params });
+        return { audio: silentOgg(1000), format: 'ogg' as const };
+      },
+    } as unknown as ChatterboxVoiceCloner;
+
+    // Modo manual: sem LLM, o contexto "gripado" já soa doente.
+    await new VoiceCloneService(library, cloner, 'manual').speak('(contexto: está gripado) Hoje não vou conseguir ir, desculpa.');
+    assert.deepEqual([calls[0]!.text, calls[0]!.params.speedFactor, calls[0]!.params.exaggeration], ['Hoje não vou conseguir ir, desculpa.', 0.85, 0.3]);
+
+    // Auto: o diretor recebe o contexto e mantém o tom descrito; o roteiro volta com o contexto na frente.
+    calls.length = 0;
+    const llm = new FakeLlmProvider([
+      { content: '(voz de quem acabou de acordar) Bom dia a todos. (pausa) (bocejo) Já estou indo.' },
+      { content: '{"emocao": 0.3, "velocidade": 0.8, "ritmo": 0.3}' },
+    ]);
+    const service = new VoiceCloneService(library, cloner, 'auto', new SpeechDirector(llm));
+    const spoken = await service.speak('(contexto: domingo cedo) (voz de quem acabou de acordar) Bom dia a todos. Já estou indo.');
+    assert.equal(spoken.script, '(contexto: domingo cedo) (voz de quem acabou de acordar) Bom dia a todos. (pausa) (bocejo) Já estou indo.');
+    assert.match(String(llm.requests[0]!.messages[0]!.content), /Contexto de quem fala: domingo cedo/);
+    assert.deepEqual(calls.map((c) => [c.text, c.params.speedFactor, c.params.cfgWeight]), [
+      ['Bom dia a todos.', 0.8, 0.3],
+      ['Aaahm... Já estou indo.', 0.8, 0.3],
+    ]);
+
+    const eraser = new SpeechDirector(new FakeLlmProvider([{ content: '(animado) Bom dia a todos. (pausa) Já estou indo.' }]));
+    assert.equal(await eraser.direct('(triste) Bom dia a todos. Já estou indo.'), '(triste) Bom dia a todos. Já estou indo.');
   });
 });

@@ -4,7 +4,15 @@ import { Logger } from '../utils/Logger.js';
 import type { ReferenceAudio } from './AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from './ChatterboxVoiceCloner.js';
 import { type OggOpusPart, concatOggOpus } from './OggOpusConcat.js';
-import { type SpeechSegment, mergeShortSegments, parseDirection, segmentParams } from './SpeechDirection.js';
+import {
+  type SpeechSegment,
+  extractContext,
+  mergeShortSegments,
+  mergeStyles,
+  parseDirection,
+  segmentParams,
+  toneFromKeywords,
+} from './SpeechDirection.js';
 import type { SpeechDirector } from './SpeechDirector.js';
 import type { VoiceLibrary, VoiceSample } from './VoiceLibrary.js';
 import type { VoiceParams } from './VoiceParams.js';
@@ -109,19 +117,48 @@ export class VoiceCloneService {
     return { ...result, voice: sample.name, params, ...(script ? { script } : {}) };
   }
 
-  /** Trechos a gerar: as marcações do texto ou, sem elas e no modo auto, as que o LLM local escrever. */
+  /**
+   * Trechos a gerar. Se a pessoa não marcou pausas nem efeitos, no modo auto o LLM local organiza o ritmo,
+   * mantendo os tons e o contexto que ela escreveu; senão valem só as marcações escritas.
+   */
   private async plan(text: string, direct: boolean): Promise<{ segments: SpeechSegment[]; script?: string }> {
     const whole: SpeechSegment[] = [{ text, params: {}, styles: [], pauseAfterMs: 0 }];
     if (!direct || this.direction === 'off') return { segments: whole };
-    const written = parseDirection(text);
-    if (written.directed) {
-      if (!written.segments.length) throw new UserFacingError('Só encontrei marcações (como "(pausa)"), nenhum texto para falar.');
-      return { segments: mergeShortSegments(written.segments) };
+    const { context, body } = extractContext(text);
+    let parsed = parseDirection(text);
+    let script: string | undefined;
+    if (!parsed.timed && this.direction === 'auto' && this.director) {
+      const directed = await this.director.direct(body, context);
+      if (directed !== body) {
+        script = context ? `(contexto: ${context}) ${directed}` : directed;
+        parsed = parseDirection(directed);
+      }
     }
-    if (this.direction !== 'auto' || !this.director) return { segments: whole };
-    const script = await this.director.direct(text);
-    const directed = parseDirection(script);
-    return directed.directed && directed.segments.length ? { segments: mergeShortSegments(directed.segments), script } : { segments: whole };
+    if (!parsed.directed && !context) return { segments: whole };
+    if (!parsed.segments.length) throw new UserFacingError('Só encontrei marcações (como "(pausa)"), nenhum texto para falar.');
+    const segments = mergeShortSegments(await this.resolveTones(parsed.segments, context));
+    return script ? { segments, script } : { segments };
+  }
+
+  /**
+   * Tons descritos à vontade viram parâmetros (tom pronto citado na descrição ou, no modo auto, o LLM local);
+   * trechos sem tom nenhum seguem o contexto ("(contexto: está gripado)" soa doente).
+   */
+  private async resolveTones(segments: SpeechSegment[], context?: string): Promise<SpeechSegment[]> {
+    // Só traduz o contexto se algum trecho ficou sem tom (evita uma chamada ao LLM à toa).
+    const contextTone =
+      context && segments.some((segment) => !segment.styles.length)
+        ? (toneFromKeywords(context) ?? (await this.director?.tone(context)) ?? {})
+        : {};
+    const resolved: SpeechSegment[] = [];
+    for (const segment of segments) {
+      if (segment.description && this.director) {
+        resolved.push({ ...segment, params: mergeStyles(await this.director.tone(segment.description), segment.params) });
+      } else if (!segment.styles.length && context) {
+        resolved.push({ ...segment, params: contextTone, styles: ['contexto'] });
+      } else resolved.push(segment);
+    }
+    return resolved;
   }
 
   /** Fala com uma amostra que não está na biblioteca (teste espelho). */

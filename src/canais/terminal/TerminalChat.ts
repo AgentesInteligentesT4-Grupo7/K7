@@ -42,6 +42,7 @@ export const TERMINAL_HELP = [
   '  /anexos                         lista as imagens e documentos guardados',
   '  /audio <caminho> [legenda]      transcreve um áudio e envia como mensagem de voz',
   '  /falar [@voz] <texto>           gera um áudio com a voz clonada',
+  '  /entonacao                      marcações de jeito de falar: (animado) (pausa) (tosse) (contexto: ...)',
   '  /vozes   /apagarvoz <nome>      lista as vozes cadastradas / apaga uma',
   '  /testarvoz [@voz] <arquivo>     transcreve o áudio e fala de novo com a voz clonada, para comparar',
   '  /ajustar <pedido>  /salvarvoz   refaz o último teste ou /falar (mais emoção, igualar...) / guarda',
@@ -124,6 +125,8 @@ export class TerminalChat {
         }
         return this.deps.output.sendClonedVoice(0, text, match?.[1]);
       }
+      case '/entonacao':
+        return this.say(DIRECTION_HELP);
       case '/verbose':
         this.verbose = !this.verbose;
         Logger.setLevel(this.verbose ? 'info' : 'warn');
