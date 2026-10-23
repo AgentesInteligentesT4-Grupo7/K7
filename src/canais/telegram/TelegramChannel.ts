@@ -16,6 +16,7 @@ import { TelegramAttachmentHandler } from './TelegramAttachmentHandler.js';
 import { TelegramBotApp } from './TelegramBotApp.js';
 import { TelegramInputHandler } from './TelegramInputHandler.js';
 import { VoiceCloneCommands } from './VoiceCloneCommands.js';
+import { EnrollmentVerifier } from '../../voice/EnrollmentVerifier.js';
 
 const logger = new Logger('Telegram');
 
@@ -52,6 +53,8 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     tmp: core.tmp,
     defaultVoiceName: config.voiceClone.defaultVoice ?? 'minha-voz',
     ...(core.voiceTuner ? { tuner: core.voiceTuner } : {}),
+    // Sem o módulo voz, a transcrição está desligada e o cadastro verificado avisa isso ao usuário.
+    ...(config.voiceClone.verifyText ? { verification: { verifier: new EnrollmentVerifier(core.llm, config.voiceClone.verifyMin), stt: core.stt } } : {}),
   });
   new TelegramInputHandler({
     allowedUserIds: config.allowedUserIds,

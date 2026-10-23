@@ -193,7 +193,17 @@ export class Config {
     dir: string;
     keep: number;
   };
-  readonly voiceClone: { dir: string; baseUrl: string; language: string; defaultVoice: string | undefined; timeoutMs: number };
+  readonly voiceClone: {
+    dir: string;
+    baseUrl: string;
+    language: string;
+    defaultVoice: string | undefined;
+    timeoutMs: number;
+    /** VOICE_CLONE_VERIFY_TEXT: /minhavoz pede a leitura de um texto gerado pelo LLM local (padrão: ligado). */
+    verifyText: boolean;
+    /** VOICE_CLONE_VERIFY_MIN: parte mínima do texto que precisa ser lida (0,1–1; padrão 0,6). */
+    verifyMin: number;
+  };
   readonly logLevel: string;
 
   constructor(
@@ -356,6 +366,9 @@ export class Config {
       defaultVoice: Config.optional(env.VOICE_CLONE_DEFAULT),
       // Clonagem é mais pesada que o Kokoro: textos longos levam dezenas de segundos.
       timeoutMs: Config.positiveInt(env.VOICE_CLONE_TIMEOUT_MS, 180_000),
+      // Cadastro só com leitura de um texto gerado na hora (garante que a voz é de quem grava).
+      verifyText: Config.bool(env.VOICE_CLONE_VERIFY_TEXT, true),
+      verifyMin: Math.min(1, Math.max(0.1, Number(env.VOICE_CLONE_VERIFY_MIN ?? 0.6) || 0.6)),
     };
     this.logLevel = env.LOG_LEVEL?.trim() || 'info';
   }
