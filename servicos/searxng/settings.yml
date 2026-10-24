@@ -1,8 +1,8 @@
-# Configuração mínima do SearXNG para uso local pelo ParreiraClaw (spec web-search §10).
+# Configuração mínima do SearXNG para uso local pelo K7 (spec web-search §10).
 use_default_settings: true
 
 general:
-  instance_name: ParreiraClaw
+  instance_name: K7
   enable_metrics: false
 
 server:

@@ -2,7 +2,7 @@
 
 **Versão:** 1.0
 **Status:** Implementada (v1.0) — módulo pesquisa-web; DuckDuckGo como fallback sem chave e extração de HTML própria (sem Readability)
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-17
 **Reviewers:** Parreira
 
@@ -10,7 +10,7 @@
 
 ## 1. Resumo
 
-Dá ao ParreiraClaw acesso à internet: ferramentas para **pesquisar na web**, **ler páginas** e **buscar notícias**, usadas pelo AgentLoop (ReAct) para formular respostas embasadas em fontes reais e citadas. Inclui duas skills: `pesquisador-web` (pesquisa aprofundada com cruzamento de fontes) e `noticias` (resumo de notícias por tema e período).
+Dá ao K7 acesso à internet: ferramentas para **pesquisar na web**, **ler páginas** e **buscar notícias**, usadas pelo AgentLoop (ReAct) para formular respostas embasadas em fontes reais e citadas. Inclui duas skills: `pesquisador-web` (pesquisa aprofundada com cruzamento de fontes) e `noticias` (resumo de notícias por tema e período).
 
 ---
 

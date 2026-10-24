@@ -138,7 +138,7 @@ function parseModules(
 
   for (const [id] of entries) {
     if (MODULE_IDS.includes(id)) continue;
-    if (FUTURE_MODULES.has(id)) fail(`modulos.${id}`, 'ainda não está disponível neste tocador; atualize o ParreiraClaw ou remova o módulo do perfil');
+    if (FUTURE_MODULES.has(id)) fail(`modulos.${id}`, 'ainda não está disponível neste tocador; atualize o K7 ou remova o módulo do perfil');
     fail(`modulos.${id}`, `não existe (disponíveis: ${MODULE_IDS.join(', ')})`);
   }
   return { modulos: entries.map(([id]) => id), opcoesModulos: Object.fromEntries(entries) };

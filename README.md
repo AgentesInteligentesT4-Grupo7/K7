@@ -1,4 +1,6 @@
-# 🦀 ParreiraClaw
+# 📼 K7
+
+Tocador de fitas de agentes de IA, criado por **Danillo Tomaz Parreira** — Agentes Inteligentes T4, Grupo 7 (o 7 do K7).
 
 Agente pessoal de IA que roda **100% local** no seu desktop e é controlado **exclusivamente pelo Telegram**.
 Pipeline ReAct com LLMs intercambiáveis (Gemini, DeepSeek, Groq ou Ollama local), memória persistente em SQLite,
@@ -90,11 +92,11 @@ docker compose up -d --build     # sobe o bot (reinicia sozinho com o Docker)
 docker compose logs -f           # acompanha os logs
 docker compose down              # para o bot
 
-docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js   # chat no terminal
-docker compose run --rm parreiraclaw node dist/cli/eval.js pesquisa      # avalia os modelos
+docker compose run --rm k7 node dist/canais/terminal/chat.js   # chat no terminal
+docker compose run --rm k7 node dist/cli/eval.js pesquisa      # avalia os modelos
 
 PERFIL=promo docker compose up -d                                         # bot de um perfil
-docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js --perfil historias
+docker compose run --rm k7 node dist/canais/terminal/chat.js --perfil historias
 ```
 
 - **Perfis no Docker:** a pasta `../ParreiraClaw-perfis` (ou `PERFIS_DIR_HOST`) é montada em `/app/perfis`
@@ -105,11 +107,11 @@ docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js --perfil 
 - **Serviços no host:** Ollama, Kokoro (8880), Whisper (8890) e Chatterbox (8004) são alcançados por
   `host.docker.internal`. Os endereços do `docker-compose.yml` sobrescrevem os do `.env`. Ligue os
   containers de voz antes: `docker start kokoro-tts whisper-stt chatterbox-tts-server-chatterbox-tts-server-1`.
-- **Banco SQLite num volume Docker (`parreiraclaw-state`)**, porque o modo WAL não é confiável numa pasta do
+- **Banco SQLite num volume Docker (`k7-state`)**, porque o modo WAL não é confiável numa pasta do
   Windows montada no container. Por isso o Docker tem **memória, notas de avaliação e histórico próprios**,
   separados do `npm run dev`. Para levar o banco do Windows para o Docker uma vez (com os dois parados):
   ```bash
-  docker run --rm -v parreiraclaw_parreiraclaw-state:/state -v "%cd%/data:/src" alpine cp /src/parreiraclaw.db /state/
+  docker run --rm -v k7_k7-state:/state -v "%cd%/data:/src" alpine cp /src/k7.db /state/
   ```
 - **Pastas montadas do Windows** (edite normalmente): `data/` (vozes, cache, saídas do terminal), `workspace/`,
   `.agents/skills/` (com hot-reload) e `evals/`.
@@ -117,7 +119,7 @@ docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js --perfil 
 
 ## Perfis: um tocador, várias fitas
 
-O ParreiraClaw é o **tocador** (núcleo + módulos + canais). Cada finalidade é um **perfil** — uma pasta
+O K7 é o **tocador** (núcleo + módulos + canais). Cada finalidade é um **perfil** — uma pasta
 com `perfil.yaml` (identidade, módulos, canais, privacidade), `skills/` e `.env` próprios, **sem código**.
 Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw-perfis`).
 
@@ -546,7 +548,7 @@ Conversas longas não estouram o contexto nem esquecem o começo:
 
 | Caminho | Conteúdo |
 |---------|----------|
-| `data/parreiraclaw.db` | Conversas e mensagens (SQLite, WAL). Está no `.gitignore`. |
+| `data/k7.db` | Conversas e mensagens (SQLite, WAL). Está no `.gitignore`. |
 | `tmp/` | Áudios/PDFs temporários, apagados após o uso e limpos no startup |
 | `workspace/` | Única pasta onde as ferramentas de arquivo podem ler e escrever |
 

@@ -1,8 +1,8 @@
-# Spec: PRD — ParreiraClaw Core
+# Spec: PRD — K7 Core
 
 **Versão:** 1.0
 **Status:** Aprovada
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-03-06
 **Reviewers:** Parreira
 
@@ -58,7 +58,7 @@ A ascensão de LLMs super eficientes (Gemini 1.5/2.0+ e DeepSeek) somada com a f
 O usuário tem que gerir manualmente as APIs ou logar em múltiplas abas web (ChatGPT, Gemini) para acionar "skills" em blocos de texto independentes sem integrações de arquivos no próprio SO local.
 
 **Jornada futura (com a feature):**
-O usuário envia um chat no Telegram, o ParreiraClaw roda local em background num terminal, chama LLMs, lê Skills em pastas locais, aciona ferramentas e responde no mesmo chat de forma orgânica.
+O usuário envia um chat no Telegram, o K7 roda local em background num terminal, chama LLMs, lê Skills em pastas locais, aciona ferramentas e responde no mesmo chat de forma orgânica.
 
 ---
 

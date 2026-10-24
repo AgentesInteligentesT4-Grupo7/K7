@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import 'dotenv/config';
 import { type AgentIdentity, identityFromEnv } from './AgentIdentity.js';
@@ -263,7 +264,7 @@ export class Config {
     // Teto de rodadas das skills de refinamento (evita billing infinito por frontmatter mal escrito).
     this.refinementMaxRounds = Config.positiveInt(env.REFINEMENT_MAX_ROUNDS, 30);
 
-    this.dbPath = path.resolve(rootDir, env.DB_PATH?.trim() || './data/parreiraclaw.db');
+    this.dbPath = path.resolve(rootDir, env.DB_PATH?.trim() || Config.defaultDbPath(rootDir));
     this.memoryWindowSize = Config.positiveInt(env.MEMORY_WINDOW_SIZE, 20);
     this.memoryLayers = {
       enabled: Config.bool(env.MEMORY_LAYERED, true),
@@ -374,6 +375,12 @@ export class Config {
       direction: Config.speechDirection(env.VOICE_CLONE_DIRECTION),
     };
     this.logLevel = env.LOG_LEVEL?.trim() || 'info';
+  }
+
+  /** `data/k7.db`; instalações de antes da troca de nome continuam no `data/parreiraclaw.db` que já existe. */
+  private static defaultDbPath(rootDir: string): string {
+    const legacy = './data/parreiraclaw.db';
+    return fs.existsSync(path.resolve(rootDir, legacy)) ? legacy : './data/k7.db';
   }
 
   private static speechDirection(raw: string | undefined): 'auto' | 'manual' | 'off' {

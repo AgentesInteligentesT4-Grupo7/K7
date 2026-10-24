@@ -2,7 +2,7 @@
 
 **Versão:** 1.1
 **Status:** Implementada em parte (ver "Estado da implementação")
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-21
 **Reviewers:** Parreira
 
@@ -10,7 +10,7 @@
 
 ## 1. Resumo
 
-O ParreiraClaw passa a ser um **tocador**: um núcleo estável (loop do agente, memória, orquestrador de LLMs, canais, segurança) com **módulos** de funcionalidade (voz, voz clonada, imagens, pesquisa web, anexos…). Cada finalidade vira um **perfil instalável** — a "fita" — que declara a identidade do agente, quais módulos usar, suas skills, avaliações e configuração. Perfis ficam em pastas próprias ou em repositórios Git separados e são instalados no tocador por um comando. Um mesmo tocador roda vários perfis, cada um com seu bot, seus dados e seus segredos.
+O K7 passa a ser um **tocador**: um núcleo estável (loop do agente, memória, orquestrador de LLMs, canais, segurança) com **módulos** de funcionalidade (voz, voz clonada, imagens, pesquisa web, anexos…). Cada finalidade vira um **perfil instalável** — a "fita" — que declara a identidade do agente, quais módulos usar, suas skills, avaliações e configuração. Perfis ficam em pastas próprias ou em repositórios Git separados e são instalados no tocador por um comando. Um mesmo tocador roda vários perfis, cada um com seu bot, seus dados e seus segredos.
 
 ### Estado da implementação (v1.1)
 
@@ -36,7 +36,7 @@ O ParreiraClaw passa a ser um **tocador**: um núcleo estável (loop do agente, 
 - Juntar tudo num único agente criaria um "monstro": ferramentas demais no contexto do LLM (mais tokens, mais erros de escolha), serviços pesados obrigatórios e mistura de níveis de segurança (agente pessoal × bot público).
 
 **Evidências (2026-10-21):**
-- Três cópias já divergiram: o `ParreiraClaw-Promo` foi copiado antes do orquestrador e da identidade configurável; o `AgroMinds` foi publicado ainda com o OpenCode ligado e um modelo do Groq aposentado. As correções ficaram só no `ParreiraClaw`.
+- Três cópias já divergiram: o `K7-Promo` foi copiado antes do orquestrador e da identidade configurável; o `AgroMinds` foi publicado ainda com o OpenCode ligado e um modelo do Groq aposentado. As correções ficaram só no `K7`.
 - Cada ferramenta ativa é enviada ao LLM em toda mensagem; módulos de imagens/histórias acrescentariam ~6 ferramentas às 5 atuais.
 
 **Por que agora:**
@@ -53,12 +53,12 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 - [ ] G-03: **Instalação de perfis** a partir de uma pasta local ou de um repositório Git, com atualização e remoção.
 - [ ] G-04: **Isolamento por perfil:** identidade, segredos (`.env`), banco SQLite, vozes, workspace e bot do Telegram próprios.
 - [ ] G-05: Vários perfis rodando ao mesmo tempo, em processos separados (terminal ou Docker).
-- [ ] G-06: Migrar o ParreiraClaw atual para o perfil `pessoal` e criar `promo` e `historias`, aposentando a cópia `ParreiraClaw-Promo`.
+- [ ] G-06: Migrar o K7 atual para o perfil `pessoal` e criar `promo` e `historias`, aposentando a cópia `K7-Promo`.
 
 **Métricas de sucesso:**
 | Métrica | Baseline atual | Target | Prazo |
 |---------|---------------|--------|-------|
-| Cópias do código para finalidades pessoais | 2 (ParreiraClaw, ParreiraClaw-Promo) | 1 tocador + N perfis | v1 |
+| Cópias do código para finalidades pessoais | 2 (K7, K7-Promo) | 1 tocador + N perfis | v1 |
 | Esforço para aplicar uma correção do núcleo em todos os perfis | Manual, por cópia | Zero (código único) | v1 |
 | Ferramentas enviadas ao LLM num perfil sem o módulo de imagens | — | Nenhuma ferramenta de imagem | v1 |
 | Instalar um perfil de um repositório Git | Impossível | 1 comando | v1 |
@@ -71,7 +71,7 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 - NG-02: Alterar ou migrar o **AgroMinds**.
 - NG-03: Loja/registro público de perfis. A instalação é por caminho local ou URL Git.
 - NG-04: Vários perfis no **mesmo processo** (cada perfil = um processo, com seu próprio bot).
-- NG-05: Instalação no formato `npx @<escopo>/<perfil> install`. O `npx` **executa o código do pacote**: cada perfil precisaria trazer um instalador em código, e instalar uma fita significaria rodar código baixado (contradiz o NG-01). A mesma praticidade vem do instalador do tocador aceitando atalhos (`instalar @parreira/promo`, `instalar parreira/promo`, RF-04). Se no futuro o próprio tocador for publicado no npm, o equivalente seguro será `npx parreiraclaw perfil instalar @parreira/promo` — o código executado é sempre o do tocador.
+- NG-05: Instalação no formato `npx @<escopo>/<perfil> install`. O `npx` **executa o código do pacote**: cada perfil precisaria trazer um instalador em código, e instalar uma fita significaria rodar código baixado (contradiz o NG-01). A mesma praticidade vem do instalador do tocador aceitando atalhos (`instalar @parreira/promo`, `instalar parreira/promo`, RF-04). Se no futuro o próprio tocador for publicado no npm, o equivalente seguro será `npx k7 perfil instalar @parreira/promo` — o código executado é sempre o do tocador.
 
 ---
 
@@ -88,7 +88,7 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 | ID | Requisito | Prioridade | Critério de Aceite |
 |----|-----------|-----------|-------------------|
 | RF-01 | **Contrato de módulo** (`src/modules/<id>/`): `id`, `descricao`, `requer` (serviços e variáveis de ambiente), `ferramentas()`, `skillsDir` (skills que vêm com o módulo), `comandos()` (Telegram/terminal), `healthCheck()`. O núcleo registra só os módulos ligados no perfil. | Must | Um módulo desligado não registra ferramentas, comandos nem skills. |
-| RF-02 | **Módulos iniciais** (extraídos do código atual): `voz` (Whisper + TTS), `voz-clonada` (Chatterbox), `refinamento` (loop criador ↔ crítico), `arquivos` (ferramentas do workspace). Futuros: `imagens`, `historias`, `pesquisa-web`, `anexos`, `promocoes`. | Must | O perfil `pessoal` com os 4 módulos se comporta como o ParreiraClaw de hoje (todos os testes atuais passam). |
+| RF-02 | **Módulos iniciais** (extraídos do código atual): `voz` (Whisper + TTS), `voz-clonada` (Chatterbox), `refinamento` (loop criador ↔ crítico), `arquivos` (ferramentas do workspace). Futuros: `imagens`, `historias`, `pesquisa-web`, `anexos`, `promocoes`. | Must | O perfil `pessoal` com os 4 módulos se comporta como o K7 de hoje (todos os testes atuais passam). |
 | RF-03 | **Manifesto do perfil** (`perfil.yaml`): `nome`, `versao`, `descricao`, `identidade` (nome do agente, emoji, dono, propósito, instruções), `modulos` (lista e opções de cada um), `requer` (versão mínima do tocador), `variaveis` (chaves de ambiente necessárias, com descrição), `privacidade` (padrão). Estrutura: `perfil.yaml`, `skills/`, `evals/`, `.env.example`, `README.md`. | Must | Manifesto inválido gera erro claro apontando o campo. |
 | RF-04 | **Instalação:** `npm run perfil -- instalar <origem> [--nome x]`, com quatro formas de origem: (a) **pasta local** (`./perfis-src/promo`); (b) **URL Git** (`https://github.com/<usuario>/perfil-promo`); (c) **atalho do GitHub** `<usuario>/<nome>` → `github.com/<usuario>/perfil-<nome>` (ex.: `parreira/promo`); (d) **pacote npm** `@<escopo>/<nome>` (ex.: `@parreira/promo`), baixado com `npm pack` **sem executar scripts** e extraído do `.tgz`. Em todas: copia para `perfis/<nome>/`, valida o manifesto e o RF-10, confere versão do tocador e módulos, cria `perfis/<nome>/.env` a partir do `.env.example` e lista as variáveis a preencher. | Must | `instalar parreira/promo` e `instalar @parreira/promo` produzem o mesmo perfil; repositórios privados funcionam com as credenciais Git/npm já configuradas. |
 | RF-05 | **Gestão:** `npm run perfil -- listar | atualizar <nome> | remover <nome>`. `atualizar` faz `git pull` em perfis vindos de Git e revalida; `remover` pede confirmação e **não apaga** os dados do perfil, a menos que receba `--apagar-dados`. | Must | Atualizar um perfil não toca no `.env` nem nos dados dele. |
@@ -97,7 +97,7 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 | RF-08 | **Skills em camadas:** skills dos módulos ligados + skills do perfil; em conflito de nome, vale a do perfil. Marcadores `{{AGENT_NAME}}` etc. são preenchidos com a identidade do perfil. | Must | O perfil pode sobrescrever uma skill de módulo sem editar o tocador. |
 | RF-09 | **Compatibilidade:** o manifesto declara `requer.tocador: ">=1.0"` e módulos necessários; perfil incompatível não sobe e explica o que falta (ex.: "o perfil historias precisa do módulo imagens, disponível a partir do tocador 1.2"). | Must | Mensagem acionável em vez de erro genérico. |
 | RF-10 | **Segurança na instalação:** o instalador **recusa** perfis com arquivos executáveis ou de código (`.js`, `.ts`, `.mjs`, `.cjs`, `.py`, `.sh`, `.ps1`, `.bat`, `.exe`, `package.json`…), mostra a origem e o resumo do manifesto antes de concluir e nunca executa nada do perfil. | Must | Um perfil com `install.sh` é recusado com a lista dos arquivos proibidos. |
-| RF-11 | **Migração:** o ParreiraClaw atual vira o perfil `pessoal` (identidade, skills, `.env`, banco e vozes movidos para a nova estrutura); `promo` e `historias` são criados a partir de modelos. A pasta `ParreiraClaw-Promo` pode ser apagada depois de migrada. | Must | Após migrar, o bot pessoal responde com o mesmo histórico de antes. |
+| RF-11 | **Migração:** o K7 atual vira o perfil `pessoal` (identidade, skills, `.env`, banco e vozes movidos para a nova estrutura); `promo` e `historias` são criados a partir de modelos. A pasta `K7-Promo` pode ser apagada depois de migrada. | Must | Após migrar, o bot pessoal responde com o mesmo histórico de antes. |
 | RF-13 | **Ferramentas HTTP declarativas:** o perfil pode descrever APIs REST simples em `ferramentas/*.yaml` (nome, descrição, método, URL, parâmetros com tipo, parâmetros fixos, autenticação via variável do `.env` do perfil, `hosts_permitidos`, campos da resposta a extrair). O módulo genérico `http` do tocador as transforma em ferramentas do LLM. Garantias: só os hosts declarados (e nunca endereços internos), chave lida do `.env` e jamais exposta ao LLM, timeout de 15 s, resposta limitada (ex.: 100 KB) e marcada como dado externo. | Must | Um perfil com `clima.yaml` (Open-Meteo) ganha a ferramenta `previsao_do_tempo` sem nenhum código. |
 | RF-14 | **Módulos externos (código com confiança explícita):** integrações com lógica (cálculos, várias chamadas, OAuth, arquivos) entram como módulo em pacote/repositório separado, instalado por `npm run modulo -- instalar <origem>` com **aviso e confirmação** ("isto é código e vai rodar na sua máquina"), versão/commit fixos e registro em `modulos/.confiaveis.json`. Alternativa equivalente: **servidores MCP** declarados no perfil, que só iniciam após a mesma confirmação. Um perfil que exija módulo externo não instalado explica como instalá-lo. | Should | Um perfil que depende do módulo externo `agro-dados` não sobe sem ele e mostra o comando de instalação; instalar exige confirmação explícita. |
 | RF-12 | **Modelo de perfil:** `npm run perfil -- novo <nome>` gera um perfil vazio (manifesto comentado, skill de exemplo, `.env.example`, README), pronto para virar um repositório Git próprio. | Should | Criar um perfil novo leva um comando. |
@@ -130,7 +130,7 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 ## 8. Design e Interface
 
 ```
-ParreiraClaw (tocador)
+K7 (tocador)
 ├── src/agent, llm, memory, skills, tools   núcleo: AgentLoop, memória, orquestrador, segurança
 ├── src/canais/          canais plugáveis: telegram/, terminal/, web/, comum/  (página do web em web/index.html)
 ├── src/modules/         registro dos módulos: voz, voz-clonada, refinamento, arquivos (futuro: imagens, …)
@@ -214,7 +214,7 @@ Sem mudança de esquema: cada perfil usa o mesmo esquema SQLite em `dados/<perfi
 1. **Módulos:** extrair `voz`, `voz-clonada`, `refinamento` e `arquivos` para o contrato do RF-01, sem mudar comportamento (todos os testes atuais passam).
 2. **Perfis locais:** manifesto, carregamento por `--perfil`, isolamento de `.env`/dados/workspace; migrar o atual para `perfis/pessoal` (RF-11).
 3. **Instalador:** `novo`, `instalar` (pasta e Git), `listar`, `atualizar`, `remover`, com as regras do RF-10.
-4. **Perfis novos:** `promo` (a partir do `ParreiraClaw-Promo`, depois apagar a cópia) e `historias`.
+4. **Perfis novos:** `promo` (a partir do `K7-Promo`, depois apagar a cópia) e `historias`.
 5. **Docker:** um serviço por perfil no compose (`PERFIL=<nome>`).
 6. Módulos `imagens` e `historias` (spec image-generation) passam a ser desenvolvidos já neste formato.
 
@@ -225,7 +225,7 @@ Sem mudança de esquema: cada perfil usa o mesmo esquema SQLite em `dados/<perfi
 ## 14. Open Questions
 
 - OQ-01: Os perfis pessoais (`pessoal`, `promo`, `historias`) ficam como pastas locais por enquanto, ou cada um já nasce como repositório privado no seu GitHub?
-- OQ-02: O nome do tocador continua "ParreiraClaw" (com cada perfil tendo o próprio nome de agente), ou prefere um nome neutro para o tocador?
-- OQ-03: A pasta `ParreiraClaw-Promo` tem algum dado que precise ser preservado (conversas, vozes), ou pode ser descartada depois de criar o perfil `promo`?
+- OQ-02: O nome do tocador continua "K7" (com cada perfil tendo o próprio nome de agente), ou prefere um nome neutro para o tocador?
+- OQ-03: A pasta `K7-Promo` tem algum dado que precise ser preservado (conversas, vozes), ou pode ser descartada depois de criar o perfil `promo`?
 - OQ-05: O AgroMinds continua como projeto separado do grupo (recomendado). Se no futuro rodar sobre o tocador, as APIs simples viram ferramentas declarativas (RF-13) e as integrações complexas um módulo externo do grupo (RF-14) — decisão do grupo, não desta spec.
 - OQ-04: Distribuir perfis pelo **GitHub** (mais simples, repositórios privados já funcionam) ou também pelo **npm** (`@parreira/...` exige uma conta npm com esse escopo e, para pacotes privados, plano pago no npm)? Proposta: GitHub primeiro; npm opcional depois.

@@ -81,7 +81,7 @@ parametros:
     '.gitignore': '.env\ndados/\n',
     'README.md': `# Perfil ${name}
 
-Fita do ParreiraClaw. Rodar:
+Fita do K7. Rodar:
 
 \`\`\`bash
 npm run chat -- --perfil ${name}   # terminal

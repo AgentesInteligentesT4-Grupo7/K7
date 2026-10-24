@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ParreiraClaw</title>
+<title>K7</title>
 <style nonce="__NONCE__">
 :root {
   --bg: #faf9f5; --side: #f0eee6; --panel: #ffffff; --text: #1f1e1d; --muted: #6b6a66; --line: #e3e0d5;
@@ -124,7 +124,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 </head>
 <body>
 <aside id="side">
-  <div id="brand"><span class="emoji" id="brand-emoji">🦀</span><span id="brand-name">ParreiraClaw</span><span class="profile hidden" id="brand-profile"></span></div>
+  <div id="brand"><span class="emoji" id="brand-emoji">📼</span><span id="brand-name">K7</span><span class="profile hidden" id="brand-profile"></span></div>
   <button id="new" type="button">✏️ Nova conversa</button>
   <div id="convs-label">Conversas</div>
   <nav id="convs"></nav>
@@ -140,7 +140,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   <div id="scroll">
     <div id="messages">
       <div id="empty">
-        <div class="big" id="empty-emoji">🦀</div>
+        <div class="big" id="empty-emoji">📼</div>
         <h1 id="empty-title">Como posso ajudar?</h1>
         <div id="empty-sub"></div>
         <div id="skills"></div>
@@ -272,7 +272,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   function addAssistant() {
     hideEmpty();
     var row = el('div', 'msg assistant'), avatar = el('div', 'avatar'), body = el('div', 'body');
-    avatar.textContent = state.info ? state.info.emoji : '🦀';
+    avatar.textContent = state.info ? state.info.emoji : '📼';
     row.appendChild(avatar); row.appendChild(body); $('messages').appendChild(row);
     return body;
   }

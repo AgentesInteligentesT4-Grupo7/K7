@@ -2,7 +2,7 @@
 
 **Versão:** 1.0
 **Status:** Implementada em parte (MVP: RF-01, RF-02, RF-04, RF-05, RF-06, RF-10 parcial, RF-11; OCR por visão no lugar do PP-OCRv5; sem DOCX/XLSX/PPTX)
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-19
 **Reviewers:** Parreira
 
@@ -10,7 +10,7 @@
 
 ## 1. Resumo
 
-Permite que o ParreiraClaw **entenda imagens** (explicar, responder sobre elas ou extrair o texto via OCR), **leia documentos** em vários formatos (PDF digital ou escaneado, Word, Excel, PowerPoint, texto) e **guarde tudo numa biblioteca de anexos**, para que o usuário possa voltar a falar de um arquivo enviado antes ("naquela imagem de ontem...", "use os documentos 2 e 3 para...") sem reenviar.
+Permite que o K7 **entenda imagens** (explicar, responder sobre elas ou extrair o texto via OCR), **leia documentos** em vários formatos (PDF digital ou escaneado, Word, Excel, PowerPoint, texto) e **guarde tudo numa biblioteca de anexos**, para que o usuário possa voltar a falar de um arquivo enviado antes ("naquela imagem de ontem...", "use os documentos 2 e 3 para...") sem reenviar.
 
 ---
 

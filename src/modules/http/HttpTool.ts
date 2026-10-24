@@ -67,7 +67,7 @@ export class HttpTool extends BaseTool {
       if (spec.parametros[key]?.tipo === 'integer' && !Number.isInteger(value)) throw new ToolArgumentError(`Parâmetro "${key}" deve ser inteiro`);
     }
 
-    const headers: Record<string, string> = { accept: 'application/json, text/plain;q=0.9, */*;q=0.5', 'user-agent': 'ParreiraClaw-http' };
+    const headers: Record<string, string> = { accept: 'application/json, text/plain;q=0.9, */*;q=0.5', 'user-agent': 'K7-http' };
     let body: string | undefined;
     if (spec.metodo === 'GET') {
       for (const [key, value] of Object.entries({ ...spec.fixos, ...rest })) url.searchParams.set(key, String(value));

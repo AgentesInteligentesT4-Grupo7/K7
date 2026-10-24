@@ -83,7 +83,7 @@ export function loadProfile(name: string, dirs: string[], version: string): Load
   // O nome da pasta é o nome do perfil (permite instalar a mesma fita duas vezes com --nome).
   const manifest = readManifest(dir);
   if (manifest.tocador && !satisfiesVersion(version, manifest.tocador)) {
-    throw new ProfileError(`O perfil "${name}" requer o tocador ${manifest.tocador}, mas este é o ${version}. Atualize o ParreiraClaw.`);
+    throw new ProfileError(`O perfil "${name}" requer o tocador ${manifest.tocador}, mas este é o ${version}. Atualize o K7.`);
   }
   return { name, dir, manifest };
 }

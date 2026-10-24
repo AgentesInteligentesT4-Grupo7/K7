@@ -60,8 +60,8 @@ const ROOT_ENV = {
   TELEGRAM_BOT_TOKEN: 'token-do-pessoal',
   TELEGRAM_ALLOWED_USER_IDS: '1',
   GEMINI_API_KEY: 'k',
-  AGENT_NAME: 'ParreiraClaw',
-  DB_PATH: './data/parreiraclaw.db',
+  AGENT_NAME: 'K7',
+  DB_PATH: './data/k7.db',
   PERFIS_DIR: './perfis',
 };
 
@@ -142,7 +142,7 @@ describe('Carregamento de perfil', () => {
   it('sem perfil, o .env raiz funciona como antes (retrocompatível)', () => {
     const config = loadConfig({ argv: [], env: ROOT_ENV, rootDir: setupPlayer() });
     assert.equal(config.profileName, undefined);
-    assert.equal(config.identity.name, 'ParreiraClaw');
+    assert.equal(config.identity.name, 'K7');
     assert.equal(config.modules.size, 8);
   });
 

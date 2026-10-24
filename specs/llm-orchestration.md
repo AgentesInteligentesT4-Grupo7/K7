@@ -2,7 +2,7 @@
 
 **Versão:** 1.0
 **Status:** Implementada (v1.0) — 2026-10-20
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-19
 **Reviewers:** Parreira
 

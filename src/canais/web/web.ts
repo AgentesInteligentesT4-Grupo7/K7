@@ -21,7 +21,7 @@ async function main(): Promise<void> {
 
   const core = createCore(config, {
     // Pasta temporária própria: o bot limpa ./tmp ao reiniciar.
-    tmpDir: path.join(os.tmpdir(), config.profileName ? `parreiraclaw-web-${config.profileName}` : 'parreiraclaw-web'),
+    tmpDir: path.join(os.tmpdir(), config.profileName ? `k7-web-${config.profileName}` : 'k7-web'),
     cleanTmp: true,
     databaseMaintenance: false,
     healthChecks: true,

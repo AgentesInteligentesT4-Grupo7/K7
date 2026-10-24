@@ -36,5 +36,5 @@ RUN mkdir -p state data workspace tmp perfis && chown -R node:node /app
 USER node
 
 # Padrão: canais de serviço (bot do Telegram). Perfil: PERFIL=<nome>.
-# Chat no terminal: docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js
+# Chat no terminal: docker compose run --rm k7 node dist/canais/terminal/chat.js
 CMD ["node", "dist/main.js"]

@@ -2,7 +2,7 @@
 
 **Versão:** 1.1
 **Status:** Em Revisão
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-03-08
 
 ---
@@ -152,7 +152,7 @@ A estrutura do `AudioHandler` acoplada ao Bot Core ficarão em produção local 
 
 ## 14. Open Questions
 
-- Como acionar o Whisper local a partir do backend Node.js (se ParreiraClaw ainda for Node). *Decisão pendente: usar bridge FFI, ou Child Process nativo na máquina.*
+- Como acionar o Whisper local a partir do backend Node.js (se K7 ainda for Node). *Decisão pendente: usar bridge FFI, ou Child Process nativo na máquina.*
 - Precisaremos de um `ffmpeg` standalone local para converter aúdio em formato compatível com o whisper ou o próprio whisper local processa os M4A, OPUS/OGG (nativos do Telegram)? *Assume-se que whisper lida com OGG/OPUS baseados em FFMEPG instalado na máquina da Host.*
 
 ---

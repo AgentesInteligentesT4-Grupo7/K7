@@ -2,7 +2,7 @@
 
 **Versão:** 1.1
 **Status:** v1.0 Aprovada · v1.1 (memória resumida) Implementada
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-03-06 (v1.0) · 2026-10-19 (v1.1)
 
 ---
@@ -18,7 +18,7 @@
 
 ## 1. Resumo
 
-O módulo de persistência de estado do ParreiraClaw gerencia tanto as conversas de longo prazo em banco de dados SQLite (`better-sqlite3`) quanto atua como manager da janela de contexto para impedir que o limite maximo do envelope de tokens da IA (Context Window) estoure.
+O módulo de persistência de estado do K7 gerencia tanto as conversas de longo prazo em banco de dados SQLite (`better-sqlite3`) quanto atua como manager da janela de contexto para impedir que o limite maximo do envelope de tokens da IA (Context Window) estoure.
 
 **v1.1:** o contexto enviado ao LLM deixa de ser "as últimas N mensagens completas" e passa a ser montado em camadas: **resumo estruturado da conversa** + **mensagens recentes** (com respostas longas compactadas) + **fatos duradouros do usuário**. O histórico completo continua intacto no banco.
 

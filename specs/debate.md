@@ -2,7 +2,7 @@
 
 **Versão:** 1.0
 **Status:** Implementada (v1.0), módulo `refinamento`
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-22
 **Reviewers:** Parreira
 

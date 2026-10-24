@@ -2,7 +2,7 @@
 
 **Versão:** 1.0
 **Status:** Em Revisão
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-10-18
 **Reviewers:** Parreira
 
@@ -10,7 +10,7 @@
 
 ## 1. Resumo
 
-Separa o núcleo do ParreiraClaw (AgentController, memória, skills, ferramentas e vozes) dos **canais** por onde as mensagens chegam e saem. O Telegram passa a ser um canal entre outros. Esta versão entrega um **chat no terminal** para uso e teste local e define o ponto de integração para um canal **WhatsApp via n8n** numa próxima etapa.
+Separa o núcleo do K7 (AgentController, memória, skills, ferramentas e vozes) dos **canais** por onde as mensagens chegam e saem. O Telegram passa a ser um canal entre outros. Esta versão entrega um **chat no terminal** para uso e teste local e define o ponto de integração para um canal **WhatsApp via n8n** numa próxima etapa.
 
 ---
 

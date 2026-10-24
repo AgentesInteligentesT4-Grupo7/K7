@@ -36,7 +36,7 @@ async function main(): Promise<void> {
 
   const core = createCore(config, {
     // Pasta temporária própria: o bot limpa ./tmp ao reiniciar e não pode apagar arquivos do terminal.
-    tmpDir: path.join(os.tmpdir(), config.profileName ? `parreiraclaw-cli-${config.profileName}` : 'parreiraclaw-cli'),
+    tmpDir: path.join(os.tmpdir(), config.profileName ? `k7-cli-${config.profileName}` : 'k7-cli'),
     cleanTmp: true,
     databaseMaintenance: false,
     healthChecks: flag('verbose'),

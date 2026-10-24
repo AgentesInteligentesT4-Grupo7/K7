@@ -18,8 +18,8 @@ export interface AgentIdentity {
 }
 
 export const DEFAULT_IDENTITY: AgentIdentity = {
-  name: 'ParreiraClaw',
-  emoji: '🦀',
+  name: 'K7',
+  emoji: '📼',
   owner: 'Parreira',
   purpose: 'agente pessoal de IA',
   instructions: '',

@@ -21,7 +21,7 @@ export interface TerminalOutputOptions {
   /** Ausente quando o módulo "voz-clonada" está desligado. */
   clonedVoices?: IClonedVoiceProvider;
   write?: (text: string) => void;
-  /** Rótulo das respostas, ex.: "🦀 ParreiraClaw" (vem da identidade do agente). */
+  /** Rótulo das respostas, ex.: "📼 K7" (vem da identidade do agente). */
   label?: string;
 }
 
@@ -123,7 +123,7 @@ export class TerminalOutputHandler implements IOutputHandler {
   }
 
   private print(text: string): void {
-    this.write(`\n${C.bold}${C.cyan}${this.options.label ?? '🦀 ParreiraClaw'}${C.reset}\n${text}\n\n`);
+    this.write(`\n${C.bold}${C.cyan}${this.options.label ?? '📼 K7'}${C.reset}\n${text}\n\n`);
   }
 
   private info(text: string): void {

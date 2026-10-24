@@ -16,10 +16,26 @@ describe('DatabaseMaintenance', () => {
       for (const day of ['2026-10-14', '2026-10-15', '2026-10-16', '2026-10-16']) {
         await maintenance.backup(new Date(`${day}T12:00:00Z`));
       }
-      assert.deepEqual(fs.readdirSync(backupDir).sort(), ['parreiraclaw-2026-10-15.db', 'parreiraclaw-2026-10-16.db']);
-      const restored = DatabaseConnection.open(path.join(backupDir, 'parreiraclaw-2026-10-16.db'));
+      assert.deepEqual(fs.readdirSync(backupDir).sort(), ['k7-2026-10-15.db', 'k7-2026-10-16.db']);
+      const restored = DatabaseConnection.open(path.join(backupDir, 'k7-2026-10-16.db'));
       assert.ok(restored.prepare("SELECT name FROM sqlite_master WHERE name='messages'").get());
       restored.close();
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('backups de antes da troca de nome (parreiraclaw-*) entram na rotação pela data, não pelo nome', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbm-'));
+    const db = DatabaseConnection.open(path.join(dir, 'main.db'));
+    const backupDir = path.join(dir, 'backups');
+    fs.mkdirSync(backupDir);
+    for (const day of ['2026-10-12', '2026-10-13']) fs.writeFileSync(path.join(backupDir, `parreiraclaw-${day}.db`), '');
+    const maintenance = new DatabaseMaintenance(db, { backupDir, keepBackups: 2, vacuumFreeRatio: 0.2, intervalMs: 1000 });
+    try {
+      await maintenance.backup(new Date('2026-10-14T12:00:00Z'));
+      assert.deepEqual(fs.readdirSync(backupDir).sort(), ['k7-2026-10-14.db', 'parreiraclaw-2026-10-13.db']);
     } finally {
       db.close();
       fs.rmSync(dir, { recursive: true, force: true });

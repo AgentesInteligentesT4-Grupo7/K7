@@ -23,7 +23,7 @@ export interface OutputStrategies {
 }
 
 /**
- * "Boca" do ParreiraClaw: escolhe a estratégia de entrega (texto em chunks,
+ * "Boca" do K7: escolhe a estratégia de entrega (texto em chunks,
  * documento .md, voz, voz clonada ou aviso de erro) para o resultado final da pipeline.
  */
 export class TelegramOutputHandler implements IOutputHandler {

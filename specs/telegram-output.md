@@ -2,14 +2,14 @@
 
 **Versão:** 1.1
 **Status:** Aprovada
-**Autor:** ParreiraClaw Agent
+**Autor:** K7 Agent
 **Data:** 2026-03-09
 
 ---
 
 ## 1. Resumo
 
-O módulo de Output atua como a boca do ParreiraClaw. Ele capta o Output resultativo estático final da Pipeline (do Agent Loop ou das Skills puras processadas) e define as estratégias adequadas de exibição — seja "Chunking" em mensagens grandes de texto, seja disparo de documentos em markdown ou aviso explícito de timeout e erro com formatações de emoji.
+O módulo de Output atua como a boca do K7. Ele capta o Output resultativo estático final da Pipeline (do Agent Loop ou das Skills puras processadas) e define as estratégias adequadas de exibição — seja "Chunking" em mensagens grandes de texto, seja disparo de documentos em markdown ou aviso explícito de timeout e erro com formatações de emoji.
 
 ---
 

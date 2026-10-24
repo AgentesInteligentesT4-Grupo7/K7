@@ -18,9 +18,9 @@ const promo = identityFromEnv({
 });
 
 describe('Identidade configurável do agente', () => {
-  it('defaults mantêm o ParreiraClaw; o .env troca nome, dono e foco', () => {
+  it('defaults mantêm o K7; o .env troca nome, dono e foco', () => {
     const base = identityFromEnv({});
-    assert.deepEqual([base.name, base.owner, base.purpose], ['ParreiraClaw', 'Parreira', 'agente pessoal de IA']);
+    assert.deepEqual([base.name, base.owner, base.purpose], ['K7', 'Parreira', 'agente pessoal de IA']);
     assert.equal(promo.instructions, 'Foque em ofertas de tecnologia.\nSeja breve.');
     const config = new Config({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_ALLOWED_USER_IDS: '1', GEMINI_API_KEY: 'k', AGENT_NAME: 'PromoBot' });
     assert.equal(config.identity.name, 'PromoBot');
@@ -34,7 +34,7 @@ describe('Identidade configurável do agente', () => {
     });
     assert.match(prompt, /Você é o PromoBot, assistente de promoções de Equipe Promo/);
     assert.match(prompt, /# Foco e instruções do projeto\nFoque em ofertas de tecnologia\.\nSeja breve\./);
-    assert.ok(!prompt.includes('ParreiraClaw'));
+    assert.ok(!prompt.includes('K7'));
   });
 
   it('SKILL.md com marcadores {{AGENT_NAME}} e {{OWNER_NAME}} é preenchido', () => {

@@ -1,6 +1,6 @@
 # Créditos e referências
 
-Várias funcionalidades do ParreiraClaw foram desenhadas a partir do material do **Prof. Sandeco Macedo**
+Várias funcionalidades do K7 foram desenhadas a partir do material do **Prof. Sandeco Macedo**
 (Instituto Federal de Goiás e Universidade Federal de Goiás). Os textos de prompts e skills deste projeto
 foram reescritos para o contexto do tocador; os livros e prompts originais não são reproduzidos aqui.
 
@@ -19,7 +19,7 @@ foram reescritos para o contexto do tocador; os livros e prompts originais não 
 
 ## O que veio de onde
 
-| Recurso do ParreiraClaw | Onde está | Base |
+| Recurso do K7 | Onde está | Base |
 |---|---|---|
 | Controles de texto 1–10 (complexidade, tom, sentimento, perspectiva, foco, surpresa, detalhe, originalidade, abstração) | `src/personas/TextControls.ts`, spec personas-styles §5.4 | *Prompts em Ação* (níveis de controle); prompt **PROMPT MATRIX** do repositório |
 | Estilos de texto e padrões de escrita de prompts (papel e público, delimitadores, few-shot, instruções afirmativas, tarefa em passos, deixa de início) | `estilos/`, skills `criador-de-fitas` e `criador-de-prompts` | *Prompts em Ação* |

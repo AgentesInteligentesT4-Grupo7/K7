@@ -1,18 +1,18 @@
-# ParreiraClaw no Docker.
+# K7 no Docker.
 #   Subir o bot:        docker compose up -d --build
 #   Logs:               docker compose logs -f
-#   Chat no terminal:   docker compose run --rm parreiraclaw node dist/canais/terminal/chat.js
+#   Chat no terminal:   docker compose run --rm k7 node dist/canais/terminal/chat.js
 #   Chat no navegador:  CHANNELS=telegram,web no .env (ou no perfil) → http://127.0.0.1:8787/#t=<token do log>
 #   Com perfil:         PERFIL=promo docker compose up -d   (ou --perfil promo no chat)
-#   Avaliar modelos:    docker compose run --rm parreiraclaw node dist/cli/eval.js pesquisa
+#   Avaliar modelos:    docker compose run --rm k7 node dist/cli/eval.js pesquisa
 #
 # ATENÇÃO: não rode o bot aqui e o `npm run dev` ao mesmo tempo (o Telegram aceita
 # uma única conexão por bot → erro 409).
 services:
-  parreiraclaw:
+  k7:
     build: .
-    image: parreiraclaw:local
-    container_name: parreiraclaw
+    image: k7:local
+    container_name: k7
     env_file: .env
     environment:
       # Serviços que rodam no host (Ollama) ou em outros containers com porta publicada
@@ -24,6 +24,7 @@ services:
       COMFYUI_BASE_URL: http://host.docker.internal:8188
       SEARXNG_BASE_URL: http://host.docker.internal:8888
       # Banco SQLite num volume Docker (o modo WAL não é confiável em pasta do Windows montada).
+      # O nome do arquivo é de antes da troca de nome (ParreiraClaw → K7): é ele que guarda o histórico.
       DB_PATH: /app/state/parreiraclaw.db
       # Perfis: a pasta ParreiraClaw-perfis é montada em /app/perfis; dados de cada perfil no volume.
       PERFIS_DIR: /app/perfis
@@ -35,7 +36,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - parreiraclaw-state:/app/state      # banco + backups diários
+      - k7-state:/app/state      # banco + backups diários
       - ./data:/app/data                   # vozes clonadas, cache do catálogo, saídas do terminal
       - ./workspace:/app/workspace         # arquivos criados pelas ferramentas do agente
       - ./.agents/skills:/app/.agents/skills   # skills com hot-reload: edite no Windows
@@ -49,4 +50,6 @@ services:
     tty: true
 
 volumes:
-  parreiraclaw-state:
+  k7-state:
+    # Volume criado antes da troca de nome (ParreiraClaw → K7): o nome fixo mantém o banco e os backups.
+    name: parreiraclaw_parreiraclaw-state

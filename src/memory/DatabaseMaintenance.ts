@@ -48,10 +48,10 @@ export class DatabaseMaintenance {
     }
   }
 
-  /** Um arquivo por dia (`parreiraclaw-AAAA-MM-DD.db`); mantém os `keepBackups` mais recentes. */
+  /** Um arquivo por dia (`k7-AAAA-MM-DD.db`); mantém os `keepBackups` mais recentes (os de antes da troca de nome, `parreiraclaw-*`, entram na conta). */
   async backup(now = new Date()): Promise<string | null> {
     fs.mkdirSync(this.options.backupDir, { recursive: true });
-    const target = path.join(this.options.backupDir, `parreiraclaw-${now.toISOString().slice(0, 10)}.db`);
+    const target = path.join(this.options.backupDir, `k7-${now.toISOString().slice(0, 10)}.db`);
     if (fs.existsSync(target)) return null;
 
     await this.db.backup(target);
@@ -59,9 +59,9 @@ export class DatabaseMaintenance {
 
     const backups = fs
       .readdirSync(this.options.backupDir)
-      .filter((file) => /^parreiraclaw-\d{4}-\d{2}-\d{2}\.db$/.test(file))
-      .sort()
-      .reverse();
+      .filter((file) => /^(?:k7|parreiraclaw)-\d{4}-\d{2}-\d{2}\.db$/.test(file))
+      // Pela data do nome, não pelo nome inteiro: "k7-" e "parreiraclaw-" se misturam na ordem alfabética.
+      .sort((a, b) => b.slice(-13).localeCompare(a.slice(-13)));
     for (const old of backups.slice(this.options.keepBackups)) {
       fs.rmSync(path.join(this.options.backupDir, old), { force: true });
     }

@@ -1,6 +1,7 @@
 {
-  "name": "parreiraclaw",
+  "name": "k7",
   "version": "1.0.0",
+  "author": "Danillo Tomaz Parreira",
   "description": "Agente pessoal de IA local controlado via Telegram (ReAct + Skills + SQLite).",
   "type": "module",
   "main": "dist/main.js",

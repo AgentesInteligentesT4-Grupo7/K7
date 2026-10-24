@@ -1,4 +1,4 @@
-# Arquitetura do Projeto: ParreiraClaw
+# Arquitetura do Projeto: K7
 
 **Versão:** 1.0  
 **Status:** Definição Central de Arquitetura  
@@ -9,7 +9,7 @@
 
 ## 2.1 Visão Geral
 
-O **ParreiraClaw** é um agente pessoal de Inteligência Artificial projetado para operar localmente no desktop do usuário. Sua interface primária de controle é o Telegram, permitindo uma interação fluida via texto, documentos e voz. O sistema é construído para ser modular, extensível através de "skills" (habilidades) e totalmente focado na privacidade, mantendo a persistência de dados localmente.
+O **K7** é um agente pessoal de Inteligência Artificial projetado para operar localmente no desktop do usuário. Sua interface primária de controle é o Telegram, permitindo uma interação fluida via texto, documentos e voz. O sistema é construído para ser modular, extensível através de "skills" (habilidades) e totalmente focado na privacidade, mantendo a persistência de dados localmente.
 
 A arquitetura segue um fluxo de pipeline onde as mensagens do Telegram são capturadas, processadas por um motor de raciocínio (Agent Loop) que utiliza LLMs externos (como Gemini ou DeepSeek) apenas para inferência, e responde de volta ao usuário de forma inteligente, podendo inclusive gerar arquivos ou respostas em áudio.
 
@@ -47,7 +47,7 @@ O sistema adota um estilo **Monolito Modular com Sistema de Plugins**.
 graph TB
     User([👤 Usuário Parreira])
     Telegram[📱 Telegram Client]
-    System[🏗️ ParreiraClaw Engine]
+    System[🏗️ K7 Engine]
     LLM[🧠 LLM APIs - Gemini/DeepSeek]
     Whisper[🎙️ Whisper Local - STT]
     EdgeTTS[🔊 Edge-TTS - TTS]
