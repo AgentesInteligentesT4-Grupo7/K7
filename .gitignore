@@ -10,6 +10,15 @@ workspace/
 *.db-wal
 *.db-shm
 
+# Amostras de voz e áudios gerados nunca vão para o git (os testes montam áudio sintético)
+*.wav
+*.ogg
+*.oga
+*.opus
+*.mp3
+*.m4a
+*.flac
+
 # Perfis instalados e dados isolados por perfil
 perfis/
 dados/

@@ -11,15 +11,17 @@ import { AudioSampleConverter, UnsupportedAudioFormatError } from '../src/voice/
 import { ChatterboxVoiceCloner } from '../src/voice/ChatterboxVoiceCloner.js';
 import { VoiceCloneService } from '../src/voice/VoiceCloneService.js';
 import { VoiceLibrary, VoiceNotFoundError } from '../src/voice/VoiceLibrary.js';
+import { silentOgg } from './helpers/syntheticOgg.js';
 
-const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'voz-amostra.ogg');
+/** Voice note sintético (5,14 s de silêncio): o repositório não guarda amostras de voz. */
+const VOICE_NOTE = silentOgg(5140);
 const converter = new AudioSampleConverter();
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'voices-'));
 const silenceWav = (seconds: number) => AudioSampleConverter.encodeWav([new Float32Array(48_000 * seconds)], 48_000);
 
 describe('AudioSampleConverter', () => {
   it('converte voice note OGG/Opus do Telegram em WAV com a duração correta', async () => {
-    const result = await converter.toReferenceAudio(fs.readFileSync(FIXTURE), '.ogg');
+    const result = await converter.toReferenceAudio(VOICE_NOTE, '.ogg');
     assert.equal(result.extension, 'wav');
     assert.equal(result.buffer.toString('latin1', 0, 4), 'RIFF');
     assert.ok(Math.abs(result.durationSeconds! - 5.14) < 0.05);
@@ -27,7 +29,7 @@ describe('AudioSampleConverter', () => {
   });
 
   it('detecta OGG pelo conteúdo mesmo com extensão errada, e rejeita formatos sem suporte', async () => {
-    assert.equal((await converter.toReferenceAudio(fs.readFileSync(FIXTURE), '.bin')).extension, 'wav');
+    assert.equal((await converter.toReferenceAudio(VOICE_NOTE, '.bin')).extension, 'wav');
     await assert.rejects(converter.toReferenceAudio(Buffer.from('xx'), '.m4a'), UnsupportedAudioFormatError);
     assert.equal((await converter.toReferenceAudio(Buffer.from('ID3'), 'mp3')).extension, 'mp3');
   });
@@ -37,7 +39,7 @@ describe('VoiceLibrary', () => {
   it('salva o áudio do Telegram como <nome>.wav e o encontra pelo nome', async () => {
     const dir = tempDir();
     const library = new VoiceLibrary({ dir }, converter);
-    const { sample, durationSeconds } = await library.save('Minha Voz', fs.readFileSync(FIXTURE), '.ogg');
+    const { sample, durationSeconds } = await library.save('Minha Voz', VOICE_NOTE, '.ogg');
     assert.equal(sample.name, 'minha-voz');
     assert.equal(path.basename(sample.filePath), 'minha-voz.wav');
     assert.ok(durationSeconds! > 5);
@@ -48,7 +50,7 @@ describe('VoiceLibrary', () => {
 
   it('arquivos colocados manualmente na pasta viram vozes (e .ogg é convertido no uso)', async () => {
     const dir = tempDir();
-    fs.copyFileSync(FIXTURE, path.join(dir, 'parreira.ogg'));
+    fs.writeFileSync(path.join(dir, 'parreira.ogg'), VOICE_NOTE);
     fs.writeFileSync(path.join(dir, 'outra.wav'), silenceWav(6));
     fs.writeFileSync(path.join(dir, 'leia-me.txt'), 'ignorado');
     const library = new VoiceLibrary({ dir, defaultVoice: 'parreira' }, converter);
@@ -63,7 +65,7 @@ describe('VoiceLibrary', () => {
     const dir = tempDir();
     fs.writeFileSync(path.join(dir, 'minha-voz.mp3'), Buffer.from('ID3 antigo'));
     const library = new VoiceLibrary({ dir }, converter);
-    await library.save('minha-voz', fs.readFileSync(FIXTURE), '.ogg');
+    await library.save('minha-voz', VOICE_NOTE, '.ogg');
     assert.deepEqual(fs.readdirSync(dir), ['minha-voz.wav']);
     fs.rmSync(dir, { recursive: true, force: true });
   });

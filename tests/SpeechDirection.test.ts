@@ -6,27 +6,16 @@ import { describe, it } from 'node:test';
 import { OggOpusDecoder } from 'ogg-opus-decoder';
 import { AudioSampleConverter } from '../src/voice/AudioSampleConverter.js';
 import type { ChatterboxVoiceCloner } from '../src/voice/ChatterboxVoiceCloner.js';
-import { concatOggOpus, oggPackets, opusPacketSamples, writeOggOpus } from '../src/voice/OggOpusConcat.js';
+import { concatOggOpus, oggPackets, opusPacketSamples } from '../src/voice/OggOpusConcat.js';
 import { extractContext, mergeShortSegments, parseDirection, segmentParams, stripDirection } from '../src/voice/SpeechDirection.js';
 import { SpeechDirector } from '../src/voice/SpeechDirector.js';
 import { VoiceCloneService } from '../src/voice/VoiceCloneService.js';
 import { VoiceLibrary } from '../src/voice/VoiceLibrary.js';
 import type { VoiceParams } from '../src/voice/VoiceParams.js';
 import { FakeLlmProvider } from './helpers/FakeLlmProvider.js';
+import { silentOgg } from './helpers/syntheticOgg.js';
 
 const EXAMPLE = 'Que notícia boa, conseguimos. Pessoal! Agora falta resolver o contrato...';
-
-/** Ogg Opus mono de `ms` milissegundos de silêncio (quadros de 20 ms), como o Chatterbox devolveria. */
-function silentOgg(ms: number): Buffer {
-  const head = Buffer.alloc(19);
-  head.write('OpusHead', 0, 'latin1');
-  head[8] = 1;
-  head[9] = 1;
-  head.writeUInt16LE(312, 10);
-  head.writeUInt32LE(48_000, 12);
-  const tags = Buffer.concat([Buffer.from('OpusTags', 'latin1'), Buffer.alloc(8)]);
-  return writeOggOpus(head, tags, Array.from({ length: ms / 20 }, () => Buffer.from([0xf8, 0xff, 0xfe])));
-}
 
 async function seconds(ogg: Buffer): Promise<number> {
   const decoder = new OggOpusDecoder();
