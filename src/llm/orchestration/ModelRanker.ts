@@ -46,7 +46,8 @@ export class ModelRanker {
       if (cooldown && !options.includeCooling) continue;
 
       const stats = this.scores.get(task, key);
-      const prior = ModelRanker.prior(candidate, task) + this.preferenceBonus(candidate);
+      // A preferência só escolhe entre os locais quando o pedido tem de ficar local: fora disso, a nuvem compete normalmente.
+      const prior = ModelRanker.prior(candidate, task) + (privacy === 'local' ? this.preferenceBonus(candidate) : 0);
       const measured = stats.evalScore !== null && stats.evalSamples >= 3;
       // Medido vence estimado: com avaliação, a nota é só a medição (empate real → local, no sort).
       const quality = measured ? stats.evalScore! : prior;
@@ -66,7 +67,10 @@ export class ModelRanker {
     );
   }
 
-  /** O primeiro preferido ganha 0,5; o segundo 0,45... (só locais): a escolha declarada vence o tamanho; a medição real ainda corrige. */
+  /**
+   * O primeiro preferido ganha 0,5; o segundo 0,45... (só locais, só em pedidos de privacidade "local"):
+   * a escolha declarada vence o tamanho; a medição real ainda corrige.
+   */
   private preferenceBonus(candidate: ModelCandidate): number {
     if (!candidate.local || !this.localPreference.length) return 0;
     const id = candidate.modelId.toLowerCase();

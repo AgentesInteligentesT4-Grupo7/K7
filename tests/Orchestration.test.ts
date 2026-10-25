@@ -203,6 +203,12 @@ describe('ModelRanker', () => {
     assert.equal(new ModelRanker(catalog, scores, guard).rank('conversa', 'local', req)[0]!.candidate.modelId, 'gigante:70b', 'sem preferência, o maior');
     const preferred = new ModelRanker(catalog, scores, guard, ['qwen3.5:9b', 'gemma4']).rank('conversa', 'local', req).map((r) => r.candidate.modelId);
     assert.deepEqual(preferred, ['qwen3.5:9b', 'gemma4:latest', 'gigante:70b']);
+
+    // Pedido "publico": a preferência não dá vantagem ao local, e a nuvem compete normalmente.
+    const cloud: ModelCandidate = { ...model('llama-3.3-70b-instruct', 70), source: 'groq', local: false };
+    const mixed = { list: () => [model('qwen3.5:9b', 9.7), cloud] } as never;
+    const publicRank = new ModelRanker(mixed, scores, guard, ['qwen3.5:9b']).rank('conversa', 'publico', req);
+    assert.equal(publicRank[0]!.candidate.modelId, 'llama-3.3-70b-instruct');
   });
 });
 
