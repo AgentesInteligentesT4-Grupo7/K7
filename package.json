@@ -19,6 +19,7 @@
     "eval": "tsx src/cli/eval.ts",
     "perfil": "tsx src/cli/perfil.ts",
     "web": "tsx src/canais/web/web.ts",
+    "site": "tsx src/canais/site/site.ts",
     "imagens:modelo": "tsx src/cli/imagens.ts"
   },
   "dependencies": {

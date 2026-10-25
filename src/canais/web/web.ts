@@ -27,7 +27,9 @@ async function main(): Promise<void> {
     healthChecks: true,
   });
   const port = portIndex >= 0 ? Number(args[portIndex + 1]) || config.web.port : config.web.port;
-  const channel = new WebChannel(core, { ...config.web, port });
+  // Ligado pelo site do K7: só nesta máquina (o site repassa) e sempre público, valha o que valer no .env da fita.
+  const behindSite = args.includes('--atras-do-site');
+  const channel = new WebChannel(core, { ...config.web, port, ...(behindSite ? { host: '127.0.0.1', public: true } : {}) });
   await core.orchestrator?.provider.refresh();
   await channel.start();
   process.stdout.write(`\n${config.identity.emoji} ${config.identity.name} no navegador: ${channel.url}\n`);

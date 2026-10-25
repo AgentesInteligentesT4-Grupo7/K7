@@ -33,6 +33,8 @@ button:disabled { cursor: default; opacity: .5; }
 #brand { display: flex; align-items: center; gap: 10px; padding: 16px 16px 8px; font-weight: 600; font-size: 16px; }
 #brand .emoji { font-size: 22px; }
 #brand .profile { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+#eject { margin: 0 16px 4px; font-size: 13px; color: var(--muted, inherit); text-decoration: none; }
+#eject:hover { text-decoration: underline; }
 #new { margin: 8px 12px 12px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); text-align: left; display: flex; gap: 8px; align-items: center; box-shadow: var(--shadow); }
 #new:hover { border-color: var(--accent); }
 #convs-label { font-size: 12px; color: var(--muted); padding: 4px 18px; text-transform: uppercase; letter-spacing: .04em; }
@@ -129,6 +131,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 <body>
 <aside id="side">
   <div id="brand"><span class="emoji" id="brand-emoji">📼</span><span id="brand-name">K7</span><span class="profile hidden" id="brand-profile"></span></div>
+  <a id="eject" class="hidden" href="/" title="Ejetar a fita e escolher outra">⏏ Trocar fita</a>
   <button id="new" type="button">✏️ Nova conversa</button>
   <div id="convs-label">Conversas</div>
   <nav id="convs"></nav>
@@ -175,6 +178,9 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var state = { token: '', info: null, busy: false, attachment: null, audioReply: false, recorder: null, conversationId: null };
+  // Aberto pelo site do K7 (/fita/<nome>/): a API e os arquivos ficam debaixo desse caminho; fora dele, na raiz.
+  var base = /^\/fita\/[a-z0-9-]+/.test(location.pathname) ? location.pathname.replace(/\/+$/, '') : '';
+  if (base) $('eject').classList.remove('hidden');
 
   // Token: vem no fragmento (#t=...), que o navegador nunca envia ao servidor.
   var match = /[#&]t=([^&]+)/.exec(location.hash);
@@ -208,7 +214,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     var headers = { 'X-Visitante': state.visitor };
     if (state.token) headers['X-Token'] = state.token;
     if (options.body) headers['Content-Type'] = 'application/json';
-    return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body ? JSON.stringify(options.body) : undefined })
+    return fetch(base + path, { method: options.method || 'GET', headers: headers, body: options.body ? JSON.stringify(options.body) : undefined })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
           if (res.status === 401) { lock(); throw new Error(data.erro || 'Token inválido'); }
@@ -217,7 +223,10 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         });
       });
   }
-  function fileUrl(url) { return state.token ? url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(state.token) : url; }
+  function fileUrl(url) {
+    url = url.charAt(0) === '/' ? base + url : url;
+    return state.token ? url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(state.token) : url;
+  }
   function lock() { $('messages').classList.add('hidden'); $('locked').classList.remove('hidden'); $('composer-wrap').classList.add('hidden'); }
 
   // ── Markdown seguro: escapa tudo e só então aplica a formatação ───────────────

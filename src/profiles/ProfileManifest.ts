@@ -44,6 +44,8 @@ export interface ProfileManifest {
   variaveis: Record<string, string>;
   /** Bloco `guardrails:` (spec guardrails); ausente = padrão do tocador. */
   guardrails?: GuardrailsConfig;
+  /** `vitrine: true`: a fita aparece no site do K7 (`npm run site`) para qualquer visitante escolher. */
+  vitrine?: boolean;
 }
 
 /** Módulos previstos na spec que ainda não existem neste tocador. */
@@ -118,6 +120,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     ...(str(raw.modo_padrao) ? { modoPadrao: parseMode(str(raw.modo_padrao)) ?? fail('modo_padrao', `deve ser ${REASONING_MODES.join(', ')}`) } : {}),
     variaveis,
     ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
+    ...(raw.vitrine !== undefined ? { vitrine: typeof raw.vitrine === 'boolean' ? raw.vitrine : fail('vitrine', 'deve ser true ou false') } : {}),
   };
 }
 
