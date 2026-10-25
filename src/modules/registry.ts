@@ -21,12 +21,16 @@ export const MODULES: readonly ModuleDefinition[] = [
   { id: 'anexos', descricao: 'Imagens e documentos enviados: visão, OCR, biblioteca com busca (listar_anexos, ler_anexo...)' },
   { id: 'imagens', descricao: 'Geração de imagens na GPU (ComfyUI + SDXL): ilustração, HQ, anime e mangá' },
   { id: 'conhecimento', descricao: 'Base de conhecimento (RAG): documentos da fita em conhecimento/, busca híbrida e citações' },
+  { id: 'midia', descricao: 'Downloads do YouTube: áudio (MP3/WAV) ou vídeo (MP4) de links e playlists (serviço yt-dlp em Docker)' },
 ];
 
 export const MODULE_IDS: readonly string[] = MODULES.map((m) => m.id);
 
-/** Sem perfil: os módulos de sempre (retrocompatível). "imagens" exige o ComfyUI e é ligado pelo perfil ou por MODULES. */
-export const DEFAULT_MODULES = MODULE_IDS.filter((id) => id !== 'imagens').join(',');
+/**
+ * Sem perfil: os módulos de sempre (retrocompatível). "imagens" (ComfyUI) e "midia" (serviço yt-dlp) exigem um
+ * serviço próprio e são ligados pelo perfil ou por MODULES.
+ */
+export const DEFAULT_MODULES = MODULE_IDS.filter((id) => id !== 'imagens' && id !== 'midia').join(',');
 
 export const CHANNELS = ['telegram', 'terminal', 'web'] as const;
 export type ChannelId = (typeof CHANNELS)[number];

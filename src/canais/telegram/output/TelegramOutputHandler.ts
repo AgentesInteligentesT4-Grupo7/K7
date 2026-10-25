@@ -1,4 +1,4 @@
-import type { GeneratedImage } from '../../../agent/ResponseAttachments.js';
+import type { GeneratedImage, GeneratedMedia } from '../../../agent/ResponseAttachments.js';
 import type { AgentResponse, IOutputHandler } from '../../../agent/types.js';
 import { BotBlockedError, UserFacingError, errorMessage } from '../../../errors/AppErrors.js';
 import { Logger } from '../../../utils/Logger.js';
@@ -20,6 +20,8 @@ export interface OutputStrategies {
   audio: IAudioOutputStrategy;
   /** Imagens geradas (módulo imagens); sem ela, as imagens são ignoradas. */
   image?: IOutputStrategy<GeneratedImage[]>;
+  /** Áudios e vídeos produzidos por ferramentas (módulo midia); sem ela, são ignorados. */
+  media?: IOutputStrategy<GeneratedMedia[]>;
 }
 
 /**
@@ -47,10 +49,11 @@ export class TelegramOutputHandler implements IOutputHandler {
         await this.strategies.file.send(chatId, file);
       }
       if (response.images?.length) await this.strategies.image?.send(chatId, response.images);
+      if (response.media?.length) await this.strategies.media?.send(chatId, response.media);
       for (const segment of cloned.segments) {
         await this.speakCloned(chatId, segment.text, segment.voice);
       }
-      if (!text && files.length === 0 && cloned.segments.length === 0 && !response.images?.length) {
+      if (!text && files.length === 0 && cloned.segments.length === 0 && !response.images?.length && !response.media?.length) {
         await this.strategies.text.send(chatId, '(resposta vazia)');
       }
     });

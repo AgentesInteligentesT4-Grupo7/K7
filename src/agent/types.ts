@@ -1,5 +1,5 @@
 import type { ImagePart } from '../llm/types.js';
-import type { GeneratedImage } from './ResponseAttachments.js';
+import type { GeneratedImage, GeneratedMedia } from './ResponseAttachments.js';
 
 export type InputSource = 'text' | 'document' | 'voice' | 'image';
 export type Channel = 'telegram' | 'terminal' | 'web';
@@ -27,6 +27,8 @@ export interface AgentResponse {
   isAudio: boolean;
   /** Imagens geradas por ferramentas (módulo imagens), entregues pelo canal. */
   images?: GeneratedImage[];
+  /** Áudios, vídeos e arquivos produzidos por ferramentas (módulo midia), entregues pelo canal. */
+  media?: GeneratedMedia[];
 }
 
 /** Contexto extra recuperado para a mensagem (ex.: base de conhecimento no modo automático). */

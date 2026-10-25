@@ -307,6 +307,22 @@ docker stop comfyui | docker start comfyui                     # desligar / reli
   O ComfyUI redesenha por cima da foto mantendo composição e cores; `intensidade` fiel, equilibrado (padrão) ou
   criativo. Com pessoas, o rosto pode mudar (use "fiel"). Foto nunca vira o estilo `realista`.
 
+## Downloads do YouTube (módulo `midia`)
+
+Baixa áudio (MP3 ou WAV) ou vídeo (MP4) de um link ou de uma playlist do YouTube e entrega os arquivos pelo canal.
+Quem baixa é um container com yt-dlp, ffmpeg e deno (sem GPU, nada instalado no Windows):
+
+```bash
+docker compose -f servicos/ytdlp/docker-compose.yml up -d --build
+```
+
+- Ligue com `modulos: midia` no perfil (a fita `rebobina` já vem pronta) ou em `MODULES`.
+- Ferramenta `baixar_youtube` (url, formato `mp3`/`wav`/`mp4`, playlist, max_itens); arquivos em `<workspace>/downloads`.
+- No Telegram, áudio chega como música e vídeo como vídeo; acima de 50 MB (limite dos bots), o bot avisa onde salvou.
+- Playlists: até `MIDIA_MAX_ITENS` vídeos por pedido (padrão 25, até 200). Só links do YouTube são aceitos.
+- O YouTube muda com frequência: se parar de baixar, suba a versão do yt-dlp em `servicos/ytdlp/Dockerfile` e reconstrua.
+- Os termos do YouTube restringem downloads: use para vídeos seus, com licença livre ou com permissão do autor.
+
 ## Voz clonada (sua voz a partir de texto)
 
 Você digita, o bot devolve um voice note com a **sua voz**, gerado localmente na GPU pelo

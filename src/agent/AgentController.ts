@@ -163,7 +163,7 @@ export class AgentController {
       const rephrased = await TaskContext.run({ task, privacy, userId }, () => reasoning.rephrase(input.text));
       if (rephrased) current.content = `${current.content ?? ''}\n\n[Pergunta reformulada e detalhada, para guiar a resposta: ${rephrased}]`;
     }
-    const { result, images } = await ResponseAttachments.collect(() =>
+    const { result, images, media } = await ResponseAttachments.collect(() =>
       TaskContext.run({ task, privacy, userId }, () => this.deps.skillExecutor.execute({ skill, availableSkills: skills, history, input, memory: memoryText, persona, style, controls, guardrails: guardrailsPrompt, retrieved })),
     );
     // CoVe: verifica a resposta (o loop criador ↔ crítico já é uma revisão; não repete).
@@ -201,6 +201,7 @@ export class AgentController {
         iterations: result.iterations,
         ...result.details,
         ...(images.length ? { images: images.map((i) => i.path) } : {}),
+        ...(media.length ? { media: media.map((m) => m.path) } : {}),
         ...AgentController.sources(result.steps),
       },
       result.providerName,
@@ -208,7 +209,12 @@ export class AgentController {
 
     this.deps.summarizer?.schedule(conversation.id, memoryUserId);
     if (images.length) this.deps.onImagesDelivered?.();
-    return { text, isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true), ...(images.length ? { images } : {}) };
+    return {
+      text,
+      isAudio: input.requiresAudioReply && (this.deps.audioReplies ?? true),
+      ...(images.length ? { images } : {}),
+      ...(media.length ? { media } : {}),
+    };
   }
 
   /** `privacidade:` no frontmatter da skill (publico | pessoal | local). */

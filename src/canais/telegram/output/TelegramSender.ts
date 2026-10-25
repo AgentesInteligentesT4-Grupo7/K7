@@ -43,6 +43,17 @@ export class TelegramSender {
     );
   }
 
+  /** Música (aparece no player do Telegram com o nome do arquivo). */
+  sendAudio(chatId: number, filePath: string, filename: string, caption?: string): Promise<unknown> {
+    return this.call(chatId, () => this.api.sendAudio(chatId, new InputFile(filePath, filename), caption ? { caption } : {}));
+  }
+
+  sendVideo(chatId: number, filePath: string, filename: string, caption?: string): Promise<unknown> {
+    return this.call(chatId, () =>
+      this.api.sendVideo(chatId, new InputFile(filePath, filename), { supports_streaming: true, ...(caption ? { caption } : {}) }),
+    );
+  }
+
   sendVoice(chatId: number, filePath: string): Promise<unknown> {
     return this.call(chatId, () => this.api.sendVoice(chatId, new InputFile(filePath)));
   }

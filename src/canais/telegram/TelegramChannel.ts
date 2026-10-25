@@ -9,6 +9,7 @@ import { AudioOutputStrategy } from './output/strategies/AudioOutputStrategy.js'
 import { ErrorOutputStrategy } from './output/strategies/ErrorOutputStrategy.js';
 import { FileOutputStrategy } from './output/strategies/FileOutputStrategy.js';
 import { ImageOutputStrategy } from './output/strategies/ImageOutputStrategy.js';
+import { MediaOutputStrategy } from './output/strategies/MediaOutputStrategy.js';
 import { TextOutputStrategy } from './output/strategies/TextOutputStrategy.js';
 import { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
 import { TelegramSender } from './output/TelegramSender.js';
@@ -36,6 +37,7 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
       error: new ErrorOutputStrategy(sender),
       audio: new AudioOutputStrategy(sender, core.tmp, core.tts, core.ffmpeg, notifier),
       image: new ImageOutputStrategy(sender),
+      media: new MediaOutputStrategy(sender, (chatId, text) => textStrategy.send(chatId, text)),
     },
     core.voiceClone,
   );

@@ -56,6 +56,10 @@ export class WebOutputHandler implements IOutputHandler {
       const name = this.save(path.basename(image.path), fs.readFileSync(image.path));
       reply.imagens.push({ url: WebOutputHandler.url(name), ...(image.caption ? { legenda: image.caption } : {}) });
     }
+    for (const item of response.media ?? []) {
+      const name = this.save(path.basename(item.path), item.path, true);
+      reply.arquivos.push({ nome: path.basename(item.path), url: WebOutputHandler.url(name) });
+    }
     if (text && response.isAudio) await this.speak(reply, text, this.options.tts, 'resposta');
     for (const segment of cloned.segments) await this.speakCloned(reply, segment.text, segment.voice);
     this.resolve(chatId, reply);
@@ -111,13 +115,15 @@ export class WebOutputHandler implements IOutputHandler {
   }
 
   /** `<data-hora>-<nome>` na pasta de saída (nomes de <arquivo> já chegam sanitizados pelo FileTagParser). */
-  private save(filename: string, content: string | Buffer): string {
+  /** `fromPath`: `content` é o caminho de um arquivo a copiar (vídeos grandes não passam pela memória). */
+  private save(filename: string, content: string | Buffer, fromPath = false): string {
     fs.mkdirSync(this.options.outputDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const safe = path.basename(filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/\s+/g, '-');
     let name = `${stamp}-${safe}`;
     for (let i = 2; fs.existsSync(path.join(this.options.outputDir, name)); i++) name = `${stamp}-${i}-${safe}`;
-    fs.writeFileSync(path.join(this.options.outputDir, name), content);
+    if (fromPath) fs.copyFileSync(String(content), path.join(this.options.outputDir, name));
+    else fs.writeFileSync(path.join(this.options.outputDir, name), content);
     return name;
   }
 

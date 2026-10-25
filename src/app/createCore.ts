@@ -22,6 +22,8 @@ import { PersonaAgents, PersonaDialogueTool, TalkToPersonaTool } from '../person
 import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createSearchProvider, createWebTools } from '../modules/pesquisa-web/createWebTools.js';
+import { DownloadMediaTool } from '../modules/midia/DownloadMediaTool.js';
+import { YtdlpClient } from '../modules/midia/YtdlpClient.js';
 import { CharacterReferenceFinder } from '../modules/imagens/CharacterReference.js';
 import { CharacterSheets } from '../modules/imagens/CharacterSheets.js';
 import { CreateCharacterSheetTool, DeleteCharacterSheetTool, ListCharacterSheetsTool } from '../modules/imagens/CharacterSheetTools.js';
@@ -145,6 +147,12 @@ export function createCore(config: Config, options: CoreOptions): Core {
   const registry = new ToolFactory(config.workspaceDir, { files: modules.has('arquivos') }).createRegistry();
   if (voiceClone) registry.register(new ListClonedVoicesTool(voiceClone, config.voiceClone.defaultVoice));
   if (modules.has('pesquisa-web')) for (const tool of createWebTools(config)) registry.register(tool);
+  // Módulo midia: downloads do YouTube pelo serviço yt-dlp (servicos/ytdlp), salvos em <workspace>/downloads.
+  if (modules.has('midia')) {
+    const ytdlp = new YtdlpClient(config.midia);
+    registry.register(new DownloadMediaTool(ytdlp, config.workspaceDir, config.midia.maxItems));
+    void checkYtdlp(ytdlp, config.midia.baseUrl);
+  }
   // Módulo anexos: biblioteca ao lado do banco do perfil; a retenção roda só no processo principal (o bot).
   const attachments = modules.has('anexos') ? new AttachmentService(new AttachmentStore(db, config.attachments.dir), llm) : undefined;
   if (attachments) {
@@ -357,6 +365,14 @@ function createSpeechToText(config: Config, runner: ProcessRunner, ffmpeg: Ffmpe
 }
 
 /** EC-03 (PRD): loga falha de autenticação por provider sem impedir o startup. */
+async function checkYtdlp(client: YtdlpClient, baseUrl: string): Promise<void> {
+  try {
+    logger.info(`⬇️ Downloads do YouTube: yt-dlp ${await client.healthCheck()} em ${baseUrl}`);
+  } catch {
+    logger.warn(`⚠️ Serviço de downloads fora do ar em ${baseUrl}: docker compose -f servicos/ytdlp/docker-compose.yml up -d`);
+  }
+}
+
 async function checkProviders(llm: LlmChain): Promise<void> {
   for (const result of await llm.healthCheckAll()) {
     if (result.ok) {

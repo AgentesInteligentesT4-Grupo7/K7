@@ -7,8 +7,17 @@ export interface GeneratedImage {
   caption?: string;
 }
 
+/** Áudio, vídeo ou outro arquivo produzido por uma ferramenta (ex.: download do módulo midia). */
+export interface GeneratedMedia {
+  /** Caminho absoluto do arquivo no workspace. */
+  path: string;
+  kind: 'audio' | 'video' | 'document';
+  caption?: string;
+}
+
 interface Attachments {
   images: GeneratedImage[];
+  media: GeneratedMedia[];
 }
 
 const storage = new AsyncLocalStorage<Attachments>();
@@ -18,13 +27,16 @@ const storage = new AsyncLocalStorage<Attachments>();
  * o caminho do arquivo na resposta: o AgentController coleta e o canal entrega.
  */
 export const ResponseAttachments = {
-  async collect<T>(fn: () => Promise<T>): Promise<{ result: T; images: GeneratedImage[] }> {
-    const attachments: Attachments = { images: [] };
+  async collect<T>(fn: () => Promise<T>): Promise<{ result: T; images: GeneratedImage[]; media: GeneratedMedia[] }> {
+    const attachments: Attachments = { images: [], media: [] };
     const result = await storage.run(attachments, fn);
-    return { result, images: attachments.images };
+    return { result, images: attachments.images, media: attachments.media };
   },
   /** Chamado pela ferramenta; fora de uma requisição (ex.: testes, eval), é ignorado. */
   addImage(image: GeneratedImage): void {
     storage.getStore()?.images.push(image);
+  },
+  addMedia(media: GeneratedMedia): void {
+    storage.getStore()?.media.push(media);
   },
 };

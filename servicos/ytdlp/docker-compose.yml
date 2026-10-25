@@ -1,0 +1,21 @@
+# Serviço de downloads do YouTube para o módulo "midia" (yt-dlp + ffmpeg + deno, sem GPU).
+#   Subir:            docker compose -f servicos/ytdlp/docker-compose.yml up -d --build   (da raiz do tocador)
+#   Parar / religar:  docker stop ytdlp   |   docker start ytdlp
+#   Testar:           curl http://127.0.0.1:8899/health
+#   YouTube mudou e parou de baixar? Suba a versão do yt-dlp no Dockerfile e rode o "up -d --build" de novo.
+#
+# Os arquivos ficam no volume só até o K7 copiá-los para o workspace da fita (e são apagados depois).
+name: ytdlp
+services:
+  ytdlp:
+    build: .
+    image: k7-ytdlp:local
+    container_name: ytdlp
+    ports:
+      - "127.0.0.1:8899:8899"
+    volumes:
+      - ytdlp-downloads:/downloads
+    restart: unless-stopped
+
+volumes:
+  ytdlp-downloads:

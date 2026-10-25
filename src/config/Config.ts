@@ -179,6 +179,15 @@ export class Config {
   /** Teto para o max_iterations que uma skill pode pedir no frontmatter (spec web-search RF-10). */
   readonly maxIterationsHardCap: number;
   /** Módulo imagens (spec image-generation): ComfyUI na GPU. */
+  /** Módulo midia: downloads do YouTube pelo serviço yt-dlp (servicos/ytdlp). */
+  readonly midia: {
+    /** YTDLP_BASE_URL (padrão http://127.0.0.1:8899). */
+    baseUrl: string;
+    /** MIDIA_TIMEOUT_MS: espera máxima de um download (playlists demoram; padrão 30 min). */
+    timeoutMs: number;
+    /** MIDIA_MAX_ITENS: vídeos de uma playlist por pedido (padrão 25, até 200). */
+    maxItems: number;
+  };
   readonly images: {
     baseUrl: string;
     models: Record<string, string>;
@@ -343,6 +352,11 @@ export class Config {
     this.maxIterationsHardCap = Math.max(this.maxIterations, Config.positiveInt(env.MAX_ITERATIONS_HARD_CAP, 10));
     const quality = (env.IMAGE_QUALITY?.trim().toLowerCase() || 'rapido') as 'rapido' | 'qualidade';
     if (quality !== 'rapido' && quality !== 'qualidade') throw new ConfigError('IMAGE_QUALITY deve ser rapido ou qualidade');
+    this.midia = {
+      baseUrl: (env.YTDLP_BASE_URL?.trim() || 'http://127.0.0.1:8899').replace(/\/+$/, ''),
+      timeoutMs: Config.positiveInt(env.MIDIA_TIMEOUT_MS, 30 * 60_000),
+      maxItems: Math.min(200, Config.positiveInt(env.MIDIA_MAX_ITENS, 25)),
+    };
     this.images = {
       baseUrl: (env.COMFYUI_BASE_URL?.trim() || 'http://localhost:8188').replace(/\/+$/, ''),
       models: parseImageModels(env.IMAGE_MODELS),
