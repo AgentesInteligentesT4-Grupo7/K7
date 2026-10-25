@@ -160,7 +160,16 @@ export class Config {
   readonly ttsVoice: string;
   /** Clonagem de voz (Chatterbox na GPU) e pasta das amostras. */
   /** Canal web (chat no navegador): só em 127.0.0.1 por padrão, protegido por token. */
-  readonly web: { host: string; port: number; token: string | undefined; userId: string };
+  /** Canal web; `public` (WEB_PUBLIC) abre sem token, com visitantes isolados e limite de mensagens por hora. */
+  readonly web: {
+    host: string;
+    port: number;
+    token: string | undefined;
+    userId: string;
+    public: boolean;
+    publicLimit: number;
+    publicLimitTotal: number;
+  };
   /** Módulo anexos (spec attachments): biblioteca ao lado do banco, isolada por perfil. */
   readonly attachments: { dir: string; retentionDays: number; maxBytes: number };
   /** Módulo conhecimento (spec knowledge-base): pastas, embeddings e técnicas de busca. */
@@ -375,6 +384,9 @@ export class Config {
       port: Config.positiveInt(env.WEB_PORT, 8787),
       token: env.WEB_TOKEN?.trim() || undefined,
       userId: env.WEB_USER_ID?.trim() || 'web',
+      public: Config.bool(env.WEB_PUBLIC, false),
+      publicLimit: Config.positiveInt(env.WEB_PUBLIC_LIMIT, 20),
+      publicLimitTotal: Config.positiveInt(env.WEB_PUBLIC_LIMIT_TOTAL, 200),
     };
     this.voiceClone = {
       dir: path.resolve(rootDir, env.VOICE_CLONE_DIR?.trim() || './data/voices'),

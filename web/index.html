@@ -179,6 +179,16 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     state.token = sessionStorage.getItem('token') || '';
   } catch (e) { state.token = match ? decodeURIComponent(match[1]) : ''; }
 
+  // Visitante (canal público): identificador aleatório deste navegador; separa conversas e arquivos de cada pessoa.
+  state.visitor = '';
+  try { state.visitor = localStorage.getItem('visitante') || ''; } catch (e) {}
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(state.visitor)) {
+    var bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    state.visitor = Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    try { localStorage.setItem('visitante', state.visitor); } catch (e) {}
+  }
+
   // Tema (claro/escuro), lembrado por navegador.
   try { var saved = localStorage.getItem('theme'); if (saved) document.documentElement.dataset.theme = saved; } catch (e) {}
   $('theme').onclick = function () {
@@ -191,7 +201,8 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 
   function api(path, options) {
     options = options || {};
-    var headers = { 'X-Token': state.token };
+    var headers = { 'X-Visitante': state.visitor };
+    if (state.token) headers['X-Token'] = state.token;
     if (options.body) headers['Content-Type'] = 'application/json';
     return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body ? JSON.stringify(options.body) : undefined })
       .then(function (res) {
@@ -202,7 +213,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         });
       });
   }
-  function fileUrl(url) { return url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(state.token); }
+  function fileUrl(url) { return state.token ? url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(state.token) : url; }
   function lock() { $('messages').classList.add('hidden'); $('locked').classList.remove('hidden'); $('composer-wrap').classList.add('hidden'); }
 
   // ── Markdown seguro: escapa tudo e só então aplica a formatação ───────────────
@@ -432,13 +443,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   };
 
   // ── Início ────────────────────────────────────────────────────────────────
-  if (!state.token) { lock(); return; }
+  // Sem token, a API responde 401 (e a página trava com a explicação), a não ser no canal público.
   api('/api/info').then(function (info) {
     state.info = info;
     document.title = info.nome;
     $('brand-emoji').textContent = info.emoji; $('brand-name').textContent = info.nome;
     $('empty-emoji').textContent = info.emoji;
-    $('empty-title').textContent = 'Como posso ajudar, ' + info.dono + '?';
+    $('empty-title').textContent = info.publico ? 'Como posso ajudar?' : 'Como posso ajudar, ' + info.dono + '?';
     if (info.perfil) { $('brand-profile').textContent = info.perfil; $('brand-profile').classList.remove('hidden'); }
     $('llm').textContent = 'LLM: ' + (info.llm || []).join(' → ');
     info.modulos.forEach(function (m) { $('modules').appendChild(el('span', 'chip', esc(m))); });

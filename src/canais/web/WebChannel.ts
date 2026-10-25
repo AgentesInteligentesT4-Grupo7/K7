@@ -1,6 +1,7 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { AgentController } from '../../agent/AgentController.js';
 import type { AgentInput } from '../../agent/types.js';
@@ -19,6 +20,15 @@ export interface WebChannelOptions {
   /** Token exigido pela API; gerado a cada início se não vier de WEB_TOKEN. */
   token?: string;
   userId: string;
+  /**
+   * WEB_PUBLIC=on: endereço aberto, sem token. Cada navegador vira um visitante com conversas, memória e arquivos
+   * próprios; mensagens limitadas por visitante e no total (protege as chaves das LLMs); sem voz clonada.
+   */
+  public?: boolean;
+  /** Mensagens por hora de cada visitante (WEB_PUBLIC_LIMIT). */
+  publicLimit?: number;
+  /** Mensagens por hora somando todos os visitantes (WEB_PUBLIC_LIMIT_TOTAL). */
+  publicLimitTotal?: number;
 }
 
 interface MessageBody {
@@ -43,10 +53,14 @@ const MEDIA_TYPES: Record<string, string> = {
   '.opus': 'audio/ogg',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.webp': 'image/webp',
 };
+
+const HOUR_MS = 3600_000;
 
 class HttpError extends Error {
   constructor(
@@ -71,6 +85,8 @@ export class WebChannel {
   private server?: http.Server;
   /** Uma mensagem por vez (como a fila por chat do Telegram). */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Horários das mensagens recentes por visitante ('*' = todos), para o limite do modo público. */
+  private readonly hits = new Map<string, number[]>();
 
   constructor(
     private readonly core: Core,
@@ -85,10 +101,21 @@ export class WebChannel {
     this.controller = core.createController(this.output);
   }
 
-  /** Endereço para abrir no navegador (o token vai no fragmento #, que nunca é enviado ao servidor). */
+  /** Endereço para abrir no navegador (o token vai no fragmento #, que nunca é enviado ao servidor; público: sem token). */
   get url(): string {
     const host = this.options.host === '0.0.0.0' || this.options.host === '::' ? '127.0.0.1' : this.options.host;
-    return `http://${host}:${this.address?.port ?? this.options.port}/#t=${this.token}`;
+    const base = `http://${host}:${this.address?.port ?? this.options.port}/`;
+    return this.options.public ? base : `${base}#t=${this.token}`;
+  }
+
+  /** Endereços pelos quais outras máquinas alcançam o canal público (IPs da rede local e de VPN). */
+  get networkUrls(): string[] {
+    if (!this.options.public || !['0.0.0.0', '::'].includes(this.options.host)) return [];
+    const port = this.address?.port ?? this.options.port;
+    return Object.values(os.networkInterfaces())
+      .flat()
+      .filter((net) => net && net.family === 'IPv4' && !net.internal)
+      .map((net) => `http://${net!.address}:${port}/`);
   }
 
   private get address(): { port: number } | undefined {
@@ -105,7 +132,13 @@ export class WebChannel {
       this.server!.once('error', reject);
       this.server!.listen(this.options.port, this.options.host, () => resolve());
     });
-    if (!['127.0.0.1', 'localhost', '::1'].includes(this.options.host)) {
+    if (this.options.public) {
+      this.logger.warn(
+        `⚠️ Canal web PÚBLICO: sem token; cada navegador é um visitante isolado, ` +
+          `até ${this.options.publicLimit ?? 20} mensagens/hora por visitante e ${this.options.publicLimitTotal ?? 200} no total`,
+      );
+      for (const address of this.networkUrls) this.logger.info(`🌐 Na rede: ${address}`);
+    } else if (!['127.0.0.1', 'localhost', '::1'].includes(this.options.host)) {
       this.logger.warn(`⚠️ Canal web aberto na rede (${this.options.host}); qualquer pessoa com o token acessa o agente`);
     }
     this.logger.info(`🌐 Chat web: ${this.url}`);
@@ -118,32 +151,38 @@ export class WebChannel {
   private async route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       const url = new URL(req.url ?? '/', 'http://local');
-      this.checkHost(req);
+      // Público: qualquer Host (IP da rede, VPN, domínio de um túnel); sem token não há o que proteger do rebinding.
+      if (!this.options.public) this.checkHost(req);
       if (req.method === 'GET' && url.pathname === '/') return this.sendPage(res);
       if (req.method === 'GET' && url.pathname === '/favicon.ico') return void res.writeHead(204).end();
       if (!url.pathname.startsWith('/api/')) throw new HttpError(404, 'Não encontrado');
 
       // Arquivos são abertos por <audio>/<a>, que não mandam cabeçalho: o token vem na query.
-      this.checkToken(req.headers['x-token'] ?? url.searchParams.get('t') ?? undefined);
+      // Público: os arquivos têm nome imprevisível (WebOutputHandler), então não pedem token nem visitante.
+      if (!this.options.public) this.checkToken(req.headers['x-token'] ?? url.searchParams.get('t') ?? undefined);
       const files = /^\/api\/arquivos\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && files) return this.sendFile(res, decodeURIComponent(files[1]!));
+      const userId = this.userIdFor(req);
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
-      if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations());
+      if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations(userId));
       if (req.method === 'POST' && url.pathname === '/api/conversas') {
-        this.controller.newConversation(this.options.userId);
+        this.controller.newConversation(userId);
         return this.json(res, { ok: true });
       }
       const conversation = /^\/api\/conversas\/([0-9a-f-]{36})(\/abrir)?$/.exec(url.pathname);
-      if (conversation && req.method === 'GET' && !conversation[2]) return this.json(res, this.history(conversation[1]!));
+      if (conversation && req.method === 'GET' && !conversation[2]) return this.json(res, this.history(userId, conversation[1]!));
       if (conversation && req.method === 'POST' && conversation[2]) {
-        if (!this.core.memory.activateConversation(this.options.userId, conversation[1]!)) throw new HttpError(404, 'Conversa não encontrada');
+        if (!this.core.memory.activateConversation(userId, conversation[1]!)) throw new HttpError(404, 'Conversa não encontrada');
         return this.json(res, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/mensagens') {
         const body = (await this.readJson(req)) as MessageBody;
-        return this.json(res, await this.enqueue(() => this.message(body)));
+        if (this.options.public) this.checkLimit(userId);
+        return this.json(res, await this.enqueue(() => this.message(body, userId)));
       }
       if (req.method === 'POST' && url.pathname === '/api/falar') {
+        // Voz clonada num endereço aberto deixaria qualquer um falar com a voz do dono.
+        if (this.options.public) throw new HttpError(403, 'Voz clonada desligada no modo público');
         const body = (await this.readJson(req)) as { texto?: string; voz?: string };
         if (!body.texto?.trim()) throw new HttpError(400, 'Informe o texto');
         return this.json(res, await this.enqueue(() => this.output.speakClonedOnly(body.texto!.trim(), body.voz?.trim() || undefined)));
@@ -156,23 +195,23 @@ export class WebChannel {
     }
   }
 
-  private async message(body: MessageBody): Promise<WebReply & { modelo?: string; transcricao?: string }> {
+  private async message(body: MessageBody, userId: string): Promise<WebReply & { modelo?: string; transcricao?: string }> {
     // Comandos de memória, persona, estilo e modo respondem direto, sem passar pelo LLM.
     const command = /^\/(memoria|esquecer|persona|estilo|modo)\b\s*(.*)$/is.exec((body.texto ?? '').trim());
     if (command && !body.anexo && !body.audio) {
       const arg = command[2] ?? '';
       const commands: Record<string, () => string> = {
-        memoria: () => this.controller.memoryReport(this.options.userId),
-        esquecer: () => this.controller.forget(this.options.userId, arg),
-        persona: () => this.controller.personaCommand(this.options.userId, arg),
-        estilo: () => this.controller.styleCommand(this.options.userId, arg),
-        modo: () => this.controller.modeCommand(this.options.userId, arg),
+        memoria: () => this.controller.memoryReport(userId),
+        esquecer: () => this.controller.forget(userId, arg),
+        persona: () => this.controller.personaCommand(userId, arg),
+        estilo: () => this.controller.styleCommand(userId, arg),
+        modo: () => this.controller.modeCommand(userId, arg),
       };
       return { texto: commands[command[1]!.toLowerCase()]!(), arquivos: [], audios: [], imagens: [], avisos: [] };
     }
     let input: AgentInput;
     try {
-      input = await this.buildInput(body);
+      input = await this.buildInput(body, userId);
     } catch (error) {
       if (!(error instanceof UserFacingError)) throw error;
       return { texto: '', arquivos: [], audios: [], imagens: [], avisos: [], erro: `⚠️ ${error.userMessage}` };
@@ -180,13 +219,13 @@ export class WebChannel {
     const { chatId, reply } = this.output.begin();
     await this.controller.handle({ ...input, chatId });
     const result = await reply;
-    const decision = this.core.orchestrator?.provider.lastDecision(this.options.userId);
+    const decision = this.core.orchestrator?.provider.lastDecision(userId);
     return { ...result, modelo: decision?.model ?? `${this.core.llm.name}/${this.core.llm.model}`, ...(input.source === 'voice' ? { transcricao: input.text } : {}) };
   }
 
-  private async buildInput(body: MessageBody): Promise<AgentInput> {
+  private async buildInput(body: MessageBody, userId: string): Promise<AgentInput> {
     const text = (body.texto ?? '').trim();
-    const base = { userId: this.options.userId, chatId: 0, channel: 'web' as const };
+    const base = { userId, chatId: 0, channel: 'web' as const };
     const audioReply = (spoken: string, isVoice: boolean) => body.responderEmAudio === true || AudioIntentDetector.resolve(spoken, isVoice);
     const withVoice = (requiresAudioReply: boolean) => (requiresAudioReply ? { requiresAudioReply, voiceId: this.core.tts.voice } : { requiresAudioReply });
 
@@ -211,7 +250,7 @@ export class WebChannel {
       const data = Buffer.from(body.anexo.base64, 'base64');
       if (data.length === 0) throw new UserFacingError('Arquivo vazio.');
       if (data.length > this.core.config.maxDocumentBytes) throw new UserFacingError('Arquivo grande demais.');
-      const item = await this.core.attachments.ingest({ userId: this.options.userId, name, mime: body.anexo.tipo ?? '', data, caption: text });
+      const item = await this.core.attachments.ingest({ userId, name, mime: body.anexo.tipo ?? '', data, caption: text });
       const built = this.core.attachments.buildInput([item], text);
       return {
         ...base,
@@ -270,12 +309,14 @@ export class WebChannel {
       skills: this.controller.listSkills().map((s) => ({ nome: s.name, descricao: s.description })),
       llm: this.core.llm.providerNames,
       voz: config.modules.has('voz'),
-      vozes: this.core.voiceClone?.list().map((v) => v.name) ?? null,
+      // Público: os nomes das vozes clonadas do dono não aparecem (e o /api/falar fica desligado).
+      vozes: this.options.public ? null : (this.core.voiceClone?.list().map((v) => v.name) ?? null),
+      publico: this.options.public === true,
     };
   }
 
-  private conversations() {
-    return this.core.memory.listConversations(this.options.userId).map((c) => ({
+  private conversations(userId: string) {
+    return this.core.memory.listConversations(userId).map((c) => ({
       id: c.id,
       titulo: truncate(c.title.replace(/\s+/g, ' ').trim(), 80, '…') || 'Conversa vazia',
       ativa: c.isActive,
@@ -284,8 +325,8 @@ export class WebChannel {
     }));
   }
 
-  private history(conversationId: string) {
-    return this.core.memory.getHistory(this.options.userId, conversationId).map((m) => ({
+  private history(userId: string, conversationId: string) {
+    return this.core.memory.getHistory(userId, conversationId).map((m) => ({
       papel: m.role,
       texto: m.role === 'user' ? m.content.replace(/\n\n\[Documento anexado: ([^\]]+)\][\s\S]*$/, '\n\n📎 $1') : m.content,
       em: m.createdAt,
@@ -296,6 +337,33 @@ export class WebChannel {
     const run = this.queue.then(task, task);
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * Quem está falando. Fora do modo público, o dono (WEB_USER_ID). No público, cada navegador manda um
+   * identificador aleatório próprio (X-Visitante, guardado no próprio navegador): conversas, memória e anexos
+   * ficam separados por visitante. O identificador vira hash, para não aparecer no banco.
+   */
+  private userIdFor(req: http.IncomingMessage): string {
+    if (!this.options.public) return this.options.userId;
+    const visitor = String(req.headers['x-visitante'] ?? '');
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HttpError(400, 'Visitante não identificado; recarregue a página');
+    return `${this.options.userId}-${createHash('sha256').update(visitor).digest('hex').slice(0, 16)}`;
+  }
+
+  /** Modo público: limita mensagens por hora, por visitante e no total (protege as chaves das LLMs). */
+  private checkLimit(userId: string): void {
+    const now = Date.now();
+    const recent = (key: string) => (this.hits.get(key) ?? []).filter((at) => now - at < HOUR_MS);
+    const mine = recent(userId);
+    const all = recent('*');
+    const limit = this.options.publicLimit ?? 20;
+    const total = this.options.publicLimitTotal ?? 200;
+    if (mine.length >= limit) throw new HttpError(429, `Limite de ${limit} mensagens por hora atingido; tente de novo mais tarde.`);
+    if (all.length >= total) throw new HttpError(429, 'O agente atingiu o limite de uso desta hora; tente de novo mais tarde.');
+    this.hits.set(userId, [...mine, now]);
+    this.hits.set('*', [...all, now]);
+    if (this.hits.size > 5000) for (const [key, times] of this.hits) if (!times.some((at) => now - at < HOUR_MS)) this.hits.delete(key);
   }
 
   private checkHost(req: http.IncomingMessage): void {

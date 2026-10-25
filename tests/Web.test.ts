@@ -194,3 +194,56 @@ describe('Canal web', () => {
     assert.deepEqual(info.skills, [{ nome: 'resumidor', descricao: 'Resume textos' }]);
   });
 });
+
+describe('Canal web público (WEB_PUBLIC)', () => {
+  let open: WebChannel;
+  let openBase: string;
+  const ANA = 'visitante-ana-0000000000000001';
+  const BETO = 'visitante-beto-000000000000002';
+  const visit = (route: string, visitor: string | null, init: RequestInit = {}) =>
+    fetch(`${openBase}${route}`, {
+      ...init,
+      headers: { ...(visitor ? { 'x-visitante': visitor } : {}), ...(init.body ? { 'content-type': 'application/json' } : {}) },
+    });
+  const send = (visitor: string, texto: string) => visit('/api/mensagens', visitor, { method: 'POST', body: JSON.stringify({ texto }) });
+
+  before(async () => {
+    open = new WebChannel(fakeCore(), { host: '127.0.0.1', port: 0, userId: 'web', public: true, publicLimit: 2, publicLimitTotal: 3 });
+    await open.start();
+    openBase = new URL(open.url).origin;
+  });
+  after(() => open.stop());
+
+  it('endereço sem token; API sem token; sem visitante → 400; voz clonada bloqueada', async () => {
+    assert.doesNotMatch(open.url, /#t=/);
+    const info = (await (await visit('/api/info', ANA)).json()) as Record<string, unknown>;
+    assert.equal(info.publico, true);
+    assert.equal(info.vozes, null);
+    assert.equal((await visit('/api/info', null)).status, 400);
+    assert.equal((await visit('/api/info', 'curto')).status, 400);
+    assert.equal((await visit('/api/falar', ANA, { method: 'POST', body: JSON.stringify({ texto: 'oi' }) })).status, 403);
+  });
+
+  it('cada visitante tem as próprias conversas; arquivos com nome imprevisível', async () => {
+    const reply = (await (await send(ANA, 'gere arquivo da Ana')).json()) as { arquivos: Array<{ url: string }> };
+    assert.match(reply.arquivos[0]!.url, /\/api\/arquivos\/\d{4}-\d{2}-\d{2}T[\d-]+-[0-9a-f]{16}-nota\.md$/);
+    assert.equal((await fetch(`${openBase}${reply.arquivos[0]!.url}`)).status, 200, 'o arquivo abre pelo link, sem token');
+    const anaUser = inputs.at(-1)!.userId;
+    assert.match(String(anaUser), /^web-[0-9a-f]{16}$/, 'o identificador do navegador vira hash');
+    const ana = (await (await visit('/api/conversas', ANA)).json()) as unknown[];
+    const beto = (await (await visit('/api/conversas', BETO)).json()) as unknown[];
+    assert.equal(ana.length, 1);
+    assert.equal(beto.length, 0, 'o Beto não vê a conversa da Ana');
+  });
+
+  it('limite por visitante e limite total por hora → 429', async () => {
+    // A Ana já mandou 1 mensagem no teste anterior: a 2ª passa e a 3ª estoura o limite dela (2/hora).
+    assert.equal((await send(ANA, 'segunda')).status, 200);
+    const limited = await send(ANA, 'terceira');
+    assert.equal(limited.status, 429);
+    assert.match(((await limited.json()) as { erro: string }).erro, /Limite de 2 mensagens por hora/);
+    // Total de 3/hora: a do Beto é a 3ª e passa; a de um terceiro visitante estoura o total.
+    assert.equal((await send(BETO, 'oi')).status, 200);
+    assert.equal((await send('visitante-caio-000000000000003', 'oi')).status, 429);
+  });
+});

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentResponse, IOutputHandler } from '../../agent/types.js';
@@ -114,11 +115,14 @@ export class WebOutputHandler implements IOutputHandler {
     resolve?.(reply);
   }
 
-  /** `<data-hora>-<nome>` na pasta de saída (nomes de <arquivo> já chegam sanitizados pelo FileTagParser). */
-  /** `fromPath`: `content` é o caminho de um arquivo a copiar (vídeos grandes não passam pela memória). */
+  /**
+   * `<data-hora>-<aleatório>-<nome>` na pasta de saída (nomes de <arquivo> já chegam sanitizados pelo FileTagParser).
+   * A parte aleatória deixa o endereço imprevisível: no canal público, um visitante não acha o arquivo de outro.
+   * `fromPath`: `content` é o caminho de um arquivo a copiar (vídeos grandes não passam pela memória).
+   */
   private save(filename: string, content: string | Buffer, fromPath = false): string {
     fs.mkdirSync(this.options.outputDir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const stamp = `${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}-${randomBytes(8).toString('hex')}`;
     const safe = path.basename(filename).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/\s+/g, '-');
     let name = `${stamp}-${safe}`;
     for (let i = 2; fs.existsSync(path.join(this.options.outputDir, name)); i++) name = `${stamp}-${i}-${safe}`;

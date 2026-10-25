@@ -30,7 +30,9 @@ async function main(): Promise<void> {
   const channel = new WebChannel(core, { ...config.web, port });
   await core.orchestrator?.provider.refresh();
   await channel.start();
-  process.stdout.write(`\n${config.identity.emoji} ${config.identity.name} no navegador: ${channel.url}\n\n`);
+  process.stdout.write(`\n${config.identity.emoji} ${config.identity.name} no navegador: ${channel.url}\n`);
+  for (const address of channel.networkUrls) process.stdout.write(`   na rede: ${address}\n`);
+  process.stdout.write('\n');
   if (args.includes('--abrir')) openBrowser(channel.url);
 
   const shutdown = async (): Promise<void> => {
