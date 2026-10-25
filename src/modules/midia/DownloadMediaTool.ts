@@ -21,10 +21,11 @@ export class DownloadMediaTool extends BaseTool {
   readonly parameters: JsonSchema;
   private readonly logger = new Logger('Midia');
 
+  /** @param maxItems teto de vídeos por playlist (MIDIA_MAX_ITENS); 0 = sem limite. */
   constructor(
     private readonly client: YtdlpClient,
     private readonly workspaceDir: string,
-    private readonly maxItems: number,
+    private readonly maxItems = 0,
   ) {
     super();
     this.parameters = {
@@ -33,7 +34,10 @@ export class DownloadMediaTool extends BaseTool {
         url: { type: 'string', description: 'Link do vídeo ou da playlist no YouTube.' },
         formato: { type: 'string', enum: ['mp3', 'wav', 'mp4'], description: 'mp3 (áudio, padrão), wav (áudio sem perda) ou mp4 (vídeo).' },
         playlist: { type: 'boolean', description: 'true para baixar os vídeos da playlist do link; false (padrão) só o vídeo.' },
-        max_itens: { type: 'integer', description: `Quantos vídeos da playlist, no máximo (padrão e limite: ${maxItems}).` },
+        max_itens: {
+          type: 'integer',
+          description: `Só se o usuário pedir uma quantidade ("os 10 primeiros"); sem ele, a playlist inteira${maxItems ? ` (até ${maxItems})` : ''}.`,
+        },
       },
       required: ['url'],
       additionalProperties: false,
@@ -46,11 +50,13 @@ export class DownloadMediaTool extends BaseTool {
     const formato = (typeof args.formato === 'string' ? args.formato : 'mp3') as MediaFormat;
     // Link só de playlist (sem v=): baixa a playlist mesmo que o modelo esqueça de pedir.
     const playlist = args.playlist === true || (/[?&]list=/.test(url) && !/[?&]v=|youtu\.be\//.test(url));
-    const maxItens = Math.min(this.maxItems, Math.max(1, Number(args.max_itens) || this.maxItems));
+    const asked = Number(args.max_itens) > 0 ? Math.floor(Number(args.max_itens)) : undefined;
+    // Sem pedido e sem teto configurado: a playlist inteira.
+    const maxItens = this.maxItems ? Math.min(this.maxItems, asked ?? this.maxItems) : asked;
     const targetDir = path.join(this.workspaceDir, 'downloads');
 
     const started = Date.now();
-    const files = await this.client.download({ url, formato, playlist, maxItens }, targetDir, (progress) =>
+    const { files, failures } = await this.client.download({ url, formato, playlist, maxItens }, targetDir, (progress) =>
       this.logger.info(`⬇️ ${formato} ${progress}`),
     );
     const kind = formato === 'mp4' ? 'video' : 'audio';
@@ -62,7 +68,11 @@ export class DownloadMediaTool extends BaseTool {
       output: [
         `ok: ${files.length} arquivo(s) ${formato.toUpperCase()} baixado(s) em ${targetDir}. Os arquivos já são entregues ao usuário junto da sua resposta (não repita os caminhos).`,
         ...lines,
-        playlist && files.length >= maxItens ? `(parou no limite de ${maxItens} vídeos da playlist; peça max_itens maior, até ${this.maxItems}, se quiser mais)` : '',
+        playlist && maxItens && files.length >= maxItens ? `(parou em ${maxItens} vídeos da playlist${this.maxItems ? `, o teto de MIDIA_MAX_ITENS` : ''})` : '',
+        failures.length
+          ? `\n${failures.length} vídeo(s) com problema foram pulados. INFORME AO USUÁRIO cada um, com o link e o motivo:\n` +
+            failures.map((f) => `- ${f.link ?? '(sem link)'}: ${f.motivo}`).join('\n')
+          : '',
       ]
         .filter(Boolean)
         .join('\n'),

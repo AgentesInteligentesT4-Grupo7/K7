@@ -75,6 +75,10 @@ button:disabled { cursor: default; opacity: .5; }
 .extras { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .file { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel); color: var(--text); text-decoration: none; width: fit-content; }
 .file:hover { border-color: var(--accent); }
+button.file { font: inherit; cursor: pointer; }
+button.file:disabled { cursor: default; opacity: .85; }
+.file.primary { border-color: var(--accent); font-weight: 600; }
+.bulk { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 audio { width: 100%; max-width: 420px; height: 40px; }
 .shot img { display: block; max-width: min(100%, 560px); max-height: 70vh; border-radius: 12px; border: 1px solid var(--line); }
 .caption { font-size: 13px; color: var(--muted); margin-top: -4px; }
@@ -271,6 +275,28 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 
   // ── Mensagens ──────────────────────────────────────────────────────────────
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+
+  // Salva os arquivos da resposta, um por um, na pasta que a pessoa escolher (File System Access API).
+  function saveToFolder(files, button) {
+    window.showDirectoryPicker({ mode: 'readwrite' }).then(function (dir) {
+      button.disabled = true;
+      var next = function (i) {
+        if (i >= files.length) { button.textContent = '✅ ' + files.length + ' arquivo(s) salvos em "' + dir.name + '"'; return; }
+        button.textContent = '📁 Salvando ' + (i + 1) + ' de ' + files.length + '…';
+        return fetch(fileUrl(files[i].url)).then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status + ' em ' + files[i].nome);
+          return dir.getFileHandle(files[i].nome, { create: true })
+            .then(function (handle) { return handle.createWritable(); })
+            .then(function (writable) { return res.body.pipeTo(writable); });
+        }).then(function () { return next(i + 1); });
+      };
+      return next(0);
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') return; // a pessoa fechou a janela de escolher pasta
+      button.disabled = false;
+      button.textContent = '⚠️ ' + (err && err.message ? err.message : err) + ' (use o .zip)';
+    });
+  }
   function hideEmpty() { $('empty').classList.add('hidden'); }
   function scrollDown() { var s = $('scroll'); s.scrollTop = s.scrollHeight; }
 
@@ -300,6 +326,26 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     });
     (reply.audios || []).forEach(function (a) { var audio = el('audio'); audio.controls = true; audio.src = fileUrl(a.url); extras.appendChild(audio); });
     (reply.arquivos || []).forEach(function (f) { var link = el('a', 'file'); link.href = fileUrl(f.url); link.textContent = '📄 ' + f.nome; link.setAttribute('download', f.nome); extras.appendChild(link); });
+    // Vários arquivos (ex.: playlist): tudo de uma vez num .zip ou direto numa pasta escolhida.
+    if (reply.pacote || (reply.arquivos || []).length > 1) {
+      var bulk = el('div', 'bulk');
+      if (reply.pacote) {
+        var all = el('a', 'file primary');
+        all.href = fileUrl(reply.pacote.url + '?nome=' + encodeURIComponent(reply.pacote.nome));
+        all.setAttribute('download', reply.pacote.nome);
+        all.textContent = '⬇️ Baixar tudo (' + reply.pacote.quantidade + ' arquivos, .zip)';
+        bulk.appendChild(all);
+      }
+      // Escolher pasta: Chrome/Edge, e só em endereço seguro (localhost ou https).
+      if ((reply.arquivos || []).length > 1 && window.showDirectoryPicker && window.isSecureContext) {
+        var folder = el('button', 'file');
+        folder.type = 'button';
+        folder.textContent = '📁 Salvar numa pasta…';
+        folder.onclick = function () { saveToFolder(reply.arquivos, folder); };
+        bulk.appendChild(folder);
+      }
+      extras.appendChild(bulk);
+    }
     (reply.avisos || []).forEach(function (w) { extras.appendChild(el('div', 'warn', esc(w))); });
     if (extras.childNodes.length) body.appendChild(extras);
     if (reply.texto) {

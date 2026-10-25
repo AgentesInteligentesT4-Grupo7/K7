@@ -10,7 +10,8 @@ export interface DownloadRequest {
   url: string;
   formato: MediaFormat;
   playlist: boolean;
-  maxItens: number;
+  /** Ausente = a playlist inteira. */
+  maxItens?: number;
 }
 
 export interface DownloadedFile {
@@ -19,10 +20,22 @@ export interface DownloadedFile {
   bytes: number;
 }
 
+/** Vídeo pulado (excluído, privado, com restrição de idade, bloqueado...). */
+export interface DownloadFailure {
+  link: string | null;
+  motivo: string;
+}
+
+export interface DownloadResult {
+  files: string[];
+  failures: DownloadFailure[];
+}
+
 interface Job {
   status: 'rodando' | 'ok' | 'erro';
   progresso: string;
   arquivos: DownloadedFile[];
+  falhas?: DownloadFailure[];
   erro: string | null;
 }
 
@@ -40,19 +53,29 @@ export interface YtdlpOptions {
 export class YtdlpClient {
   constructor(private readonly options: YtdlpOptions) {}
 
-  async download(request: DownloadRequest, targetDir: string, onProgress?: (progress: string) => void): Promise<string[]> {
+  async download(request: DownloadRequest, targetDir: string, onProgress?: (progress: string) => void): Promise<DownloadResult> {
     const { id } = (await this.json('/baixar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: request.url, formato: request.formato, playlist: request.playlist, max_itens: request.maxItens }),
+      body: JSON.stringify({
+        url: request.url,
+        formato: request.formato,
+        playlist: request.playlist,
+        ...(request.maxItens ? { max_itens: request.maxItens } : {}),
+      }),
     })) as { id: string };
     try {
       const job = await this.wait(id, onProgress);
-      if (job.status === 'erro') throw new UserFacingError(`Não consegui baixar: ${YtdlpClient.friendly(job.erro)}`);
+      const failures = job.falhas ?? [];
+      if (job.status === 'erro') {
+        const links = failures.filter((f) => f.link).map((f) => `
+- ${f.link}: ${f.motivo}`).join('');
+        throw new UserFacingError(`Não consegui baixar: ${YtdlpClient.friendly(job.erro)}${links}`);
+      }
       fs.mkdirSync(targetDir, { recursive: true });
       const saved: string[] = [];
       for (const file of job.arquivos) saved.push(await this.fetchFile(id, file.nome, targetDir));
-      return saved;
+      return { files: saved, failures };
     } finally {
       await fetch(`${this.options.baseUrl}/trabalhos/${id}`, { method: 'DELETE' }).catch(() => undefined);
     }

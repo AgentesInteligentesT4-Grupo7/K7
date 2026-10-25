@@ -192,9 +192,9 @@ export class Config {
   readonly midia: {
     /** YTDLP_BASE_URL (padrão http://127.0.0.1:8899). */
     baseUrl: string;
-    /** MIDIA_TIMEOUT_MS: espera máxima de um download (playlists demoram; padrão 30 min). */
+    /** MIDIA_TIMEOUT_MS: espera máxima de um download (playlists inteiras demoram; padrão 4 h). */
     timeoutMs: number;
-    /** MIDIA_MAX_ITENS: vídeos de uma playlist por pedido (padrão 25, até 200). */
+    /** MIDIA_MAX_ITENS: teto de vídeos de uma playlist por pedido; 0 (padrão) = sem limite. */
     maxItems: number;
   };
   readonly images: {
@@ -363,8 +363,8 @@ export class Config {
     if (quality !== 'rapido' && quality !== 'qualidade') throw new ConfigError('IMAGE_QUALITY deve ser rapido ou qualidade');
     this.midia = {
       baseUrl: (env.YTDLP_BASE_URL?.trim() || 'http://127.0.0.1:8899').replace(/\/+$/, ''),
-      timeoutMs: Config.positiveInt(env.MIDIA_TIMEOUT_MS, 30 * 60_000),
-      maxItems: Math.min(200, Config.positiveInt(env.MIDIA_MAX_ITENS, 25)),
+      timeoutMs: Config.positiveInt(env.MIDIA_TIMEOUT_MS, 4 * 3600_000),
+      maxItems: Math.max(0, Math.floor(Number(env.MIDIA_MAX_ITENS ?? 0)) || 0),
     };
     this.images = {
       baseUrl: (env.COMFYUI_BASE_URL?.trim() || 'http://localhost:8188').replace(/\/+$/, ''),

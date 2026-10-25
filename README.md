@@ -319,7 +319,11 @@ docker compose -f servicos/ytdlp/docker-compose.yml up -d --build
 - Ligue com `modulos: midia` no perfil (a fita `rebobina` já vem pronta) ou em `MODULES`.
 - Ferramenta `baixar_youtube` (url, formato `mp3`/`wav`/`mp4`, playlist, max_itens); arquivos em `<workspace>/downloads`.
 - No Telegram, áudio chega como música e vídeo como vídeo; acima de 50 MB (limite dos bots), o bot avisa onde salvou.
-- Playlists: até `MIDIA_MAX_ITENS` vídeos por pedido (padrão 25, até 200). Só links do YouTube são aceitos.
+- Playlists: inteiras por padrão (`MIDIA_MAX_ITENS` põe um teto, se quiser). Vídeos excluídos, privados ou bloqueados são
+  pulados e listados com o link e o motivo. Só links do YouTube são aceitos.
+- Nomes padronizados, sem numeração: sai o "(Official Video)", "[Official Audio]", "(Lyrics)"... e ficam "(feat. ...)",
+  "(Remix)", "(Ao Vivo)"; com artista e faixa informados pelo YouTube, vira "Artista - Música".
+- No navegador, vários arquivos ganham **Baixar tudo (.zip)** e, no Chrome/Edge em `localhost`, **Salvar numa pasta…**.
 - O YouTube muda com frequência: se parar de baixar, suba a versão do yt-dlp em `servicos/ytdlp/Dockerfile` e reconstrua.
 - Os termos do YouTube restringem downloads: use para vídeos seus, com licença livre ou com permissão do autor.
 

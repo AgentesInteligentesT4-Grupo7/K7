@@ -14,7 +14,7 @@ import { YtdlpClient } from '../src/modules/midia/YtdlpClient.js';
 import { DEFAULT_MODULES, MODULE_IDS } from '../src/modules/registry.js';
 
 /** Serviço ytdlp de mentira: o primeiro status responde "rodando", o seguinte "ok" (ou o erro pedido). */
-function fakeService(behavior: { error?: string; files?: Array<{ nome: string; conteudo: string }> }) {
+function fakeService(behavior: { error?: string; files?: Array<{ nome: string; conteudo: string }>; falhas?: Array<{ link: string | null; motivo: string }> }) {
   const requests: Array<{ method: string; url: string; body?: unknown }> = [];
   let polls = 0;
   const server = http.createServer((req, res) => {
@@ -27,9 +27,10 @@ function fakeService(behavior: { error?: string; files?: Array<{ nome: string; c
       if (req.url === '/trabalhos/abc' && req.method === 'GET') {
         polls++;
         if (polls === 1) return json(200, { status: 'rodando', progresso: '0/?', arquivos: [], erro: null });
-        if (behavior.error) return json(200, { status: 'erro', progresso: '1/1', arquivos: [], erro: behavior.error });
+        const falhas = behavior.falhas ?? [];
+        if (behavior.error) return json(200, { status: 'erro', progresso: '1/1', arquivos: [], falhas, erro: behavior.error });
         const arquivos = (behavior.files ?? []).map((f) => ({ nome: f.nome, bytes: f.conteudo.length }));
-        return json(200, { status: 'ok', progresso: `${arquivos.length}/${arquivos.length}`, arquivos, erro: null });
+        return json(200, { status: 'ok', progresso: `${arquivos.length}/${arquivos.length}`, arquivos, falhas, erro: null });
       }
       const file = (behavior.files ?? []).find((f) => req.url === `/trabalhos/abc/arquivos/${encodeURIComponent(f.nome)}`);
       if (file) return res.writeHead(200).end(file.conteudo);
@@ -46,7 +47,10 @@ async function listen(server: http.Server): Promise<string> {
 }
 
 describe('Módulo midia: cliente do serviço yt-dlp', () => {
-  const ok = fakeService({ files: [{ nome: 'Musica.mp3', conteudo: 'ID3-audio' }] });
+  const ok = fakeService({
+    files: [{ nome: 'Musica.mp3', conteudo: 'ID3-audio' }],
+    falhas: [{ link: 'https://youtu.be/AAAAAAAAAAA', motivo: 'vídeo privado' }],
+  });
   let okUrl = '';
   before(async () => (okUrl = await listen(ok.server)));
   after(() => ok.server.close());
@@ -56,8 +60,9 @@ describe('Módulo midia: cliente do serviço yt-dlp', () => {
     fs.writeFileSync(path.join(dir, 'Musica.mp3'), 'antigo');
     const progress: string[] = [];
     const client = new YtdlpClient({ baseUrl: okUrl, timeoutMs: 5_000, pollMs: 10 });
-    const files = await client.download({ url: 'https://youtu.be/x', formato: 'mp3', playlist: false, maxItens: 25 }, dir, (p) => progress.push(p));
+    const { files, failures } = await client.download({ url: 'https://youtu.be/x', formato: 'mp3', playlist: false, maxItens: 25 }, dir, (p) => progress.push(p));
     assert.deepEqual(files.map((f) => path.basename(f)), ['Musica (2).mp3']);
+    assert.deepEqual(failures, [{ link: 'https://youtu.be/AAAAAAAAAAA', motivo: 'vídeo privado' }], 'vídeo pulado volta com link e motivo');
     assert.equal(fs.readFileSync(files[0]!, 'utf8'), 'ID3-audio');
     assert.equal(fs.readFileSync(path.join(dir, 'Musica.mp3'), 'utf8'), 'antigo', 'o arquivo que já existia fica');
     assert.deepEqual(progress, ['0/?', '1/1']);
@@ -66,11 +71,17 @@ describe('Módulo midia: cliente do serviço yt-dlp', () => {
   });
 
   it('erro do yt-dlp vira mensagem que a pessoa entende; serviço fora do ar diz como subir', async () => {
-    const failing = fakeService({ error: 'ERROR: [youtube] abc: Private video. Sign in if you have access' });
+    const failing = fakeService({
+      error: 'ERROR: [youtube] abc: Private video. Sign in if you have access',
+      falhas: [{ link: 'https://youtu.be/BBBBBBBBBBB', motivo: 'vídeo privado' }],
+    });
     const url = await listen(failing.server);
     try {
       const client = new YtdlpClient({ baseUrl: url, timeoutMs: 5_000, pollMs: 10 });
-      await assert.rejects(client.download({ url: 'https://youtu.be/x', formato: 'mp4', playlist: false, maxItens: 1 }, os.tmpdir()), /o vídeo é privado/);
+      await assert.rejects(
+        client.download({ url: 'https://youtu.be/x', formato: 'mp4', playlist: false, maxItens: 1 }, os.tmpdir()),
+        /o vídeo é privado[\s\S]*https:\/\/youtu\.be\/BBBBBBBBBBB: vídeo privado/,
+      );
       assert.equal(failing.requests.at(-1)!.method, 'DELETE', 'apaga o trabalho mesmo com erro');
     } finally {
       failing.server.close();
@@ -88,9 +99,9 @@ describe('Módulo midia: ferramenta baixar_youtube', () => {
       download: async (request: unknown, targetDir: string) => {
         calls.push(request);
         fs.mkdirSync(targetDir, { recursive: true });
-        const file = path.join(targetDir, '001 - Aula.mp4');
+        const file = path.join(targetDir, 'Aula.mp4');
         fs.writeFileSync(file, 'video');
-        return [file];
+        return { files: [file], failures: calls.length === 1 ? [{ link: 'https://youtu.be/CCCCCCCCCCC', motivo: 'vídeo excluído ou indisponível' }] : [] };
       },
     } as unknown as YtdlpClient;
     const tool = new DownloadMediaTool(client, workspace, 25);
@@ -102,12 +113,20 @@ describe('Módulo midia: ferramenta baixar_youtube', () => {
       tool.execute({ url: 'https://www.youtube.com/playlist?list=PL123', formato: 'mp4', max_itens: 500 }),
     );
     assert.deepEqual(calls[0], { url: 'https://www.youtube.com/playlist?list=PL123', formato: 'mp4', playlist: true, maxItens: 25 });
-    assert.deepEqual(media.map((m) => [path.basename(m.path), m.kind]), [['001 - Aula.mp4', 'video']]);
+    assert.deepEqual(media.map((m) => [path.basename(m.path), m.kind]), [['Aula.mp4', 'video']]);
     assert.match(result.output, /^ok: 1 arquivo\(s\) MP4/);
+    assert.match(result.output, /1 vídeo\(s\) com problema foram pulados[\s\S]*INFORME AO USUÁRIO[\s\S]*https:\/\/youtu\.be\/CCCCCCCCCCC: vídeo excluído ou indisponível/);
     assert.equal(path.dirname(media[0]!.path), path.join(workspace, 'downloads'));
 
     await tool.execute({ url: 'https://www.youtube.com/watch?v=abc&list=PL123' });
     assert.deepEqual(calls[1], { url: 'https://www.youtube.com/watch?v=abc&list=PL123', formato: 'mp3', playlist: false, maxItens: 25 }, 'vídeo de uma playlist: só o vídeo');
+
+    // Sem teto configurado (padrão): a playlist inteira, ou a quantidade pedida.
+    const unlimited = new DownloadMediaTool(client, workspace);
+    await unlimited.execute({ url: 'https://www.youtube.com/playlist?list=PL123' });
+    assert.equal((calls[2] as { maxItens?: number }).maxItens, undefined);
+    await unlimited.execute({ url: 'https://www.youtube.com/playlist?list=PL123', max_itens: 300 });
+    assert.equal((calls[3] as { maxItens?: number }).maxItens, 300);
   });
 
   it('o módulo existe, mas fica fora do padrão sem fita (precisa do serviço)', () => {

@@ -1,11 +1,13 @@
 """Serviço local de downloads do YouTube para o módulo "midia" do K7 (yt-dlp + ffmpeg + deno).
 
-- POST /baixar {url, formato: mp3|wav|mp4, playlist, max_itens} → {id}; o download roda em segundo plano.
+- POST /baixar {url, formato: mp3|wav|mp4, playlist, max_itens?} → {id}; o download roda em segundo plano.
+  Sem max_itens, a playlist inteira.
 - GET /trabalhos/{id} → status (rodando | ok | erro), progresso e arquivos prontos.
 - GET /trabalhos/{id}/arquivos/{nome} → o arquivo; DELETE /trabalhos/{id} → apaga a pasta do trabalho.
 Só aceita links do YouTube. Os arquivos ficam em /downloads/<id>/ até o K7 copiá-los e apagar.
 """
 
+import re
 import shutil
 import threading
 import time
@@ -20,7 +22,6 @@ from pydantic import BaseModel, Field
 
 DOWNLOADS = Path("/downloads")
 ALLOWED_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
-MAX_ITEMS = 200
 JOB_TTL_SECONDS = 6 * 3600
 
 app = FastAPI(title="ytdlp")
@@ -32,18 +33,105 @@ class DownloadRequest(BaseModel):
     url: str
     formato: str = Field("mp3", pattern="^(mp3|wav|mp4)$")
     playlist: bool = False
-    max_itens: int = Field(25, ge=1, le=MAX_ITEMS)
+    max_itens: int | None = Field(None, ge=1)  # None = a playlist inteira
+
+
+# Entre parênteses/colchetes: ruído (sai do nome) e o que diferencia uma versão da outra (fica).
+NOISE = re.compile(
+    r"official|oficial|v[ií]deo|clipe|\bclip\b|[aá]udio|lyric|letra|legendad|visuali[sz]er|\bhd\b|\bhq\b|\b4k\b|\bmv\b|m/v|full album",
+    re.IGNORECASE,
+)
+KEEP = re.compile(r"feat|\bft\b|remix|ao vivo|\blive\b|ac[uú]stic|acoustic|vers[aã]o|version|cover|instrumental|remaster", re.IGNORECASE)
+# Caracteres proibidos no Windows e os substitutos que o yt-dlp usa no lugar deles.
+FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f｜⧸⧹＂？＊：＜＞]')
+
+
+def clean_title(title: str, artist: str | None = None, track: str | None = None) -> str:
+    """Nome padronizado da música: "Artista - Faixa" quando o YouTube informa, sem "(Official Video)" e afins."""
+    name = f"{artist} - {track}" if artist and track else title
+
+    def bracket(match: re.Match) -> str:
+        inner = match.group(0)[1:-1]
+        return match.group(0) if KEEP.search(inner) else " "
+
+    name = re.sub(r"\([^()]*\)|\[[^\[\]]*\]|【[^】]*】", bracket, name)
+    # "Música | Clipe Oficial" / "Música - Official Video": o trecho final só de ruído sai.
+    name = re.sub(r"\s*[|｜]\s*[^|｜]*$", lambda m: "" if NOISE.search(m.group(0)) else m.group(0), name)
+    name = re.sub(r"\s+[-–—]\s*(official|oficial|clipe|v[ií]deo)\b[^-–—]*$", "", name, flags=re.IGNORECASE)
+    name = FORBIDDEN.sub(" ", name)
+    name = re.sub(r"\s+[-–—]+\s+", " - ", name)
+    name = re.sub(r"\s{2,}", " ", name).strip(" .-–—_")
+    return name or "audio"
+
+
+def failure_reason(message: str) -> str:
+    """Motivo, em português, de um vídeo que não pôde ser baixado."""
+    text = message.lower()
+    if "private" in text:
+        return "vídeo privado"
+    if "sign in to confirm your age" in text or "age-restricted" in text or "inappropriate" in text:
+        return "restrição de idade (o YouTube pede login)"
+    if "copyright" in text or "blocked" in text or "not available in your country" in text:
+        return "bloqueado (direitos autorais ou região)"
+    if "members-only" in text or "join this channel" in text:
+        return "só para membros do canal"
+    if "unavailable" in text or "removed" in text or "deleted" in text or "does not exist" in text or "terminated" in text:
+        return "vídeo excluído ou indisponível"
+    if "live event" in text or "premiere" in text:
+        return "transmissão ao vivo ou estreia ainda não começou"
+    return re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*)?", "", message)[:200]
+
+
+class JobLogger:
+    """Recebe as mensagens do yt-dlp: cada vídeo que falhou vira {link, motivo} e o download segue com os outros."""
+
+    VIDEO_ERROR = re.compile(r"\[youtube[^\]]*\]\s*([\w-]{11}):\s*(.+)")
+
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+
+    def debug(self, message: str) -> None:
+        pass
+
+    def info(self, message: str) -> None:
+        pass
+
+    def warning(self, message: str) -> None:
+        pass
+
+    def error(self, message: str) -> None:
+        match = self.VIDEO_ERROR.search(message)
+        failure = (
+            {"link": f"https://youtu.be/{match.group(1)}", "motivo": failure_reason(match.group(2))}
+            if match
+            else {"link": None, "motivo": failure_reason(message)}
+        )
+        with lock:
+            failures = jobs[self.job_id]["falhas"]
+            if failure not in failures:
+                failures.append(failure)
+
+
+def unique(folder: Path, stem: str, ext: str) -> Path:
+    target = folder / f"{stem}{ext}"
+    for i in range(2, 10_000):
+        if not target.exists():
+            return target
+        target = folder / f"{stem} ({i}){ext}"
+    return target
 
 
 def options(job_id: str, req: DownloadRequest) -> dict:
     folder = DOWNLOADS / job_id
-    template = "%(playlist_index)03d - %(title)s.%(ext)s" if req.playlist else "%(title)s.%(ext)s"
+    # Baixa pelo id (dois vídeos de mesmo título numa playlist não se atropelam) e renomeia no fim (on_postprocess).
     opts: dict = {
-        "outtmpl": str(folder / template),
+        "outtmpl": str(folder / "%(id)s.%(ext)s"),
         "windowsfilenames": True,
         "noplaylist": not req.playlist,
         "playlistend": req.max_itens,
-        "ignoreerrors": req.playlist,  # numa playlist, um vídeo indisponível não derruba os outros
+        # Vídeo excluído, privado ou bloqueado: pula, anota em "falhas" (JobLogger) e segue com os outros.
+        "ignoreerrors": True,
+        "logger": JobLogger(job_id),
         "quiet": True,
         "noprogress": True,
         "postprocessor_hooks": [lambda d: on_postprocess(job_id, d)],
@@ -67,12 +155,14 @@ def on_progress(job_id: str, d: dict) -> None:
 
 
 def on_postprocess(job_id: str, d: dict) -> None:
-    # MoveFiles é o último passo: aí o arquivo já tem o nome e a extensão finais.
+    # MoveFiles é o último passo: o arquivo já tem a extensão final; aqui ganha o nome padronizado.
     if d.get("status") == "finished" and d.get("postprocessor") == "MoveFiles":
         info = d.get("info_dict") or {}
         path = Path(info.get("filepath") or "")
         if path.is_file():
             with lock:
+                target = unique(path.parent, clean_title(info.get("title") or path.stem, info.get("artist"), info.get("track")), path.suffix)
+                path = path.rename(target)
                 jobs[job_id]["arquivos"].append({"nome": path.name, "titulo": info.get("title"), "bytes": path.stat().st_size})
 
 
@@ -84,7 +174,8 @@ def run(job_id: str, req: DownloadRequest) -> None:
             job = jobs[job_id]
             job["status"] = "ok" if job["arquivos"] else "erro"
             if not job["arquivos"]:
-                job["erro"] = "nenhum arquivo baixado (vídeo indisponível, privado ou com restrição de idade?)"
+                reasons = sorted({f["motivo"] for f in job["falhas"]})
+                job["erro"] = f"nenhum arquivo baixado ({'; '.join(reasons) or 'vídeo indisponível'})"
     except Exception as error:  # noqa: BLE001 - qualquer falha do yt-dlp vira mensagem para o usuário
         with lock:
             jobs[job_id].update(status="erro", erro=str(error)[:500])
@@ -117,7 +208,7 @@ def download(req: DownloadRequest) -> dict:
         raise HTTPException(400, "só links do YouTube (youtube.com, youtu.be, music.youtube.com)")
     job_id = uuid.uuid4().hex[:12]
     with lock:
-        jobs[job_id] = {"status": "rodando", "progresso": "0/?", "arquivos": [], "erro": None, "criado": time.time()}
+        jobs[job_id] = {"status": "rodando", "progresso": "0/?", "arquivos": [], "falhas": [], "erro": None, "criado": time.time()}
     threading.Thread(target=run, args=(job_id, req), daemon=True).start()
     return {"id": job_id}
 

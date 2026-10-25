@@ -13,6 +13,7 @@ import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
 import { AudioIntentDetector } from '../../voice/AudioIntentDetector.js';
 import { renderPage } from './page.js';
 import { type WebReply, WebOutputHandler } from './WebOutputHandler.js';
+import { ZipTooLargeError, writeZip, zipSize } from './ZipStream.js';
 
 export interface WebChannelOptions {
   host: string;
@@ -162,6 +163,9 @@ export class WebChannel {
       if (!this.options.public) this.checkToken(req.headers['x-token'] ?? url.searchParams.get('t') ?? undefined);
       const files = /^\/api\/arquivos\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && files) return this.sendFile(res, decodeURIComponent(files[1]!));
+      const bundle = /^\/api\/pacotes\/([0-9a-f]{24})$/.exec(url.pathname);
+      // await: sem ele, o erro (404, 413) escaparia do catch e a requisição ficaria sem resposta.
+      if (req.method === 'GET' && bundle) return await this.sendZip(res, bundle[1]!, url.searchParams.get('nome'));
       const userId = this.userIdFor(req);
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
       if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations(userId));
@@ -192,6 +196,8 @@ export class WebChannel {
       const status = error instanceof HttpError ? error.status : 500;
       if (status === 500) this.logger.error(`Falha no canal web: ${errorMessage(error)}`, error);
       if (!res.headersSent) this.json(res, { erro: status === 500 ? 'Falha interna; veja os logs.' : (error as Error).message }, status);
+      // Erro no meio de um envio (ex.: .zip): fecha a conexão para o download falhar em vez de ficar pendurado.
+      else res.destroy();
     }
   }
 
@@ -422,6 +428,29 @@ export class WebChannel {
       'content-disposition': `${type.startsWith('audio/') || type.startsWith('image/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
     });
     fs.createReadStream(file).pipe(res);
+  }
+
+  /** Todos os arquivos de uma resposta (ex.: playlist) num .zip, montado enquanto é enviado. */
+  private async sendZip(res: http.ServerResponse, id: string, requestedName: string | null): Promise<void> {
+    const entries = this.output.bundleEntries(id);
+    if (!entries?.length) throw new HttpError(404, 'Pacote não encontrado');
+    let size: number;
+    try {
+      size = zipSize(entries);
+    } catch (error) {
+      if (error instanceof ZipTooLargeError) throw new HttpError(413, error.message);
+      throw error;
+    }
+    const name = /^[\w .-]{1,80}\.zip$/.test(requestedName ?? '') ? requestedName! : 'downloads.zip';
+    res.writeHead(200, {
+      'content-type': 'application/zip',
+      'content-length': size,
+      'x-content-type-options': 'nosniff',
+      'content-disposition': `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+    });
+    await writeZip(res, entries);
+    res.end();
+    this.logger.info(`📦 Pacote enviado: ${entries.length} arquivo(s), ${(size / 1024 / 1024).toFixed(1)} MB`);
   }
 
   private json(res: http.ServerResponse, data: unknown, status = 200): void {

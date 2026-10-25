@@ -17,6 +17,8 @@ export interface WebReply {
   imagens: Array<{ url: string; legenda?: string }>;
   avisos: string[];
   erro?: string;
+  /** Mais de um áudio/vídeo na resposta (ex.: playlist): tudo de uma vez num .zip. */
+  pacote?: { url: string; nome: string; quantidade: number };
 }
 
 export interface WebOutputOptions {
@@ -57,9 +59,15 @@ export class WebOutputHandler implements IOutputHandler {
       const name = this.save(path.basename(image.path), fs.readFileSync(image.path));
       reply.imagens.push({ url: WebOutputHandler.url(name), ...(image.caption ? { legenda: image.caption } : {}) });
     }
+    const bundle: Array<{ nome: string; arquivo: string }> = [];
     for (const item of response.media ?? []) {
       const name = this.save(path.basename(item.path), item.path, true);
       reply.arquivos.push({ nome: path.basename(item.path), url: WebOutputHandler.url(name) });
+      bundle.push({ nome: path.basename(item.path), arquivo: name });
+    }
+    if (bundle.length > 1) {
+      const kind = response.media!.every((m) => m.kind === 'audio') ? 'musicas' : response.media!.every((m) => m.kind === 'video') ? 'videos' : 'arquivos';
+      reply.pacote = { url: `/api/pacotes/${this.saveBundle(bundle)}`, nome: `${kind}.zip`, quantidade: bundle.length };
     }
     if (text && response.isAudio) await this.speak(reply, text, this.options.tts, 'resposta');
     for (const segment of cloned.segments) await this.speakCloned(reply, segment.text, segment.voice);
@@ -83,6 +91,27 @@ export class WebOutputHandler implements IOutputHandler {
     if (base !== name || base.startsWith('.')) return undefined;
     const full = path.join(this.options.outputDir, base);
     return fs.existsSync(full) ? full : undefined;
+  }
+
+  /** Arquivos de um pacote (nome bonito + caminho), para o .zip; `undefined` se o id não existir. */
+  bundleEntries(id: string): Array<{ name: string; path: string }> | undefined {
+    if (!/^[0-9a-f]{24}$/.test(id)) return undefined;
+    const manifest = path.join(this.options.outputDir, 'pacotes', `${id}.json`);
+    if (!fs.existsSync(manifest)) return undefined;
+    const items = JSON.parse(fs.readFileSync(manifest, 'utf8')) as Array<{ nome: string; arquivo: string }>;
+    return items.flatMap((item) => {
+      const file = this.filePath(item.arquivo);
+      return file ? [{ name: path.basename(item.nome), path: file }] : [];
+    });
+  }
+
+  /** Guarda a lista do pacote com id aleatório (como os nomes dos arquivos, imprevisível). */
+  private saveBundle(items: Array<{ nome: string; arquivo: string }>): string {
+    const id = randomBytes(12).toString('hex');
+    const dir = path.join(this.options.outputDir, 'pacotes');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(items));
+    return id;
   }
 
   private async speakCloned(reply: WebReply, text: string, voiceName?: string): Promise<void> {

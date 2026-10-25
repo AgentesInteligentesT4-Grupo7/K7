@@ -43,6 +43,14 @@ function fakeCore(): Core {
           ? 'Pronto <arquivo nome="nota.md">conteúdo da nota</arquivo>'
           : `eco: ${input.text.slice(0, 200)}`;
         memory.saveMessage(conversation.id, 'assistant', text);
+        if (input.text === 'baixe a playlist') {
+          const songs = ['Primeira.mp3', 'Segunda.mp3'].map((name) => {
+            const file = path.join(dir, name);
+            fs.writeFileSync(file, `ID3 ${name}`);
+            return { path: file, kind: 'audio' as const };
+          });
+          return output.send(input.chatId, { text: 'Baixei 2 músicas', isAudio: false, media: songs });
+        }
         if (input.text === 'gere imagem') {
           const png = path.join(dir, 'gerada.png');
           fs.writeFileSync(png, 'PNG');
@@ -236,14 +244,27 @@ describe('Canal web público (WEB_PUBLIC)', () => {
     assert.equal(beto.length, 0, 'o Beto não vê a conversa da Ana');
   });
 
+  it('playlist: cada música vira link e há um pacote .zip com todas', async () => {
+    const reply = (await (await send(BETO, 'baixe a playlist')).json()) as { arquivos: Array<{ nome: string }>; pacote: { url: string; nome: string; quantidade: number } };
+    assert.deepEqual(reply.arquivos.map((f) => f.nome), ['Primeira.mp3', 'Segunda.mp3']);
+    assert.deepEqual([reply.pacote.nome, reply.pacote.quantidade], ['musicas.zip', 2]);
+    const zip = await fetch(`${openBase}${reply.pacote.url}?nome=musicas.zip`);
+    assert.equal(zip.status, 200);
+    assert.equal(zip.headers.get('content-type'), 'application/zip');
+    assert.match(zip.headers.get('content-disposition')!, /filename="musicas\.zip"/);
+    const body = Buffer.from(await zip.arrayBuffer());
+    assert.equal(body.length, Number(zip.headers.get('content-length')));
+    assert.equal(body.toString('latin1', 0, 4), 'PK');
+    assert.equal((await fetch(`${openBase}/api/pacotes/${'0'.repeat(24)}`)).status, 404);
+  });
+
   it('limite por visitante e limite total por hora → 429', async () => {
     // A Ana já mandou 1 mensagem no teste anterior: a 2ª passa e a 3ª estoura o limite dela (2/hora).
     assert.equal((await send(ANA, 'segunda')).status, 200);
     const limited = await send(ANA, 'terceira');
     assert.equal(limited.status, 429);
     assert.match(((await limited.json()) as { erro: string }).erro, /Limite de 2 mensagens por hora/);
-    // Total de 3/hora: a do Beto é a 3ª e passa; a de um terceiro visitante estoura o total.
-    assert.equal((await send(BETO, 'oi')).status, 200);
+    // Total de 3/hora: Ana 2 + Beto 1 (a playlist) já somam 3; qualquer outra mensagem estoura o total.
     assert.equal((await send('visitante-caio-000000000000003', 'oi')).status, 429);
   });
 });
