@@ -131,6 +131,11 @@ export class MemoryManager {
     return this.conversations.activate(userId, conversationId);
   }
 
+  /** Exclui uma conversa do usuário e o histórico dela (os fatos lembrados sobre a pessoa ficam: /esquecer). */
+  deleteConversation(userId: string, conversationId: string): boolean {
+    return this.conversations.delete(userId, conversationId);
+  }
+
   /** Histórico (user/assistant) de uma conversa do usuário, para exibir; vazio se não for dele. */
   getHistory(userId: string, conversationId: string, limit = 200): StoredMessage[] {
     if (this.conversations.findById(conversationId)?.userId !== userId) return [];

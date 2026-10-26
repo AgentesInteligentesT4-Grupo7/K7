@@ -226,6 +226,11 @@ export class WebChannel {
         if (!this.core.memory.activateConversation(userId, conversation[1]!)) throw new HttpError(404, 'Conversa não encontrada');
         return this.json(res, { ok: true });
       }
+      // Fechar a conversa = excluir o histórico dela (só do próprio visitante).
+      if (conversation && req.method === 'DELETE' && !conversation[2]) {
+        if (!this.core.memory.deleteConversation(userId, conversation[1]!)) throw new HttpError(404, 'Conversa não encontrada');
+        return this.json(res, { ok: true });
+      }
       if (req.method === 'POST' && url.pathname === '/api/mensagens') {
         const body = (await this.readJson(req)) as MessageBody;
         if (this.options.public) this.checkLimit(userId);

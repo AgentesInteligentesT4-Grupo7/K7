@@ -43,6 +43,14 @@ button:disabled { cursor: default; opacity: .5; }
 .conv:hover { background: var(--user); }
 .conv.active { background: var(--user); font-weight: 600; }
 .conv small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+.conv-row { display: flex; align-items: center; border-radius: 8px; }
+.conv-row .conv { flex: 1; min-width: 0; }
+.conv-close { border: 0; background: none; color: var(--muted); padding: 4px 8px; border-radius: 6px; visibility: hidden; }
+.conv-row:hover .conv-close, .conv-close:focus-visible { visibility: visible; }
+.conv-close:hover { color: var(--error); background: var(--user); }
+#close-conv { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 3px 9px; font-size: 13px; }
+#close-conv:hover { border-color: var(--error); }
+@media (hover: none) { .conv-close { visibility: visible; } }
 #side-foot { border-top: 1px solid var(--line); padding: 10px 16px; font-size: 12px; color: var(--muted); }
 #side-foot .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; }
@@ -195,6 +203,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     <button id="menu" type="button" aria-label="Conversas">☰</button>
     <div id="title">Nova conversa</div>
     <div id="model"></div>
+    <button id="close-conv" type="button" title="Excluir esta conversa e o histórico dela">🗑</button>
     <button id="lib-toggle" class="hidden" type="button" title="Playlists baixadas">🎵 Biblioteca</button>
     <button id="theme" type="button" title="Tema claro/escuro">◐</button>
   </header>
@@ -516,16 +525,35 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     return api('/api/conversas').then(function (list) {
       var nav = $('convs'); nav.innerHTML = '';
       list.forEach(function (c) {
+        var row = el('div', 'conv-row');
         var b = el('button', 'conv' + (c.ativa ? ' active' : '')); b.type = 'button';
         b.textContent = c.titulo; b.title = c.titulo;
         b.appendChild(el('small', '', esc(when(c.atualizadaEm) + ' · ' + c.mensagens + ' msg')));
         b.onclick = function () { openConversation(c.id, c.titulo); };
-        nav.appendChild(b);
+        var close = el('button', 'conv-close', '✕'); close.type = 'button'; close.title = 'Excluir esta conversa e o histórico dela';
+        close.onclick = function () { deleteConversation(c.id, c.titulo); };
+        row.appendChild(b); row.appendChild(close);
+        nav.appendChild(row);
         if (c.ativa) { state.conversationId = c.id; $('title').textContent = c.mensagens ? c.titulo : 'Nova conversa'; }
       });
       return list;
     });
   }
+  /** Fecha a conversa de vez: apaga as mensagens e os resumos dela no servidor (pede confirmação). */
+  function deleteConversation(id, title) {
+    if (state.busy && id === state.conversationId) return;
+    if (!window.confirm('Excluir a conversa "' + (title || 'sem título') + '" e todo o histórico dela? Não dá para desfazer.')) return;
+    api('/api/conversas/' + id, { method: 'DELETE' }).then(function () {
+      if (id === state.conversationId) {
+        state.conversationId = null;
+        clearMessages(); $('empty').classList.remove('hidden'); $('title').textContent = 'Nova conversa';
+      }
+      return loadConversations();
+    }).catch(function (err) { window.alert('Não consegui excluir: ' + err.message); });
+  }
+  $('close-conv').onclick = function () {
+    if (state.conversationId) deleteConversation(state.conversationId, $('title').textContent);
+  };
   function clearMessages() { Array.prototype.slice.call($('messages').querySelectorAll('.msg')).forEach(function (m) { m.remove(); }); }
   function showHistory(id) {
     return api('/api/conversas/' + id).then(function (messages) {

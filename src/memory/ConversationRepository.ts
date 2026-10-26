@@ -78,6 +78,18 @@ export class ConversationRepository {
     })();
   }
 
+  /** Apaga a conversa do usuário com as mensagens e os resumos dela; `false` se não for dele. */
+  delete(userId: string, id: string): boolean {
+    return this.db.transaction(() => {
+      const owned = this.db.prepare('SELECT 1 FROM conversations WHERE id = ? AND user_id = ?').get(id, userId);
+      if (!owned) return false;
+      this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+      this.db.prepare("DELETE FROM conversation_summaries WHERE conversation_id = ?").run(id);
+      this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+      return true;
+    })();
+  }
+
   touch(id: string, provider?: string): void {
     if (provider) {
       this.db.prepare("UPDATE conversations SET updated_at = datetime('now'), provider = ? WHERE id = ?").run(provider, id);

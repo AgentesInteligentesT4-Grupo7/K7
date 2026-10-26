@@ -192,6 +192,15 @@ describe('Canal web', () => {
     const other = memory.getOrCreateActiveConversation('outra-pessoa', 'x');
     assert.equal((await api(`/api/conversas/${other.id}/abrir`, { method: 'POST' })).status, 404);
     assert.deepEqual(await (await api(`/api/conversas/${other.id}`)).json(), []);
+
+    // Fechar a conversa = excluir com o histórico; a de outra pessoa não.
+    assert.equal((await api(`/api/conversas/${other.id}`, { method: 'DELETE' })).status, 404);
+    assert.ok(memory.countMessages(first) > 0);
+    assert.equal((await api(`/api/conversas/${first}`, { method: 'DELETE' })).status, 200);
+    const left = (await (await api('/api/conversas')).json()) as Array<{ id: string }>;
+    assert.ok(!left.some((c) => c.id === first));
+    assert.equal(memory.countMessages(first), 0, 'as mensagens foram apagadas');
+    assert.equal((await api(`/api/conversas/${first}`, { method: 'DELETE' })).status, 404);
   });
 
   it('informações do agente para a página', async () => {
