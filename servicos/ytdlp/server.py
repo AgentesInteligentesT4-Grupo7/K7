@@ -55,7 +55,7 @@ class DownloadRequest(BaseModel):
 
 def read_tags(path: Path) -> dict:
     """Etiquetas do arquivo (title, artist, encoded_by...), em minúsculas."""
-    probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)], capture_output=True, text=True, timeout=120)
+    probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     try:
         tags = json.loads(probe.stdout or "{}").get("format", {}).get("tags") or {}
     except json.JSONDecodeError:
@@ -69,7 +69,7 @@ def write_tags(source: Path, target: Path, title: str, artist: str | None) -> No
             "-metadata", f"title={title}", "-metadata", f"artist={artist or ''}", "-metadata", "encoded_by=K7"]
     if source.suffix.lower() == ".mp3":
         args += ["-id3v2_version", "3"]
-    run = subprocess.run([*args, str(target)], capture_output=True, text=True, timeout=600)
+    run = subprocess.run([*args, str(target)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
     if run.returncode != 0 or not target.is_file():
         raise RuntimeError(f"ffmpeg falhou ao gravar as etiquetas: {run.stderr[-300:]}")
 
@@ -289,7 +289,7 @@ def level_file(source: Path, target: Path) -> dict:
     base = f"loudnorm=I={TARGET_LUFS}:TP=-1.5:LRA=11"
     probe = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(source), "-af", f"{base}:print_format=json", "-vn", "-f", "null", "-"],
-        capture_output=True, text=True, timeout=1800,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
     )
     found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", probe.stderr)
     if probe.returncode != 0 or not found:
@@ -302,7 +302,7 @@ def level_file(source: Path, target: Path) -> dict:
     codec = AUDIO_CODECS[source.suffix.lower()]
     run = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(source), "-map", "0", "-map_metadata", "0", "-af", measured, "-ar", "48000" if source.suffix.lower() in {".opus", ".webm"} else "44100", *codec, str(target)],
-        capture_output=True, text=True, timeout=3600,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
     )
     if run.returncode != 0 or not target.is_file():
         raise HTTPException(500, f"ffmpeg falhou ao nivelar: {run.stderr[-300:]}")
