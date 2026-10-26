@@ -17,6 +17,8 @@ export interface LibraryEntry {
   formato: string;
   criadoEm: string;
   faixas: LibraryTrack[];
+  /** Links que falharam no último download (excluído, privado, bloqueado...): o botão "tentar de novo" usa estes. */
+  falhas?: Array<{ link: string | null; motivo: string }>;
 }
 
 /**
@@ -41,16 +43,39 @@ export class MediaLibrary {
     return path.join(this.workspaceDir, 'downloads');
   }
 
-  /** Registra (ou atualiza) o download: a mesma URL no mesmo formato, do mesmo dono, não vira entrada repetida. */
-  add(dono: string, item: { titulo: string; url: string; formato: string; arquivos: string[] }): LibraryEntry | undefined {
+  /**
+   * Registra (ou atualiza) o download. Com `entryId`, atualiza aquela entrada do dono (download em andamento ou
+   * "tentar de novo"); sem ele, a mesma URL no mesmo formato, do mesmo dono, não vira entrada repetida.
+   * `falhas`, quando vem, substitui as anteriores.
+   */
+  add(
+    dono: string,
+    item: { titulo: string; url: string; formato: string; arquivos: string[]; falhas?: LibraryEntry['falhas'] },
+    entryId?: string,
+  ): LibraryEntry | undefined {
     const faixas = item.arquivos.map((file) => ({ nome: path.parse(file).name, arquivo: path.basename(file) }));
-    if (!faixas.length) return undefined;
-    const existing = this.entries.find((e) => e.dono === dono && e.url === item.url && e.formato === item.formato);
+    const existing = entryId
+      ? this.entries.find((e) => e.dono === dono && e.id === entryId)
+      : item.url
+        ? this.entries.find((e) => e.dono === dono && e.url === item.url && e.formato === item.formato)
+        : undefined;
+    if (!faixas.length && !existing && !item.falhas?.length) return undefined;
     const entry: LibraryEntry = existing ?? { id: randomBytes(12).toString('hex'), dono, titulo: item.titulo, url: item.url, formato: item.formato, criadoEm: '', faixas: [] };
     Object.assign(entry, { titulo: item.titulo, faixas, criadoEm: new Date().toISOString() });
+    if (item.falhas) entry.falhas = item.falhas;
     if (!existing) this.entries.push(entry);
     this.save();
     return entry;
+  }
+
+  /** A entrada do dono (com as faixas como estão gravadas), para continuar ou tentar de novo. */
+  get(dono: string, id: string): LibraryEntry | undefined {
+    return this.entries.find((e) => e.dono === dono && e.id === id);
+  }
+
+  /** Arquivos das faixas que ainda existem, na ordem (para o .zip e para juntar com as novas). */
+  files(dono: string, id: string): string[] {
+    return (this.get(dono, id)?.faixas ?? []).map((t) => path.join(this.downloadsDir, path.basename(t.arquivo))).filter((f) => fs.existsSync(f));
   }
 
   /** Entradas do dono, mais recentes primeiro, só com as faixas cujo arquivo ainda existe. */
@@ -58,7 +83,7 @@ export class MediaLibrary {
     return this.entries
       .filter((e) => e.dono === dono)
       .map((e) => ({ ...e, faixas: e.faixas.filter((t) => fs.existsSync(path.join(this.downloadsDir, t.arquivo))) }))
-      .filter((e) => e.faixas.length)
+      .filter((e) => e.faixas.length || e.falhas?.length)
       .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   }
 
@@ -69,6 +94,17 @@ export class MediaLibrary {
     if (this.entries.length === before) return false;
     this.save();
     return true;
+  }
+
+  /** Título e arquivos de uma entrada pelo id (imprevisível, como o das faixas): o .zip da playlist inteira. */
+  bundle(id: string): { titulo: string; arquivos: Array<{ name: string; path: string }> } | undefined {
+    if (!/^[0-9a-f]{24}$/.test(id)) return undefined;
+    const entry = this.entries.find((e) => e.id === id);
+    if (!entry) return undefined;
+    const arquivos = entry.faixas
+      .map((t) => ({ name: path.basename(t.arquivo), path: path.join(this.downloadsDir, path.basename(t.arquivo)) }))
+      .filter((f) => fs.existsSync(f.path));
+    return { titulo: entry.titulo, arquivos };
   }
 
   /** Posição da faixa na entrada (a URL usa a posição original, que não muda quando um arquivo some). */

@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentController } from '../../agent/AgentController.js';
 import { ProgressBoard } from '../../agent/ProgressBoard.js';
+import { publishProgress } from '../../modules/midia/DownloadMediaTool.js';
+import type { MediaDownloader } from '../../modules/midia/MediaDownloader.js';
 import type { AgentInput } from '../../agent/types.js';
 import type { Core } from '../../app/createCore.js';
 import { DocumentParseError, EmptyAudioError, UnsupportedAttachmentError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
@@ -170,6 +172,8 @@ export class WebChannel {
       if (req.method === 'GET' && bundle) return await this.sendZip(res, bundle[1]!, url.searchParams.get('nome'));
       // Faixa da biblioteca: o id da entrada é imprevisível (como os nomes dos arquivos); <audio>/<video> pedem por partes (Range).
       const track = /^\/api\/biblioteca\/([0-9a-f]{24})\/(\d{1,5})$/.exec(url.pathname);
+      const libraryZip = /^\/api\/biblioteca\/([0-9a-f]{24})\/zip$/.exec(url.pathname);
+      if (req.method === 'GET' && libraryZip) return await this.sendLibraryZip(res, libraryZip[1]!);
       if (req.method === 'GET' && track) {
         const found = this.core.library?.track(track[1]!, Number(track[2]));
         if (!found) throw new HttpError(404, 'Faixa não encontrada');
@@ -182,6 +186,13 @@ export class WebChannel {
         return this.json(res, { texto: progress?.text ?? null, feitos: progress?.done ?? null, total: progress?.total ?? null });
       }
       if (req.method === 'GET' && url.pathname === '/api/biblioteca') return this.json(res, this.library(userId));
+      const retry = /^\/api\/biblioteca\/([0-9a-f]{24})\/tentar-de-novo$/.exec(url.pathname);
+      if (req.method === 'POST' && retry) {
+        const downloader = this.core.mediaDownloader;
+        if (!downloader) throw new HttpError(404, 'Downloads desligados nesta fita');
+        // Direto, sem o modelo: baixa só os links que falharam e soma à mesma playlist.
+        return this.json(res, await this.enqueue(userId, () => this.retryFailed(downloader, userId, retry[1]!)));
+      }
       const entry = /^\/api\/biblioteca\/([0-9a-f]{24})$/.exec(url.pathname);
       if (req.method === 'DELETE' && entry) {
         if (!this.core.library?.remove(userId, entry[1]!)) throw new HttpError(404, 'Playlist não encontrada');
@@ -449,8 +460,21 @@ export class WebChannel {
       titulo: entry.titulo,
       formato: entry.formato,
       criadoEm: entry.criadoEm,
-      faixas: entry.faixas.map((track) => ({ nome: track.nome, url: `/api/biblioteca/${entry.id}/${this.core.library!.indexOf(entry.id, track.arquivo)}` })),
+      falhas: entry.falhas ?? [],
+      faixas: entry.faixas.map((track) => ({ nome: track.nome, arquivo: track.arquivo, url: `/api/biblioteca/${entry.id}/${this.core.library!.indexOf(entry.id, track.arquivo)}` })),
     }));
+  }
+
+  private async retryFailed(downloader: MediaDownloader, userId: string, entryId: string) {
+    try {
+      const outcome = await downloader
+        .retry(userId, entryId, (progress) => publishProgress(userId, progress))
+        .finally(() => ProgressBoard.clear(userId));
+      return { ok: true, novos: outcome.fresh + outcome.reused, falhas: outcome.failures };
+    } catch (error) {
+      if (error instanceof UserFacingError) return { ok: false, erro: error.userMessage };
+      throw error;
+    }
   }
 
   /** Áudio/vídeo com suporte a Range: o tocador do navegador pula para qualquer ponto sem baixar tudo. */
@@ -494,6 +518,19 @@ export class WebChannel {
   private async sendZip(res: http.ServerResponse, id: string, requestedName: string | null): Promise<void> {
     const entries = this.output.bundleEntries(id);
     if (!entries?.length) throw new HttpError(404, 'Pacote não encontrado');
+    await this.writeZipResponse(res, entries, requestedName);
+  }
+
+  /** A playlist inteira da biblioteca num .zip, com o nome dela. */
+  private async sendLibraryZip(res: http.ServerResponse, id: string): Promise<void> {
+    const bundle = this.core.library?.bundle(id);
+    if (!bundle?.arquivos.length) throw new HttpError(404, 'Playlist não encontrada');
+    const plain = bundle.titulo.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const name = `${plain.replace(/[^\w .-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) || 'playlist'}.zip`;
+    await this.writeZipResponse(res, bundle.arquivos, name);
+  }
+
+  private async writeZipResponse(res: http.ServerResponse, entries: Array<{ name: string; path: string }>, requestedName: string | null): Promise<void> {
     let size: number;
     try {
       size = zipSize(entries);

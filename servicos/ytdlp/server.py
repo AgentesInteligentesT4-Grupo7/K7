@@ -35,7 +35,9 @@ lock = threading.Lock()
 
 
 class DownloadRequest(BaseModel):
-    url: str
+    url: str = ""
+    # Vários vídeos avulsos num só trabalho (ex.: vários links colados, ou tentar de novo os que falharam).
+    links: list[str] = Field(default_factory=list, max_length=500)
     formato: str = Field("mp3", pattern="^(mp3|wav|mp4)$")
     playlist: bool = False
     max_itens: int | None = Field(None, ge=1)  # None = a playlist inteira
@@ -190,7 +192,12 @@ def download_one(job_id: str, req: DownloadRequest, url: str, total: int) -> Non
 def run(job_id: str, req: DownloadRequest) -> None:
     try:
         found = VIDEO_ID.search(req.url)
-        title, entries = playlist_entries(job_id, req) if req.playlist else (None, [(req.url, found.group(1) if found else None)])
+        if req.links:
+            title, entries = None, [(link, (VIDEO_ID.search(link) or [None, None])[1]) for link in req.links]
+        elif req.playlist:
+            title, entries = playlist_entries(job_id, req)
+        else:
+            title, entries = None, [(req.url, found.group(1) if found else None)]
         # Já baixados antes (pular) e repetidos dentro da própria playlist: não baixa de novo.
         known, urls, skipped, order = set(req.pular), [], [], []
         for url, video_id in entries:
@@ -210,7 +217,7 @@ def run(job_id: str, req: DownloadRequest) -> None:
             jobs[job_id]["ordem"] = order
             jobs[job_id]["progresso"] = f"0/{len(urls)}"
         # Alguns vídeos ao mesmo tempo (PARALLEL); cada um no próprio YoutubeDL.
-        with ThreadPoolExecutor(max_workers=PARALLEL if req.playlist else 1) as pool:
+        with ThreadPoolExecutor(max_workers=PARALLEL if req.playlist or len(urls) > 1 else 1) as pool:
             list(pool.map(lambda url: download_one(job_id, req, url, len(urls)), urls))
         with lock:
             job = jobs[job_id]
@@ -245,8 +252,8 @@ def health() -> dict:
 
 @app.post("/baixar")
 def download(req: DownloadRequest) -> dict:
-    host = (urlparse(req.url).hostname or "").lower()
-    if host not in ALLOWED_HOSTS:
+    urls = req.links or [req.url]
+    if not all((urlparse(u).hostname or "").lower() in ALLOWED_HOSTS for u in urls):
         raise HTTPException(400, "só links do YouTube (youtube.com, youtu.be, music.youtube.com)")
     job_id = uuid.uuid4().hex[:12]
     with lock:

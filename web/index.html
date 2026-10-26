@@ -143,6 +143,15 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 .track .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track.playing { color: var(--accent); font-weight: 600; }
 .lib-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
+.pl-head a.mini { text-decoration: none; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+.pl-head a.mini:hover { background: var(--user); }
+.fails { margin: 0 8px 6px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
+.fails-row { display: flex; align-items: center; gap: 6px; }
+.fails-head { border: 0; background: none; color: var(--warn); padding: 0; flex: 1; text-align: left; font-size: 12px; }
+.retry { border: 1px solid var(--warn); background: var(--panel); color: var(--warn); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+.fail { margin-top: 4px; word-break: break-all; }
+.fail a { color: var(--text); }
+.fail span { color: var(--muted); }
 
 /* Tocador */
 #player { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 20px; display: flex; flex-direction: column; gap: 6px; }
@@ -369,6 +378,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     var row = el('div', 'msg user'), bubble = el('div', 'bubble');
     bubble.textContent = text + (attachmentName ? (text ? '\n\n' : '') + '📎 ' + attachmentName : '');
     row.appendChild(bubble); $('messages').appendChild(row); scrollDown();
+    return bubble;
   }
   function addAssistant() {
     hideEmpty();
@@ -425,11 +435,24 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     scrollDown();
   }
 
+  // Fila da página: mandar outra mensagem (ex.: vários links seguidos) enquanto uma está em andamento.
+  var pending = [];
   function send(payload, shownText, attachmentName) {
-    if (state.busy) return;
-    state.busy = true; $('send').disabled = true;
-    if (shownText != null) addUser(shownText, attachmentName);
+    if (state.busy) {
+      var queued = shownText != null ? addUser(shownText, attachmentName) : null;
+      var mark = queued ? el('div', 'meta', '⏳ na fila') : null;
+      if (mark) queued.appendChild(mark);
+      pending.push({ payload: payload, shownText: shownText, mark: mark });
+      return;
+    }
+    dispatch(payload, shownText, attachmentName, false);
+  }
+  function dispatch(payload, shownText, attachmentName, alreadyShown) {
+    state.busy = true;
+    if (shownText != null && !alreadyShown) addUser(shownText, attachmentName);
     var body = addAssistant(), started = Date.now();
+    // Biblioteca: a playlist cresce na tela enquanto baixa.
+    var libPoll = state.info && state.info.biblioteca ? setInterval(loadLibrary, 5000) : null;
     body.innerHTML = '<div class="thinking"><span class="dots"><span></span><span></span><span></span></span><span class="secs">pensando…</span></div>';
     // Tarefas longas (ex.: playlist inteira) publicam o andamento: aparece no lugar de "pensando…".
     var progress = { texto: '' };
@@ -463,7 +486,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         if (state.info && state.info.biblioteca && (reply.arquivos || []).length) loadLibrary();
       })
       .catch(function (err) { renderReply(body, { erro: '⚠️ ' + err.message }); })
-      .then(function () { clearInterval(timer); clearInterval(poll); state.busy = false; $('send').disabled = false; $('input').focus(); });
+      .then(function () {
+        clearInterval(timer); clearInterval(poll); if (libPoll) clearInterval(libPoll);
+        state.busy = false;
+        var next = pending.shift();
+        if (next) { if (next.mark) next.mark.remove(); dispatch(next.payload, next.shownText, null, true); }
+        else $('input').focus();
+      });
   }
   function addUserBefore(node, text) {
     var row = el('div', 'msg user'), bubble = el('div', 'bubble'); bubble.textContent = text; row.appendChild(bubble);
@@ -575,7 +604,26 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   };
 
   // ── Biblioteca e tocador ───────────────────────────────────────────────────
-  var lib = { list: [], open: {}, queue: [], order: [], pos: -1, shuffle: false, entryId: null };
+  var lib = { list: [], open: {}, failsOpen: {}, queue: [], order: [], pos: -1, shuffle: false, entryId: null };
+
+  /** Baixa de novo só os links que falharam (direto no serviço, sem passar pelo modelo) e soma à mesma playlist. */
+  function retryFailed(entry, button) {
+    button.disabled = true;
+    var tick = setInterval(function () {
+      api('/api/progresso').then(function (p) {
+        button.textContent = p && p.total ? '↻ ' + p.feitos + ' de ' + p.total + '…' : '↻ Começando…';
+      }).catch(function () {});
+      loadLibrary();
+    }, 2500);
+    api('/api/biblioteca/' + entry.id + '/tentar-de-novo', { method: 'POST' })
+      .then(function (r) {
+        clearInterval(tick);
+        if (!r.ok) { button.disabled = false; button.textContent = '⚠️ ' + (r.erro || 'falhou'); return; }
+        lib.failsOpen[entry.id] = r.falhas.length > 0;
+        return loadLibrary();
+      })
+      .catch(function (err) { clearInterval(tick); button.disabled = false; button.textContent = '⚠️ ' + err.message; });
+  }
   var FORMAT_LABEL = { mp3: 'MP3', wav: 'WAV', mp4: 'Vídeo' };
 
   function setLibOpen(open) {
@@ -606,8 +654,42 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       del.onclick = function () {
         api('/api/biblioteca/' + entry.id, { method: 'DELETE' }).then(loadLibrary).catch(function () {});
       };
-      head.appendChild(open); head.appendChild(play); head.appendChild(del);
+      head.appendChild(open); head.appendChild(play);
+      if (entry.faixas.length) {
+        // A playlist inteira de uma vez: .zip (qualquer navegador) ou direto numa pasta (Chrome/Edge em localhost).
+        var zip = el('a', 'mini', '⬇️'); zip.title = 'Baixar a playlist inteira (.zip)';
+        zip.href = fileUrl('/api/biblioteca/' + entry.id + '/zip'); zip.setAttribute('download', '');
+        head.appendChild(zip);
+        if (window.showDirectoryPicker && window.isSecureContext) {
+          var folder = el('button', 'mini', '📁'); folder.type = 'button'; folder.title = 'Salvar a playlist inteira numa pasta';
+          folder.onclick = function () {
+            var status = el('div', 'lib-empty'); pl.appendChild(status);
+            saveToFolder(entry.faixas.map(function (t) { return { url: t.url, nome: t.arquivo }; }), status);
+          };
+          head.appendChild(folder);
+        }
+      }
+      head.appendChild(del);
       pl.appendChild(head);
+      if ((entry.falhas || []).length) {
+        var fails = el('div', 'fails');
+        var summary = el('button', 'fails-head');
+        summary.type = 'button';
+        summary.textContent = '⚠️ ' + entry.falhas.length + ' não baixaram' + (lib.failsOpen[entry.id] ? ' ▴' : ' ▾');
+        summary.onclick = function () { lib.failsOpen[entry.id] = !lib.failsOpen[entry.id]; renderLibrary(); };
+        var retry = el('button', 'retry', '↻ Tentar de novo');
+        retry.type = 'button';
+        retry.onclick = function () { retryFailed(entry, retry); };
+        var row = el('div', 'fails-row'); row.appendChild(summary); row.appendChild(retry); fails.appendChild(row);
+        if (lib.failsOpen[entry.id]) {
+          entry.falhas.forEach(function (f) {
+            var item = el('div', 'fail');
+            item.innerHTML = (f.link ? '<a href="' + esc(f.link) + '" target="_blank" rel="noopener noreferrer">' + esc(f.link) + '</a>' : '(sem link)') + ' <span>' + esc(f.motivo) + '</span>';
+            fails.appendChild(item);
+          });
+        }
+        pl.appendChild(fails);
+      }
       if (lib.open[entry.id]) {
         var tracks = el('div', 'tracks');
         entry.faixas.forEach(function (track, i) {

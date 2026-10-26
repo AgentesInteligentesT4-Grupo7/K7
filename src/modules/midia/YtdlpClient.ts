@@ -8,6 +8,8 @@ export type MediaFormat = 'mp3' | 'wav' | 'mp4';
 
 export interface DownloadRequest {
   url: string;
+  /** Vários vídeos avulsos num só trabalho (vários links colados, ou tentar de novo os que falharam). */
+  links?: string[];
   formato: MediaFormat;
   playlist: boolean;
   /** Ausente = a playlist inteira. */
@@ -67,34 +69,54 @@ export interface YtdlpOptions {
 export class YtdlpClient {
   constructor(private readonly options: YtdlpOptions) {}
 
-  async download(request: DownloadRequest, targetDir: string, onProgress?: (progress: string) => void): Promise<DownloadResult> {
+  /**
+   * Pede o download e acompanha até terminar. Cada arquivo é copiado para `targetDir` assim que fica pronto
+   * (`onUpdate` avisa a cada um, com os IDs pulados, o título e a ordem): a biblioteca cresce enquanto baixa.
+   */
+  async download(request: DownloadRequest, targetDir: string, onProgress?: (progress: string) => void, onUpdate?: (partial: DownloadResult) => void): Promise<DownloadResult> {
     const { id } = (await this.json('/baixar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: request.url,
+        ...(request.links?.length ? { links: request.links } : {}),
         formato: request.formato,
         playlist: request.playlist,
         ...(request.maxItens ? { max_itens: request.maxItens } : {}),
         ...(request.pular?.length ? { pular: request.pular } : {}),
       }),
     })) as { id: string };
+    const saved: DownloadResult['files'] = [];
+    const copied = new Set<string>();
+    const result = (job: Job): DownloadResult => ({
+      files: [...saved],
+      failures: job.falhas ?? [],
+      skipped: job.pulados ?? [],
+      ...(job.titulo ? { title: job.titulo } : {}),
+      order: job.ordem ?? [],
+    });
+    // Copia os que ficaram prontos desde a última consulta.
+    const collect = async (job: Job) => {
+      let added = false;
+      for (const file of job.arquivos) {
+        if (copied.has(file.nome)) continue;
+        fs.mkdirSync(targetDir, { recursive: true });
+        saved.push({ path: await this.fetchFile(id, file.nome, file.bytes, targetDir), ...(file.id ? { id: file.id } : {}) });
+        copied.add(file.nome);
+        added = true;
+      }
+      if (added || job.status !== 'rodando') onUpdate?.(result(job));
+    };
     try {
-      const job = await this.wait(id, onProgress);
-      const failures = job.falhas ?? [];
+      const job = await this.wait(id, onProgress, collect);
       if (job.status === 'erro') {
-        const links = failures
+        const links = (job.falhas ?? [])
           .filter((f) => f.link)
           .map((f) => `\n- ${f.link}: ${f.motivo}`)
           .join('');
         throw new UserFacingError(`Não consegui baixar: ${YtdlpClient.friendly(job.erro)}${links}`);
       }
-      fs.mkdirSync(targetDir, { recursive: true });
-      const saved: DownloadResult['files'] = [];
-      for (const file of job.arquivos) {
-        saved.push({ path: await this.fetchFile(id, file.nome, file.bytes, targetDir), ...(file.id ? { id: file.id } : {}) });
-      }
-      return { files: saved, failures, skipped: job.pulados ?? [], ...(job.titulo ? { title: job.titulo } : {}), order: job.ordem ?? [] };
+      return result(job);
     } finally {
       await fetch(`${this.options.baseUrl}/trabalhos/${id}`, { method: 'DELETE' }).catch(() => undefined);
     }
@@ -105,12 +127,13 @@ export class YtdlpClient {
     return health.yt_dlp ?? '?';
   }
 
-  private async wait(id: string, onProgress?: (progress: string) => void): Promise<Job> {
+  private async wait(id: string, onProgress?: (progress: string) => void, onPoll?: (job: Job) => Promise<void>): Promise<Job> {
     const deadline = Date.now() + this.options.timeoutMs;
     let last = '';
     for (;;) {
       const job = (await this.json(`/trabalhos/${id}`, { method: 'GET' })) as Job;
       if (job.progresso !== last) onProgress?.((last = job.progresso));
+      await onPoll?.(job);
       if (job.status !== 'rodando') return job;
       if (Date.now() > deadline) throw new UserFacingError(`O download passou de ${Math.round(this.options.timeoutMs / 60_000)} min e foi interrompido (MIDIA_TIMEOUT_MS).`);
       await new Promise((resolve) => setTimeout(resolve, this.options.pollMs ?? 2_000));

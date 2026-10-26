@@ -23,6 +23,7 @@ import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createSearchProvider, createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { DownloadMediaTool } from '../modules/midia/DownloadMediaTool.js';
+import type { MediaDownloader } from '../modules/midia/MediaDownloader.js';
 import { MediaLibrary } from '../modules/midia/MediaLibrary.js';
 import { YtdlpClient } from '../modules/midia/YtdlpClient.js';
 import { CharacterReferenceFinder } from '../modules/imagens/CharacterReference.js';
@@ -101,6 +102,8 @@ export interface Core {
   attachments?: AttachmentService;
   /** Módulo midia: biblioteca dos downloads (barra lateral e tocador do chat). */
   library?: MediaLibrary;
+  /** Módulo midia: downloads direto pelo chat (ex.: tentar de novo os links que falharam). */
+  mediaDownloader?: MediaDownloader;
   documents: DocumentExtractor;
   /** Cria o Facade ligado ao `IOutputHandler` do canal. */
   createController(output: IOutputHandler): AgentController;
@@ -152,10 +155,13 @@ export function createCore(config: Config, options: CoreOptions): Core {
   if (modules.has('pesquisa-web')) for (const tool of createWebTools(config)) registry.register(tool);
   // Módulo midia: downloads do YouTube pelo serviço yt-dlp (servicos/ytdlp), salvos em <workspace>/downloads.
   let library: MediaLibrary | undefined;
+  let mediaDownloader: MediaDownloader | undefined;
   if (modules.has('midia')) {
     const ytdlp = new YtdlpClient(config.midia);
     library = new MediaLibrary(config.workspaceDir);
-    registry.register(new DownloadMediaTool(ytdlp, config.workspaceDir, config.midia.maxItems, library));
+    const downloadTool = new DownloadMediaTool(ytdlp, config.workspaceDir, config.midia.maxItems, library);
+    mediaDownloader = downloadTool.downloader;
+    registry.register(downloadTool);
     void checkYtdlp(ytdlp, config.midia.baseUrl);
   }
   // Módulo anexos: biblioteca ao lado do banco do perfil; a retenção roda só no processo principal (o bot).
@@ -270,6 +276,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     ...(voiceClone && voice ? { voiceTuner: new VoiceTuner(voiceClone, new VoiceMirror(voiceClone, stt, tmp)) } : {}),
     attachments,
     library,
+    mediaDownloader,
     documents: new DocumentExtractor(),
     createController: (output) =>
       new AgentController({

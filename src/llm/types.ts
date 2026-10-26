@@ -29,7 +29,8 @@ export interface ChatMessage {
 /** JSON Schema simplificado aceito nas definições de ferramentas. */
 export interface JsonSchema {
   type: 'object';
-  properties: Record<string, { type: string; description?: string; enum?: string[] }>;
+  /** `items`: tipo dos elementos quando `type` é "array" (ex.: lista de links). */
+  properties: Record<string, { type: string; description?: string; enum?: string[]; items?: { type: string } }>;
   required?: string[];
   additionalProperties?: boolean;
 }
