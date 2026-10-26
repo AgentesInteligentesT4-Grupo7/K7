@@ -1189,19 +1189,17 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       var tools = el('div', 'folder-tools');
       if (entry.faixas.length && state.info && state.info.nivelar) {
         var busy = jobRunning();
+        // Quem cria a pasta "nivelados" sempre nivela e padroniza junto (nada de cópia nivelada com o nome antigo).
         var both = el('button', 'retry', '🔊✏️ Nivelar e padronizar'); both.type = 'button'; both.disabled = busy;
-        both.title = 'Nivela o volume e dá o nome "Título - Artista" (com etiquetas) de uma vez: tudo sai em "nivelados", os originais ficam como estão';
+        both.title = 'Nivela o volume e dá o nome "Título - Artista" (com etiquetas) de uma vez: tudo sai em "nivelados", na mesma estrutura de subpastas; os originais ficam como estão';
         both.onclick = function () { levelFolder(true); };
-        var level = el('button', 'retry', '🔊 Só nivelar'); level.type = 'button'; level.disabled = busy;
-        level.title = 'Deixa todos no mesmo volume, inclusive nas subpastas; as versões niveladas vão para "nivelados", na mesma estrutura';
-        level.onclick = function () { levelFolder(false); };
-        var rename = el('button', 'retry', '✏️ Só padronizar nomes'); rename.type = 'button'; rename.disabled = busy;
+        var rename = el('button', 'retry', '✏️ Padronizar nomes'); rename.type = 'button'; rename.disabled = busy;
         rename.title = '"Título - Artista", sem "(2)" nem "(Official Video)", com as etiquetas de título e artista, na própria pasta; repetidas vão para "duplicados"';
         rename.onclick = standardizeFolder;
         var analyze = el('button', 'retry', '📊 Analisar volume'); analyze.type = 'button'; analyze.disabled = busy;
         analyze.title = 'Só mede o volume de cada música (como o MP3Gain): mostra quais estão baixas ou altas, sem alterar nada';
         analyze.onclick = analyzeFolder;
-        tools.appendChild(both); tools.appendChild(level); tools.appendChild(rename); tools.appendChild(analyze);
+        tools.appendChild(both); tools.appendChild(rename); tools.appendChild(analyze);
       }
       var rescan = el('button', 'retry', '↻ Reler'); rescan.type = 'button'; rescan.onclick = function () { scanFolder(); };
       var change = el('button', 'retry', 'Trocar pasta'); change.type = 'button'; change.onclick = pickFolder;
