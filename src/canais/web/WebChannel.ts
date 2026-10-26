@@ -3,9 +3,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { AgentController } from '../../agent/AgentController.js';
 import { ProgressBoard } from '../../agent/ProgressBoard.js';
 import { publishProgress } from '../../modules/midia/DownloadMediaTool.js';
+import { AudioLeveler, LEVELABLE } from '../../modules/midia/AudioLeveler.js';
 import type { MediaDownloader } from '../../modules/midia/MediaDownloader.js';
 import type { AgentInput } from '../../agent/types.js';
 import type { Core } from '../../app/createCore.js';
@@ -186,7 +189,21 @@ export class WebChannel {
         return this.json(res, { texto: progress?.text ?? null, feitos: progress?.done ?? null, total: progress?.total ?? null });
       }
       if (req.method === 'GET' && url.pathname === '/api/biblioteca') return this.json(res, this.library(userId));
-      const retry = /^\/api\/biblioteca\/([0-9a-f]{24})\/tentar-de-novo$/.exec(url.pathname);
+      // Nivelar um arquivo da pasta do visitante: o corpo é o arquivo; a resposta, a versão nivelada (nada fica guardado).
+      if (req.method === 'POST' && url.pathname === '/api/nivelar') {
+        const leveler = this.core.leveler;
+        if (!leveler) throw new HttpError(404, 'Nivelamento desligado nesta fita');
+        const name = path.basename(url.searchParams.get('nome') ?? '');
+        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
+        return await this.enqueue(userId, () => this.proxyLevel(leveler, req, res, name));
+      }
+      const levelEntry = /^\/api\/biblioteca\/([0-9a-f]{24})\/nivelar$/.exec(url.pathname);
+      if (req.method === 'POST' && levelEntry) {
+        const leveler = this.core.leveler;
+        if (!leveler || !this.core.library) throw new HttpError(404, 'Nivelamento desligado nesta fita');
+        return this.json(res, await this.enqueue(userId, () => this.levelEntry(leveler, userId, levelEntry[1]!)));
+      }
+      const retry =/^\/api\/biblioteca\/([0-9a-f]{24})\/tentar-de-novo$/.exec(url.pathname);
       if (req.method === 'POST' && retry) {
         const downloader = this.core.mediaDownloader;
         if (!downloader) throw new HttpError(404, 'Downloads desligados nesta fita');
@@ -349,6 +366,7 @@ export class WebChannel {
       vozes: this.options.public ? null : (this.core.voiceClone?.list().map((v) => v.name) ?? null),
       publico: this.options.public === true,
       biblioteca: Boolean(this.core.library),
+      nivelar: Boolean(this.core.leveler),
     };
   }
 
@@ -461,8 +479,50 @@ export class WebChannel {
       formato: entry.formato,
       criadoEm: entry.criadoEm,
       falhas: entry.falhas ?? [],
+      nivelada: entry.nivelada === true,
       faixas: entry.faixas.map((track) => ({ nome: track.nome, arquivo: track.arquivo, url: `/api/biblioteca/${entry.id}/${this.core.library!.indexOf(entry.id, track.arquivo)}` })),
     }));
+  }
+
+  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string): Promise<void> {
+    let response: Response;
+    try {
+      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name);
+    } catch (error) {
+      if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
+      throw error;
+    }
+    const volumes = AudioLeveler.volumes(response);
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      ...(volumes.before !== null ? { 'x-volume-antes': String(volumes.before) } : {}),
+      ...(volumes.after !== null ? { 'x-volume-depois': String(volumes.after) } : {}),
+    });
+    await pipeline(Readable.fromWeb(response.body as never), res);
+  }
+
+  /** Nivela no servidor todas as faixas de uma playlist baixada (no lugar), com o andamento na barra de %. */
+  private async levelEntry(leveler: AudioLeveler, userId: string, entryId: string) {
+    const library = this.core.library!;
+    const files = library.files(userId, entryId).filter((f) => LEVELABLE.has(path.extname(f).toLowerCase()));
+    if (!files.length) return { ok: false, erro: 'Playlist não encontrada ou sem faixas.' };
+    const problems: string[] = [];
+    try {
+      for (const [i, file] of files.entries()) {
+        ProgressBoard.set(userId, `🔊 Nivelando ${i + 1} de ${files.length}…`, { done: i, total: files.length });
+        try {
+          await leveler.levelFile(file);
+        } catch (error) {
+          problems.push(`${path.basename(file)}: ${error instanceof UserFacingError ? error.userMessage : errorMessage(error)}`);
+        }
+      }
+    } finally {
+      ProgressBoard.clear(userId);
+    }
+    library.markLeveled(userId, entryId, problems.length === 0);
+    return { ok: true, niveladas: files.length - problems.length, problemas: problems };
   }
 
   private async retryFailed(downloader: MediaDownloader, userId: string, entryId: string) {

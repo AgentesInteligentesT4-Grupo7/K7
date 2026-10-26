@@ -17,9 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
 
+import json
+import subprocess
+
 import yt_dlp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 DOWNLOADS = Path("/downloads")
@@ -248,6 +253,81 @@ threading.Thread(target=cleanup_old_jobs, daemon=True).start()
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "yt_dlp": yt_dlp.version.__version__}
+
+
+# ── Nivelamento de volume (EBU R128, ffmpeg loudnorm em duas passadas) ─────────
+TARGET_LUFS = float(os.environ.get("NIVELAR_LUFS", "-14") or -14)  # padrão das plataformas de música
+LEVEL_DIR = Path("/tmp/nivelar")
+MAX_LEVEL_BYTES = 2 * 1024**3
+# Codec de áudio por extensão: o arquivo nivelado sai no mesmo formato. Vídeo: a imagem é copiada, só o áudio muda.
+AUDIO_CODECS = {
+    ".mp3": ["-c:a", "libmp3lame", "-b:a", "192k"],
+    ".wav": ["-c:a", "pcm_s16le"],
+    ".m4a": ["-c:a", "aac", "-b:a", "192k"],
+    ".aac": ["-c:a", "aac", "-b:a", "192k"],
+    ".ogg": ["-c:a", "libvorbis", "-q:a", "6"],
+    ".opus": ["-c:a", "libopus", "-b:a", "160k"],
+    ".flac": ["-c:a", "flac"],
+    ".mp4": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"],
+    ".mkv": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"],
+    ".webm": ["-c:v", "copy", "-c:a", "libopus", "-b:a", "160k"],
+    ".mov": ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"],
+}
+
+
+def level_file(source: Path, target: Path) -> dict:
+    """Mede o volume (1ª passada) e aplica a correção exata (2ª), sem distorcer. Devolve o volume antes e depois."""
+    base = f"loudnorm=I={TARGET_LUFS}:TP=-1.5:LRA=11"
+    probe = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(source), "-af", f"{base}:print_format=json", "-vn", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=1800,
+    )
+    found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", probe.stderr)
+    if probe.returncode != 0 or not found:
+        raise HTTPException(422, "não consegui ler o áudio desse arquivo")
+    m = json.loads(found.group(0))
+    measured = (
+        f"{base}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
+        f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true"
+    )
+    codec = AUDIO_CODECS[source.suffix.lower()]
+    run = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(source), "-map", "0", "-map_metadata", "0", "-af", measured, "-ar", "48000" if source.suffix.lower() in {".opus", ".webm"} else "44100", *codec, str(target)],
+        capture_output=True, text=True, timeout=3600,
+    )
+    if run.returncode != 0 or not target.is_file():
+        raise HTTPException(500, f"ffmpeg falhou ao nivelar: {run.stderr[-300:]}")
+    return {"antes": float(m["input_i"]), "depois": TARGET_LUFS}
+
+
+@app.post("/nivelar")
+async def level(request: Request, nome: str) -> FileResponse:
+    """Recebe o arquivo no corpo (nome= dá a extensão) e devolve a versão nivelada no mesmo formato."""
+    ext = Path(nome).suffix.lower()
+    if ext not in AUDIO_CODECS:
+        raise HTTPException(415, f"formato {ext or '(sem extensão)'} não suportado para nivelar")
+    work = LEVEL_DIR / uuid.uuid4().hex
+    work.mkdir(parents=True)
+    source, target = work / f"in{ext}", work / f"out{ext}"
+    size = 0
+    with source.open("wb") as out:
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_LEVEL_BYTES:
+                shutil.rmtree(work, ignore_errors=True)
+                raise HTTPException(413, "arquivo grande demais para nivelar (até 2 GB)")
+            out.write(chunk)
+    try:
+        result = await run_in_threadpool(level_file, source, target)
+    except Exception:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+    return FileResponse(
+        target,
+        filename=Path(nome).name,
+        headers={"X-Volume-Antes": f"{result['antes']:.1f}", "X-Volume-Depois": f"{result['depois']:.1f}"},
+        background=BackgroundTask(shutil.rmtree, work, ignore_errors=True),
+    )
 
 
 @app.post("/baixar")

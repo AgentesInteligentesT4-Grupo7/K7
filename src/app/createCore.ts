@@ -23,6 +23,7 @@ import { StyleCatalog } from '../personas/Styles.js';
 import { loadHttpTools } from '../modules/http/loadHttpTools.js';
 import { createSearchProvider, createWebTools } from '../modules/pesquisa-web/createWebTools.js';
 import { DownloadMediaTool } from '../modules/midia/DownloadMediaTool.js';
+import { AudioLeveler } from '../modules/midia/AudioLeveler.js';
 import type { MediaDownloader } from '../modules/midia/MediaDownloader.js';
 import { MediaLibrary } from '../modules/midia/MediaLibrary.js';
 import { YtdlpClient } from '../modules/midia/YtdlpClient.js';
@@ -104,6 +105,8 @@ export interface Core {
   library?: MediaLibrary;
   /** Módulo midia: downloads direto pelo chat (ex.: tentar de novo os links que falharam). */
   mediaDownloader?: MediaDownloader;
+  /** Módulo midia: nivelamento de volume pelo serviço (ffmpeg). */
+  leveler?: AudioLeveler;
   documents: DocumentExtractor;
   /** Cria o Facade ligado ao `IOutputHandler` do canal. */
   createController(output: IOutputHandler): AgentController;
@@ -156,11 +159,13 @@ export function createCore(config: Config, options: CoreOptions): Core {
   // Módulo midia: downloads do YouTube pelo serviço yt-dlp (servicos/ytdlp), salvos em <workspace>/downloads.
   let library: MediaLibrary | undefined;
   let mediaDownloader: MediaDownloader | undefined;
+  let leveler: AudioLeveler | undefined;
   if (modules.has('midia')) {
     const ytdlp = new YtdlpClient(config.midia);
     library = new MediaLibrary(config.workspaceDir);
     const downloadTool = new DownloadMediaTool(ytdlp, config.workspaceDir, config.midia.maxItems, library);
     mediaDownloader = downloadTool.downloader;
+    leveler = new AudioLeveler(config.midia);
     registry.register(downloadTool);
     void checkYtdlp(ytdlp, config.midia.baseUrl);
   }
@@ -277,6 +282,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
     attachments,
     library,
     mediaDownloader,
+    leveler,
     documents: new DocumentExtractor(),
     createController: (output) =>
       new AgentController({

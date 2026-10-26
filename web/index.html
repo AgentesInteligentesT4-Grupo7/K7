@@ -143,6 +143,11 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 .track .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track.playing { color: var(--accent); font-weight: 600; }
 .lib-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
+.folder-card { border: 1px dashed var(--line); margin-bottom: 10px; padding-bottom: 4px; }
+.folder-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 8px 4px; }
+.folder-tools .retry { border-color: var(--line); color: var(--text); }
+.folder-tools .retry:hover { border-color: var(--accent); }
+.folder-status { font-size: 12px; color: var(--muted); padding: 0 10px 4px; min-height: 0; }
 .pl-head a.mini { text-decoration: none; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
 .pl-head a.mini:hover { background: var(--user); }
 .fails { margin: 0 8px 6px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
@@ -604,7 +609,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   };
 
   // ── Biblioteca e tocador ───────────────────────────────────────────────────
-  var lib = { list: [], open: {}, failsOpen: {}, queue: [], order: [], pos: -1, shuffle: false, entryId: null };
+  var lib = { list: [], open: {}, failsOpen: {}, forceSave: {}, queue: [], order: [], pos: -1, shuffle: false, entryId: null, folder: null, localEntry: null };
 
   /** Baixa de novo só os links que falharam (direto no serviço, sem passar pelo modelo) e soma à mesma playlist. */
   function retryFailed(entry, button) {
@@ -635,18 +640,236 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   $('lib-close').onclick = function () { setLibOpen(false); };
 
   function loadLibrary() {
-    return api('/api/biblioteca').then(function (list) { lib.list = list; renderLibrary(); }).catch(function () {});
+    // Depois de cada leitura, grava na pasta escolhida o que ainda não está lá.
+    return api('/api/biblioteca').then(function (list) { lib.list = list; renderLibrary(); autoSave(); }).catch(function () {});
+  }
+
+  // ── Pasta do computador de quem usa (Chrome/Edge em localhost ou https) ─────
+  // Escolhida uma vez e lembrada (IndexedDB): os downloads novos são gravados nela; o que já está nela vira
+  // uma playlist que toca direto do computador e pode ser nivelada (a versão nivelada vai para "nivelados").
+  var MEDIA_FILE = /\.(mp3|wav|m4a|aac|ogg|opus|flac|mp4|mkv|webm|mov)$/i;
+  var VIDEO_FILE = /\.(mp4|mkv|webm|mov)$/i;
+  var FOLDER_KEY = 'pasta:' + (base || '/');
+  var canPickFolder = Boolean(window.showDirectoryPicker && window.isSecureContext);
+
+  function idb(mode, fn) {
+    return new Promise(function (resolve, reject) {
+      var open = indexedDB.open('k7', 1);
+      open.onupgradeneeded = function () { open.result.createObjectStore('kv'); };
+      open.onerror = function () { reject(open.error); };
+      open.onsuccess = function () {
+        var tx = open.result.transaction('kv', mode), req = fn(tx.objectStore('kv'));
+        tx.oncomplete = function () { resolve(req && req.result); };
+        tx.onerror = function () { reject(tx.error); };
+      };
+    });
+  }
+
+  function restoreFolder() {
+    if (!canPickFolder || !window.indexedDB) return Promise.resolve();
+    return idb('readonly', function (store) { return store.get(FOLDER_KEY); }).then(function (saved) {
+      if (!saved) return;
+      lib.folder = { handle: saved.handle, name: saved.handle.name, pickedAt: saved.pickedAt, granted: false, files: [], saved: {}, status: '' };
+      return saved.handle.queryPermission({ mode: 'readwrite' }).then(function (state) {
+        lib.folder.granted = state === 'granted';
+        return lib.folder.granted ? scanFolder() : renderLibrary();
+      });
+    }).catch(function () {});
+  }
+
+  function pickFolder() {
+    window.showDirectoryPicker({ mode: 'readwrite' }).then(function (handle) {
+      lib.folder = { handle: handle, name: handle.name, pickedAt: Date.now(), granted: true, files: [], saved: {}, status: '' };
+      idb('readwrite', function (store) { return store.put({ handle: handle, pickedAt: lib.folder.pickedAt }, FOLDER_KEY); }).catch(function () {});
+      return scanFolder();
+    }).catch(function () {});
+  }
+
+  /** Depois de recarregar a página, o navegador pede de novo a permissão (precisa de um clique). */
+  function authorizeFolder() {
+    lib.folder.handle.requestPermission({ mode: 'readwrite' }).then(function (state) {
+      lib.folder.granted = state === 'granted';
+      if (lib.folder.granted) { scanFolder(); autoSave(); }
+    }).catch(function () {});
+  }
+
+  function forgetFolder() {
+    lib.folder = null; lib.localEntry = null;
+    idb('readwrite', function (store) { return store.delete(FOLDER_KEY); }).catch(function () {});
+    renderLibrary();
+  }
+
+  /** Lê os áudios e vídeos da pasta (só o primeiro nível) e monta a playlist local. */
+  function scanFolder() {
+    var folder = lib.folder;
+    if (!folder || !folder.granted) return Promise.resolve();
+    var files = [], it = folder.handle.values();
+    var next = function () {
+      return it.next().then(function (r) {
+        if (r.done) return;
+        if (r.value.kind === 'file' && MEDIA_FILE.test(r.value.name)) files.push({ nome: r.value.name.replace(/\.[^.]+$/, ''), arquivo: r.value.name, handle: r.value });
+        return next();
+      });
+    };
+    return next().then(function () {
+      files.sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }); });
+      folder.files = files;
+      files.forEach(function (f) { folder.saved[f.arquivo] = true; });
+      lib.localEntry = { id: 'pasta-local', titulo: '📁 ' + folder.name, formato: 'local', faixas: files, local: true };
+      renderLibrary();
+    }).catch(function (err) { folder.status = '⚠️ ' + err.message; renderLibrary(); });
+  }
+
+  function folderStatus(text) {
+    if (!lib.folder) return;
+    lib.folder.status = text;
+    var node = $('folder-status');
+    if (node) node.textContent = text; else renderLibrary();
+  }
+
+  function authHeaders(extra) {
+    var headers = { 'X-Visitante': state.visitor };
+    if (state.token) headers['X-Token'] = state.token;
+    for (var k in extra || {}) headers[k] = extra[k];
+    return headers;
+  }
+
+  /**
+   * Grava na pasta as faixas que ainda não estão lá: das playlists baixadas depois de escolher a pasta
+   * (ou marcadas pelo botão 📁 da playlist). Uma por vez; arquivo com o mesmo nome não é gravado de novo.
+   */
+  function autoSave() {
+    var folder = lib.folder;
+    if (!folder || !folder.granted || lib.saving) return;
+    var todo = [];
+    lib.list.forEach(function (entry) {
+      if (Date.parse(entry.criadoEm) < folder.pickedAt && !lib.forceSave[entry.id]) return;
+      entry.faixas.forEach(function (t) { if (!folder.saved[t.arquivo]) todo.push(t); });
+    });
+    if (!todo.length) return;
+    lib.saving = true;
+    var i = 0, fresh = 0;
+    var one = function () {
+      if (i >= todo.length) {
+        lib.saving = false;
+        folderStatus(fresh ? '💾 ' + fresh + ' arquivo(s) gravados na pasta' : '');
+        return scanFolder().then(autoSave);
+      }
+      var track = todo[i++];
+      folderStatus('💾 Gravando na pasta ' + i + ' de ' + todo.length + '…');
+      return folder.handle.getFileHandle(track.arquivo)
+        .then(function () { folder.saved[track.arquivo] = true; }, function () {
+          return fetch(fileUrl(track.url)).then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' em ' + track.arquivo);
+            return folder.handle.getFileHandle(track.arquivo, { create: true })
+              .then(function (h) { return h.createWritable(); })
+              .then(function (w) { return res.body.pipeTo(w); });
+          }).then(function () { folder.saved[track.arquivo] = true; fresh++; });
+        })
+        .catch(function (err) { folder.saved[track.arquivo] = true; folderStatus('⚠️ ' + err.message); })
+        .then(one);
+    };
+    one();
+  }
+
+  /** Nivela os arquivos da pasta: cada um vai ao servidor, volta nivelado e é gravado em "nivelados" (o original fica). */
+  function levelFolder(button) {
+    var folder = lib.folder, files = folder.files.slice();
+    if (!files.length) return;
+    button.disabled = true;
+    folder.handle.getDirectoryHandle('nivelados', { create: true }).then(function (out) {
+      var i = 0, problems = 0;
+      var one = function () {
+        if (i >= files.length) {
+          button.disabled = false;
+          folderStatus('🔊 ' + (files.length - problems) + ' arquivo(s) nivelados em "nivelados"' + (problems ? ' · ' + problems + ' com problema' : ''));
+          return;
+        }
+        var item = files[i++];
+        folderStatus('🔊 Nivelando ' + i + ' de ' + files.length + ': ' + item.nome);
+        return item.handle.getFile().then(function (file) {
+          return fetch(base + '/api/nivelar?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file });
+        }).then(function (res) {
+          if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
+          return out.getFileHandle(item.arquivo, { create: true })
+            .then(function (h) { return h.createWritable(); })
+            .then(function (w) { return res.body.pipeTo(w); });
+        }).catch(function () { problems++; }).then(one);
+      };
+      one();
+    }).catch(function (err) { button.disabled = false; folderStatus('⚠️ ' + err.message); });
+  }
+
+  /** Nivela no servidor todas as faixas de uma playlist baixada. */
+  function levelEntry(entry, button) {
+    button.disabled = true;
+    var tick = setInterval(function () {
+      api('/api/progresso').then(function (p) { if (p && p.total) button.textContent = '🔊 ' + (p.feitos + 1) + '/' + p.total; }).catch(function () {});
+    }, 2000);
+    api('/api/biblioteca/' + entry.id + '/nivelar', { method: 'POST' })
+      .then(function (r) { clearInterval(tick); if (!r.ok) { button.disabled = false; button.textContent = '⚠️'; button.title = r.erro || 'falhou'; return; } return loadLibrary(); })
+      .catch(function (err) { clearInterval(tick); button.disabled = false; button.textContent = '⚠️'; button.title = err.message; });
+  }
+
+  function renderFolder(box) {
+    if (!canPickFolder) {
+      box.appendChild(el('div', 'lib-empty', '📁 Para gravar numa pasta do computador, abra pelo 127.0.0.1 no Chrome ou no Edge.'));
+      return;
+    }
+    var card = el('div', 'pl folder-card');
+    var folder = lib.folder;
+    if (!folder) {
+      var pick = el('button', 'pl-open');
+      pick.type = 'button';
+      pick.innerHTML = '<span class="pl-title">📁 Escolher pasta</span><span class="pl-meta">os downloads vão direto para ela; o que já tem nela toca e pode ser nivelado</span>';
+      pick.onclick = pickFolder;
+      card.appendChild(pick);
+    } else if (!folder.granted) {
+      var auth = el('button', 'pl-open');
+      auth.type = 'button';
+      auth.innerHTML = '<span class="pl-title">📁 ' + esc(folder.name) + '</span><span class="pl-meta">clique para autorizar a pasta de novo</span>';
+      auth.onclick = authorizeFolder;
+      card.appendChild(auth);
+    } else {
+      var entry = lib.localEntry || { id: 'pasta-local', titulo: '📁 ' + folder.name, formato: 'local', faixas: [], local: true };
+      appendEntry(card, entry);
+      var tools = el('div', 'folder-tools');
+      if (entry.faixas.length && state.info && state.info.nivelar) {
+        var level = el('button', 'retry', '🔊 Nivelar volume'); level.type = 'button';
+        level.title = 'Deixa todos no mesmo volume; as versões niveladas vão para a subpasta "nivelados"';
+        level.onclick = function () { levelFolder(level); };
+        tools.appendChild(level);
+      }
+      var rescan = el('button', 'retry', '↻ Reler'); rescan.type = 'button'; rescan.onclick = function () { scanFolder(); };
+      var change = el('button', 'retry', 'Trocar pasta'); change.type = 'button'; change.onclick = pickFolder;
+      var forget = el('button', 'retry', 'Esquecer'); forget.type = 'button'; forget.onclick = forgetFolder;
+      tools.appendChild(rescan); tools.appendChild(change); tools.appendChild(forget);
+      card.appendChild(tools);
+    }
+    var status = el('div', 'folder-status'); status.id = 'folder-status'; status.textContent = folder ? folder.status : '';
+    card.appendChild(status);
+    box.appendChild(card);
   }
 
   function renderLibrary() {
     var box = $('lib-list');
     box.innerHTML = '';
-    if (!lib.list.length) { box.appendChild(el('div', 'lib-empty', 'Nenhuma playlist ainda. Mande um link do YouTube no chat.')); return; }
+    renderFolder(box);
+    if (!lib.list.length) { box.appendChild(el('div', 'lib-empty', 'Nenhuma playlist baixada ainda. Mande um link do YouTube no chat.')); return; }
     lib.list.forEach(function (entry) {
-      var pl = el('div', 'pl'), head = el('div', 'pl-head');
+      var pl = el('div', 'pl');
+      appendEntry(pl, entry);
+      box.appendChild(pl);
+    });
+  }
+
+  /** Cabeçalho, botões, falhas e faixas de uma playlist (baixada ou da pasta local). */
+  function appendEntry(pl, entry) {
+      var head = el('div', 'pl-head');
       var open = el('button', 'pl-open');
       open.type = 'button';
-      open.innerHTML = '<span class="pl-title">' + esc(entry.titulo) + '</span><span class="pl-meta">' + entry.faixas.length + ' faixa(s) · ' + (FORMAT_LABEL[entry.formato] || entry.formato) + '</span>';
+      var meta = entry.faixas.length + ' faixa(s) · ' + (entry.local ? 'no seu computador' : (FORMAT_LABEL[entry.formato] || entry.formato)) + (entry.nivelada ? ' · 🔊 nivelada' : '');
+      open.innerHTML = '<span class="pl-title">' + esc(entry.titulo) + '</span><span class="pl-meta">' + meta + '</span>';
       open.onclick = function () { lib.open[entry.id] = !lib.open[entry.id]; renderLibrary(); };
       var play = el('button', 'mini', '▶'); play.type = 'button'; play.title = 'Tocar tudo';
       play.onclick = function () { playEntry(entry, 0); };
@@ -654,22 +877,30 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       del.onclick = function () {
         api('/api/biblioteca/' + entry.id, { method: 'DELETE' }).then(loadLibrary).catch(function () {});
       };
-      head.appendChild(open); head.appendChild(play);
-      if (entry.faixas.length) {
-        // A playlist inteira de uma vez: .zip (qualquer navegador) ou direto numa pasta (Chrome/Edge em localhost).
+      head.appendChild(open);
+      if (entry.faixas.length) head.appendChild(play);
+      if (!entry.local && entry.faixas.length) {
+        // A playlist inteira de uma vez: .zip (qualquer navegador) ou na pasta escolhida (Chrome/Edge em localhost).
         var zip = el('a', 'mini', '⬇️'); zip.title = 'Baixar a playlist inteira (.zip)';
         zip.href = fileUrl('/api/biblioteca/' + entry.id + '/zip'); zip.setAttribute('download', '');
         head.appendChild(zip);
-        if (window.showDirectoryPicker && window.isSecureContext) {
-          var folder = el('button', 'mini', '📁'); folder.type = 'button'; folder.title = 'Salvar a playlist inteira numa pasta';
+        if (canPickFolder) {
+          var folder = el('button', 'mini', '📁'); folder.type = 'button';
+          folder.title = lib.folder && lib.folder.granted ? 'Gravar a playlist inteira na pasta "' + lib.folder.name + '"' : 'Gravar a playlist inteira numa pasta';
           folder.onclick = function () {
+            if (lib.folder && lib.folder.granted) { lib.forceSave[entry.id] = true; autoSave(); return; }
             var status = el('div', 'lib-empty'); pl.appendChild(status);
             saveToFolder(entry.faixas.map(function (t) { return { url: t.url, nome: t.arquivo }; }), status);
           };
           head.appendChild(folder);
         }
+        if (state.info && state.info.nivelar && !entry.nivelada) {
+          var level = el('button', 'mini', '🔊'); level.type = 'button'; level.title = 'Nivelar o volume de todas as faixas';
+          level.onclick = function () { levelEntry(entry, level); };
+          head.appendChild(level);
+        }
       }
-      head.appendChild(del);
+      if (!entry.local) head.appendChild(del);
       pl.appendChild(head);
       if ((entry.falhas || []).length) {
         var fails = el('div', 'fails');
@@ -702,15 +933,14 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         });
         pl.appendChild(tracks);
       }
-      box.appendChild(pl);
-    });
   }
 
   function media() { return lib.video ? $('p-video') : $('p-audio'); }
+  function entryById(id) { return id === 'pasta-local' ? lib.localEntry : lib.list.filter(function (e) { return e.id === id; })[0]; }
 
   /** Toca a playlist a partir da faixa `start` (com embaralhar ligado, a ordem é sorteada e a escolhida vem primeiro). */
   function playEntry(entry, start) {
-    lib.queue = entry.faixas; lib.entryId = entry.id; lib.video = entry.formato === 'mp4';
+    lib.queue = entry.faixas; lib.entryId = entry.id;
     lib.order = entry.faixas.map(function (_, i) { return i; });
     if (lib.shuffle) {
       for (var i = lib.order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var tmp = lib.order[i]; lib.order[i] = lib.order[j]; lib.order[j] = tmp; }
@@ -719,18 +949,24 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     } else lib.pos = start;
     lib.open[entry.id] = true;
     $('player').classList.remove('hidden');
-    $('p-audio').classList.toggle('hidden', lib.video); $('p-video').classList.toggle('hidden', !lib.video);
-    (lib.video ? $('p-audio') : $('p-video')).pause();
     playCurrent();
   }
 
   function playCurrent() {
     var track = lib.queue[lib.order[lib.pos]];
     if (!track) return;
+    // Áudio ou vídeo por faixa (a pasta do computador pode misturar os dois).
+    lib.video = VIDEO_FILE.test(track.arquivo || '');
+    $('p-audio').classList.toggle('hidden', lib.video); $('p-video').classList.toggle('hidden', !lib.video);
+    (lib.video ? $('p-audio') : $('p-video')).pause();
     var player = media();
-    player.src = fileUrl(track.url);
-    player.play().catch(function () {});
-    var entry = lib.list.filter(function (e) { return e.id === lib.entryId; })[0];
+    if (lib.blobUrl) { URL.revokeObjectURL(lib.blobUrl); lib.blobUrl = null; }
+    // Da pasta local: toca direto do computador (nada é enviado ao servidor).
+    var source = track.handle
+      ? track.handle.getFile().then(function (file) { lib.blobUrl = URL.createObjectURL(file); return lib.blobUrl; })
+      : Promise.resolve(fileUrl(track.url));
+    source.then(function (src) { player.src = src; return player.play(); }).catch(function () {});
+    var entry = entryById(lib.entryId);
     $('player-title').innerHTML = esc(track.nome) + (entry ? ' <small>· ' + esc(entry.titulo) + ' · ' + (lib.pos + 1) + '/' + lib.queue.length + '</small>' : '');
     document.title = '▶ ' + track.nome;
     renderLibrary();
@@ -780,7 +1016,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       var saved = null; try { saved = localStorage.getItem('libOpen'); } catch (e) {}
       // Aberta por padrão em tela larga; no celular, só quando a pessoa toca no botão.
       setLibOpen(saved ? saved === '1' : matchMedia('(min-width: 1100px)').matches);
-      loadLibrary();
+      restoreFolder().then(loadLibrary);
     }
     return loadConversations();
   }).then(function () {

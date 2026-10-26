@@ -19,6 +19,8 @@ export interface LibraryEntry {
   faixas: LibraryTrack[];
   /** Links que falharam no último download (excluído, privado, bloqueado...): o botão "tentar de novo" usa estes. */
   falhas?: Array<{ link: string | null; motivo: string }>;
+  /** Todas as faixas passaram pelo nivelamento de volume. */
+  nivelada?: boolean;
 }
 
 /**
@@ -61,6 +63,7 @@ export class MediaLibrary {
         : undefined;
     if (!faixas.length && !existing && !item.falhas?.length) return undefined;
     const entry: LibraryEntry = existing ?? { id: randomBytes(12).toString('hex'), dono, titulo: item.titulo, url: item.url, formato: item.formato, criadoEm: '', faixas: [] };
+    if (existing && faixas.some((t) => !existing.faixas.some((old) => old.arquivo === t.arquivo))) entry.nivelada = false;
     Object.assign(entry, { titulo: item.titulo, faixas, criadoEm: new Date().toISOString() });
     if (item.falhas) entry.falhas = item.falhas;
     if (!existing) this.entries.push(entry);
@@ -105,6 +108,14 @@ export class MediaLibrary {
       .map((t) => ({ name: path.basename(t.arquivo), path: path.join(this.downloadsDir, path.basename(t.arquivo)) }))
       .filter((f) => fs.existsSync(f.path));
     return { titulo: entry.titulo, arquivos };
+  }
+
+  /** Marca a entrada do dono como nivelada (o botão some até chegar faixa nova). */
+  markLeveled(dono: string, id: string, leveled = true): void {
+    const entry = this.get(dono, id);
+    if (!entry) return;
+    entry.nivelada = leveled;
+    this.save();
   }
 
   /** Posição da faixa na entrada (a URL usa a posição original, que não muda quando um arquivo some). */
