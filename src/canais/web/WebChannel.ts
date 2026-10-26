@@ -4,6 +4,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentController } from '../../agent/AgentController.js';
+import { ProgressBoard } from '../../agent/ProgressBoard.js';
 import type { AgentInput } from '../../agent/types.js';
 import type { Core } from '../../app/createCore.js';
 import { DocumentParseError, EmptyAudioError, UnsupportedAttachmentError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
@@ -84,8 +85,8 @@ export class WebChannel {
   private readonly output: WebOutputHandler;
   private readonly controller: AgentController;
   private server?: http.Server;
-  /** Uma mensagem por vez (como a fila por chat do Telegram). */
-  private queue: Promise<unknown> = Promise.resolve();
+  /** Fila de mensagens de cada visitante (como a fila por chat do Telegram). */
+  private readonly queues = new Map<string, Promise<unknown>>();
   /** Horários das mensagens recentes por visitante ('*' = todos), para o limite do modo público. */
   private readonly hits = new Map<string, number[]>();
 
@@ -126,8 +127,9 @@ export class WebChannel {
 
   async start(): Promise<void> {
     this.server = http.createServer((req, res) => void this.route(req, res));
-    // Respostas com modelos locais podem levar minutos.
-    this.server.requestTimeout = 15 * 60 * 1000;
+    // Respostas com modelos locais levam minutos e o download de uma playlist inteira passa de uma hora.
+    // Sem teto: o download de uma playlist inteira passa de uma hora (a página mostra o andamento enquanto espera).
+    this.server.requestTimeout = 0;
     this.server.headersTimeout = 60 * 1000;
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject);
@@ -168,6 +170,7 @@ export class WebChannel {
       if (req.method === 'GET' && bundle) return await this.sendZip(res, bundle[1]!, url.searchParams.get('nome'));
       const userId = this.userIdFor(req);
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
+      if (req.method === 'GET' && url.pathname === '/api/progresso') return this.json(res, { texto: ProgressBoard.get(userId) ?? null });
       if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations(userId));
       if (req.method === 'POST' && url.pathname === '/api/conversas') {
         this.controller.newConversation(userId);
@@ -182,14 +185,14 @@ export class WebChannel {
       if (req.method === 'POST' && url.pathname === '/api/mensagens') {
         const body = (await this.readJson(req)) as MessageBody;
         if (this.options.public) this.checkLimit(userId);
-        return this.json(res, await this.enqueue(() => this.message(body, userId)));
+        return this.json(res, await this.enqueue(userId, () => this.message(body, userId)));
       }
       if (req.method === 'POST' && url.pathname === '/api/falar') {
         // Voz clonada num endereço aberto deixaria qualquer um falar com a voz do dono.
         if (this.options.public) throw new HttpError(403, 'Voz clonada desligada no modo público');
         const body = (await this.readJson(req)) as { texto?: string; voz?: string };
         if (!body.texto?.trim()) throw new HttpError(400, 'Informe o texto');
-        return this.json(res, await this.enqueue(() => this.output.speakClonedOnly(body.texto!.trim(), body.voz?.trim() || undefined)));
+        return this.json(res, await this.enqueue(userId, () => this.output.speakClonedOnly(body.texto!.trim(), body.voz?.trim() || undefined)));
       }
       throw new HttpError(404, 'Não encontrado');
     } catch (error) {
@@ -339,9 +342,14 @@ export class WebChannel {
     }));
   }
 
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(task, task);
-    this.queue = run.catch(() => undefined);
+  /** Uma mensagem por vez de cada visitante: o download longo de um não segura a conversa dos outros. */
+  private enqueue<T>(userId: string, task: () => Promise<T>): Promise<T> {
+    const run = (this.queues.get(userId) ?? Promise.resolve()).then(task, task);
+    const tail = run.catch(() => undefined);
+    this.queues.set(userId, tail);
+    void tail.then(() => {
+      if (this.queues.get(userId) === tail) this.queues.delete(userId);
+    });
     return run;
   }
 

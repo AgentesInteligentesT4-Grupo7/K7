@@ -7,11 +7,13 @@
 Só aceita links do YouTube. Os arquivos ficam em /downloads/<id>/ até o K7 copiá-los e apagar.
 """
 
+import os
 import re
 import shutil
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -23,6 +25,9 @@ from pydantic import BaseModel, Field
 DOWNLOADS = Path("/downloads")
 ALLOWED_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 JOB_TTL_SECONDS = 6 * 3600
+# Vídeos de uma playlist baixados ao mesmo tempo (YTDLP_PARALELO). Poucos de propósito: muitos downloads
+# simultâneos do mesmo IP fazem o YouTube pedir "confirme que você não é um robô" e bloquear por horas.
+PARALLEL = max(1, min(6, int(os.environ.get("YTDLP_PARALELO", "3") or 3)))
 
 app = FastAPI(title="ytdlp")
 jobs: dict[str, dict] = {}
@@ -34,6 +39,8 @@ class DownloadRequest(BaseModel):
     formato: str = Field("mp3", pattern="^(mp3|wav|mp4)$")
     playlist: bool = False
     max_itens: int | None = Field(None, ge=1)  # None = a playlist inteira
+    # IDs dos vídeos (11 caracteres do link) que o K7 já tem neste formato: não são baixados de novo.
+    pular: list[str] = Field(default_factory=list)
 
 
 # Entre parênteses/colchetes: ruído (sai do nome) e o que diferencia uma versão da outra (fica).
@@ -135,7 +142,6 @@ def options(job_id: str, req: DownloadRequest) -> dict:
         "quiet": True,
         "noprogress": True,
         "postprocessor_hooks": [lambda d: on_postprocess(job_id, d)],
-        "progress_hooks": [lambda d: on_progress(job_id, d)],
     }
     if req.formato == "mp4":
         opts["format"] = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*[height<=1080]+ba/b"
@@ -147,13 +153,6 @@ def options(job_id: str, req: DownloadRequest) -> dict:
     return opts
 
 
-def on_progress(job_id: str, d: dict) -> None:
-    if d.get("status") == "finished":
-        info = d.get("info_dict") or {}
-        with lock:
-            jobs[job_id]["progresso"] = f"{info.get('playlist_index') or 1}/{info.get('n_entries') or 1}"
-
-
 def on_postprocess(job_id: str, d: dict) -> None:
     # MoveFiles é o último passo: o arquivo já tem a extensão final; aqui ganha o nome padronizado.
     if d.get("status") == "finished" and d.get("postprocessor") == "MoveFiles":
@@ -163,17 +162,55 @@ def on_postprocess(job_id: str, d: dict) -> None:
             with lock:
                 target = unique(path.parent, clean_title(info.get("title") or path.stem, info.get("artist"), info.get("track")), path.suffix)
                 path = path.rename(target)
-                jobs[job_id]["arquivos"].append({"nome": path.name, "titulo": info.get("title"), "bytes": path.stat().st_size})
+                jobs[job_id]["arquivos"].append({"nome": path.name, "id": info.get("id"), "titulo": info.get("title"), "bytes": path.stat().st_size})
+
+
+VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/live/)([\w-]{11})")
+
+
+def playlist_entries(job_id: str, req: DownloadRequest) -> list[tuple[str, str | None]]:
+    """(link, id) dos vídeos da playlist, sem baixar. Excluídos/privados entram e falham no download, com motivo."""
+    listing = {"extract_flat": "in_playlist", "quiet": True, "ignoreerrors": True, "logger": JobLogger(job_id), "playlistend": req.max_itens}
+    with yt_dlp.YoutubeDL(listing) as ydl:
+        info = ydl.extract_info(req.url, download=False) or {}
+    entries = [entry for entry in info.get("entries") or [] if entry and (entry.get("url") or entry.get("id"))]
+    return [(entry.get("url") or f"https://www.youtube.com/watch?v={entry['id']}", entry.get("id")) for entry in entries]
+
+
+def download_one(job_id: str, req: DownloadRequest, url: str, total: int) -> None:
+    single = req.model_copy(update={"playlist": False})
+    with yt_dlp.YoutubeDL(options(job_id, single)) as ydl:
+        ydl.download([url])
+    with lock:
+        job = jobs[job_id]
+        job["feitos"] = job.get("feitos", 0) + 1
+        job["progresso"] = f"{job['feitos']}/{total}"
 
 
 def run(job_id: str, req: DownloadRequest) -> None:
     try:
-        with yt_dlp.YoutubeDL(options(job_id, req)) as ydl:
-            ydl.download([req.url])
+        found = VIDEO_ID.search(req.url)
+        entries = playlist_entries(job_id, req) if req.playlist else [(req.url, found.group(1) if found else None)]
+        # Já baixados antes (pular) e repetidos dentro da própria playlist: não baixa de novo.
+        known, urls, skipped = set(req.pular), [], []
+        for url, video_id in entries:
+            if video_id and video_id in known:
+                if video_id in req.pular and video_id not in skipped:
+                    skipped.append(video_id)
+                continue
+            if video_id:
+                known.add(video_id)
+            urls.append(url)
+        with lock:
+            jobs[job_id]["pulados"] = skipped
+            jobs[job_id]["progresso"] = f"0/{len(urls)}"
+        # Alguns vídeos ao mesmo tempo (PARALLEL); cada um no próprio YoutubeDL.
+        with ThreadPoolExecutor(max_workers=PARALLEL if req.playlist else 1) as pool:
+            list(pool.map(lambda url: download_one(job_id, req, url, len(urls)), urls))
         with lock:
             job = jobs[job_id]
-            job["status"] = "ok" if job["arquivos"] else "erro"
-            if not job["arquivos"]:
+            job["status"] = "ok" if job["arquivos"] or job["pulados"] else "erro"
+            if job["status"] == "erro":
                 reasons = sorted({f["motivo"] for f in job["falhas"]})
                 job["erro"] = f"nenhum arquivo baixado ({'; '.join(reasons) or 'vídeo indisponível'})"
     except Exception as error:  # noqa: BLE001 - qualquer falha do yt-dlp vira mensagem para o usuário
@@ -208,7 +245,7 @@ def download(req: DownloadRequest) -> dict:
         raise HTTPException(400, "só links do YouTube (youtube.com, youtu.be, music.youtube.com)")
     job_id = uuid.uuid4().hex[:12]
     with lock:
-        jobs[job_id] = {"status": "rodando", "progresso": "0/?", "arquivos": [], "falhas": [], "erro": None, "criado": time.time()}
+        jobs[job_id] = {"status": "rodando", "progresso": "0/?", "arquivos": [], "falhas": [], "pulados": [], "erro": None, "criado": time.time()}
     threading.Thread(target=run, args=(job_id, req), daemon=True).start()
     return {"id": job_id}
 

@@ -1,12 +1,58 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { ProgressBoard } from '../../agent/ProgressBoard.js';
 import { ResponseAttachments } from '../../agent/ResponseAttachments.js';
+import { TaskContext } from '../../llm/orchestration/TaskContext.js';
 import type { JsonSchema } from '../../llm/types.js';
 import { BaseTool, ToolArgumentError, type ToolResult } from '../../tools/BaseTool.js';
 import { Logger } from '../../utils/Logger.js';
 import type { MediaFormat, YtdlpClient } from './YtdlpClient.js';
 
 const YOUTUBE = /^https?:\/\/(?:(?:www|m|music)\.)?(?:youtube\.com|youtu\.be)\//i;
+/** Arquivos listados um a um na resposta da ferramenta (playlists inteiras não lotam o contexto do modelo). */
+const MAX_LISTED = 20;
+
+/**
+ * Índice dos downloads da pasta (`.k7-indice.json`): ID do vídeo + formato → arquivo. É o que evita baixar
+ * de novo a mesma música; o ID (11 caracteres do link) já existe antes do download, ao contrário de um hash.
+ */
+class DownloadIndex {
+  private constructor(
+    private readonly file_: string,
+    private readonly entries: Record<string, string>,
+  ) {}
+
+  static load(dir: string): DownloadIndex {
+    const file = path.join(dir, '.k7-indice.json');
+    try {
+      return new DownloadIndex(file, JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>);
+    } catch {
+      return new DownloadIndex(file, {});
+    }
+  }
+
+  /** IDs com arquivo ainda presente na pasta (apagou o arquivo? baixa de novo). */
+  ids(format: string): string[] {
+    return Object.keys(this.entries)
+      .filter((key) => key.endsWith(`.${format}`) && this.file(key.slice(0, -format.length - 1), format))
+      .map((key) => key.slice(0, -format.length - 1));
+  }
+
+  file(id: string, format: string): string | undefined {
+    const name = this.entries[`${id}.${format}`];
+    const full = name && path.join(path.dirname(this.file_), name);
+    return full && fs.existsSync(full) ? full : undefined;
+  }
+
+  add(id: string, format: string, filePath: string): void {
+    this.entries[`${id}.${format}`] = path.basename(filePath);
+  }
+
+  save(): void {
+    fs.mkdirSync(path.dirname(this.file_), { recursive: true });
+    fs.writeFileSync(this.file_, JSON.stringify(this.entries, null, 1));
+  }
+}
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
 
 /**
@@ -54,21 +100,37 @@ export class DownloadMediaTool extends BaseTool {
     // Sem pedido e sem teto configurado: a playlist inteira.
     const maxItens = this.maxItems ? Math.min(this.maxItems, asked ?? this.maxItems) : asked;
     const targetDir = path.join(this.workspaceDir, 'downloads');
+    // Já baixados antes neste formato (pelo ID do vídeo): o serviço pula e o arquivo existente é entregue de novo.
+    const index = DownloadIndex.load(targetDir);
+    const known = index.ids(formato);
 
     const started = Date.now();
-    const { files, failures } = await this.client.download({ url, formato, playlist, maxItens }, targetDir, (progress) =>
-      this.logger.info(`⬇️ ${formato} ${progress}`),
-    );
+    // O canal mostra o andamento enquanto espera ("Baixando 120 de 400…"): playlists inteiras levam minutos.
+    const userId = TaskContext.current()?.userId;
+    const { files: fresh, failures, skipped } = await this.client
+      .download({ url, formato, playlist, maxItens, pular: known }, targetDir, (progress) => {
+        this.logger.info(`⬇️ ${formato} ${progress}`);
+        const [done, total] = progress.split('/');
+        if (userId) ProgressBoard.set(userId, total && total !== '?' ? `⬇️ Baixando ${done} de ${total}…` : '⬇️ Lendo a playlist…');
+      })
+      .finally(() => userId && ProgressBoard.clear(userId));
+    for (const file of fresh) if (file.id) index.add(file.id, formato, file.path);
+    index.save();
+    const reused = skipped.flatMap((id) => index.file(id, formato) ?? []);
+    const files = [...fresh.map((f) => f.path), ...reused];
+
     const kind = formato === 'mp4' ? 'video' : 'audio';
     for (const file of files) ResponseAttachments.addMedia({ path: file, kind });
-    this.logger.info(`✅ ${files.length} arquivo(s) ${formato} em ${Math.round((Date.now() - started) / 1000)} s`);
+    this.logger.info(`✅ ${fresh.length} novo(s) e ${reused.length} reaproveitado(s), ${formato}, em ${Math.round((Date.now() - started) / 1000)} s`);
 
-    const lines = files.map((file) => `- ${path.basename(file)} (${mb(fs.statSync(file).size)})`);
+    const lines = files.slice(0, MAX_LISTED).map((file) => `- ${path.basename(file)} (${mb(fs.statSync(file).size)})`);
+    if (files.length > MAX_LISTED) lines.push(`- ... e mais ${files.length - MAX_LISTED}`);
     return {
       output: [
-        `ok: ${files.length} arquivo(s) ${formato.toUpperCase()} baixado(s) em ${targetDir}. Os arquivos já são entregues ao usuário junto da sua resposta (não repita os caminhos).`,
+        `ok: ${files.length} arquivo(s) ${formato.toUpperCase()}: ${fresh.length} baixado(s) agora e ${reused.length} que já tinham sido baixados antes ` +
+          `(reaproveitados, sem baixar de novo). Os arquivos já são entregues ao usuário junto da sua resposta (não repita os caminhos).`,
         ...lines,
-        playlist && maxItens && files.length >= maxItens ? `(parou em ${maxItens} vídeos da playlist${this.maxItems ? `, o teto de MIDIA_MAX_ITENS` : ''})` : '',
+        playlist && maxItens && fresh.length >= maxItens ? `(parou em ${maxItens} vídeos da playlist${this.maxItems ? `, o teto de MIDIA_MAX_ITENS` : ''})` : '',
         failures.length
           ? `\n${failures.length} vídeo(s) com problema foram pulados. INFORME AO USUÁRIO cada um, com o link e o motivo:\n` +
             failures.map((f) => `- ${f.link ?? '(sem link)'}: ${f.motivo}`).join('\n')

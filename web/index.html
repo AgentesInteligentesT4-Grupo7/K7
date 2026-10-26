@@ -376,7 +376,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     if (shownText != null) addUser(shownText, attachmentName);
     var body = addAssistant(), started = Date.now();
     body.innerHTML = '<div class="thinking"><span class="dots"><span></span><span></span><span></span></span><span class="secs">pensando…</span></div>';
-    var timer = setInterval(function () { var s = body.querySelector('.secs'); if (s) s.textContent = 'pensando… ' + Math.round((Date.now() - started) / 1000) + ' s'; }, 1000);
+    // Tarefas longas (ex.: playlist inteira) publicam o andamento: aparece no lugar de "pensando…".
+    var progress = '';
+    var poll = setInterval(function () { api('/api/progresso').then(function (p) { progress = p.texto || ''; }).catch(function () {}); }, 3000);
+    var timer = setInterval(function () {
+      var s = body.querySelector('.secs');
+      if (s) s.textContent = (progress || 'pensando…') + ' ' + Math.round((Date.now() - started) / 1000) + ' s';
+    }, 1000);
     scrollDown();
     payload.responderEmAudio = state.audioReply;
     api('/api/mensagens', { method: 'POST', body: payload })
@@ -386,7 +392,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         loadConversations();
       })
       .catch(function (err) { renderReply(body, { erro: '⚠️ ' + err.message }); })
-      .then(function () { clearInterval(timer); state.busy = false; $('send').disabled = false; $('input').focus(); });
+      .then(function () { clearInterval(timer); clearInterval(poll); state.busy = false; $('send').disabled = false; $('input').focus(); });
   }
   function addUserBefore(node, text) {
     var row = el('div', 'msg user'), bubble = el('div', 'bubble'); bubble.textContent = text; row.appendChild(bubble);

@@ -13,6 +13,9 @@ services:
     container_name: ytdlp
     ports:
       - "127.0.0.1:8899:8899"
+    environment:
+      # Vídeos de uma playlist baixados ao mesmo tempo (1 a 6). Mais que isso, o YouTube passa a bloquear.
+      YTDLP_PARALELO: "${YTDLP_PARALELO:-3}"
     volumes:
       - ytdlp-downloads:/downloads
     restart: unless-stopped

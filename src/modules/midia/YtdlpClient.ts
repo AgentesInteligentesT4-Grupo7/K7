@@ -12,10 +12,14 @@ export interface DownloadRequest {
   playlist: boolean;
   /** Ausente = a playlist inteira. */
   maxItens?: number;
+  /** IDs dos vídeos (11 caracteres do link) já baixados neste formato: o serviço não baixa de novo. */
+  pular?: string[];
 }
 
 export interface DownloadedFile {
   nome: string;
+  /** ID do vídeo no YouTube. */
+  id?: string;
   titulo?: string;
   bytes: number;
 }
@@ -27,8 +31,11 @@ export interface DownloadFailure {
 }
 
 export interface DownloadResult {
-  files: string[];
+  /** Arquivos novos, copiados para a pasta, com o ID do vídeo de cada um. */
+  files: Array<{ path: string; id?: string }>;
   failures: DownloadFailure[];
+  /** IDs pedidos em `pular` que estavam no link: já existiam, não foram baixados. */
+  skipped: string[];
 }
 
 interface Job {
@@ -36,6 +43,7 @@ interface Job {
   progresso: string;
   arquivos: DownloadedFile[];
   falhas?: DownloadFailure[];
+  pulados?: string[];
   erro: string | null;
 }
 
@@ -62,20 +70,25 @@ export class YtdlpClient {
         formato: request.formato,
         playlist: request.playlist,
         ...(request.maxItens ? { max_itens: request.maxItens } : {}),
+        ...(request.pular?.length ? { pular: request.pular } : {}),
       }),
     })) as { id: string };
     try {
       const job = await this.wait(id, onProgress);
       const failures = job.falhas ?? [];
       if (job.status === 'erro') {
-        const links = failures.filter((f) => f.link).map((f) => `
-- ${f.link}: ${f.motivo}`).join('');
+        const links = failures
+          .filter((f) => f.link)
+          .map((f) => `\n- ${f.link}: ${f.motivo}`)
+          .join('');
         throw new UserFacingError(`Não consegui baixar: ${YtdlpClient.friendly(job.erro)}${links}`);
       }
       fs.mkdirSync(targetDir, { recursive: true });
-      const saved: string[] = [];
-      for (const file of job.arquivos) saved.push(await this.fetchFile(id, file.nome, targetDir));
-      return { files: saved, failures };
+      const saved: DownloadResult['files'] = [];
+      for (const file of job.arquivos) {
+        saved.push({ path: await this.fetchFile(id, file.nome, file.bytes, targetDir), ...(file.id ? { id: file.id } : {}) });
+      }
+      return { files: saved, failures, skipped: job.pulados ?? [] };
     } finally {
       await fetch(`${this.options.baseUrl}/trabalhos/${id}`, { method: 'DELETE' }).catch(() => undefined);
     }
@@ -99,11 +112,13 @@ export class YtdlpClient {
   }
 
   /** Copia o arquivo para a pasta; se já existir um com o mesmo nome, acrescenta " (2)", " (3)"... */
-  private async fetchFile(id: string, name: string, targetDir: string): Promise<string> {
-    const response = await fetch(`${this.options.baseUrl}/trabalhos/${id}/arquivos/${encodeURIComponent(name)}`);
-    if (!response.ok || !response.body) throw new Error(`serviço ytdlp HTTP ${response.status} ao entregar "${name}"`);
+  private async fetchFile(id: string, name: string, bytes: number, targetDir: string): Promise<string> {
     const { name: base, ext } = path.parse(path.basename(name));
     let target = path.join(targetDir, `${base}${ext}`);
+    // Mesma música já baixada antes (mesmo nome e tamanho): reaproveita em vez de criar "música (2).mp3".
+    if (fs.existsSync(target) && fs.statSync(target).size === bytes) return target;
+    const response = await fetch(`${this.options.baseUrl}/trabalhos/${id}/arquivos/${encodeURIComponent(name)}`);
+    if (!response.ok || !response.body) throw new Error(`serviço ytdlp HTTP ${response.status} ao entregar "${name}"`);
     for (let i = 2; fs.existsSync(target); i++) target = path.join(targetDir, `${base} (${i})${ext}`);
     await pipeline(Readable.fromWeb(response.body as never), fs.createWriteStream(target));
     return target;
