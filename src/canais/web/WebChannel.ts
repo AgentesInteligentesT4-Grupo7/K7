@@ -13,6 +13,7 @@ import type { MediaDownloader } from '../../modules/midia/MediaDownloader.js';
 import type { AgentInput } from '../../agent/types.js';
 import type { Core } from '../../app/createCore.js';
 import { DocumentParseError, EmptyAudioError, UnsupportedAttachmentError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
+import { KeyedLimiter, mapWithLimit } from '../../utils/KeyedLimiter.js';
 import { Logger } from '../../utils/Logger.js';
 import { sanitizeText, truncate } from '../../utils/text.js';
 import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
@@ -92,6 +93,9 @@ export class WebChannel {
   private server?: http.Server;
   /** Fila de mensagens de cada visitante (como a fila por chat do Telegram). */
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** Nivelamentos ao mesmo tempo por visitante (o número vem do serviço, pelos núcleos da máquina dele). */
+  private levelParallel = 2;
+  private levelSlots = new KeyedLimiter(2);
   /** Horários das mensagens recentes por visitante ('*' = todos), para o limite do modo público. */
   private readonly hits = new Map<string, number[]>();
 
@@ -131,6 +135,10 @@ export class WebChannel {
   }
 
   async start(): Promise<void> {
+    if (this.core.leveler) {
+      this.levelParallel = await this.core.leveler.parallel();
+      this.levelSlots = new KeyedLimiter(this.levelParallel);
+    }
     this.server = http.createServer((req, res) => void this.route(req, res));
     // Respostas com modelos locais levam minutos e o download de uma playlist inteira passa de uma hora.
     // Sem teto: o download de uma playlist inteira passa de uma hora (a página mostra o andamento enquanto espera).
@@ -195,7 +203,10 @@ export class WebChannel {
         if (!leveler) throw new HttpError(404, 'Nivelamento desligado nesta fita');
         const name = path.basename(url.searchParams.get('nome') ?? '');
         if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
-        return await this.enqueue(userId, () => this.proxyLevel(leveler, req, res, name));
+        // Fora da fila de mensagens: várias músicas ao mesmo tempo, até o que o serviço aguenta (núcleos dele).
+        // Fechou a página: quem ainda esperava vaga nem começa, e o que estava no serviço é interrompido.
+        const gone = WebChannel.whenClientLeaves(res);
+        return await this.levelSlots.run(userId, async () => (gone.aborted ? undefined : this.proxyLevel(leveler, req, res, name, gone)));
       }
       // Padronizar um arquivo da pasta do visitante: nome "Título - Artista" nos cabeçalhos e o arquivo com as etiquetas.
       if (req.method === 'POST' && url.pathname === '/api/padronizar') {
@@ -209,7 +220,8 @@ export class WebChannel {
       if (req.method === 'POST' && levelEntry) {
         const leveler = this.core.leveler;
         if (!leveler || !this.core.library) throw new HttpError(404, 'Nivelamento desligado nesta fita');
-        return this.json(res, await this.enqueue(userId, () => this.levelEntry(leveler, userId, levelEntry[1]!)));
+        const gone = WebChannel.whenClientLeaves(res);
+        return this.json(res, await this.enqueue(userId, () => this.levelEntry(leveler, userId, levelEntry[1]!, gone)));
       }
       const retry =/^\/api\/biblioteca\/([0-9a-f]{24})\/tentar-de-novo$/.exec(url.pathname);
       if (req.method === 'POST' && retry) {
@@ -380,6 +392,8 @@ export class WebChannel {
       publico: this.options.public === true,
       biblioteca: Boolean(this.core.library),
       nivelar: Boolean(this.core.leveler),
+      // Quantas músicas a página manda nivelar de uma vez (o serviço descobre pelos núcleos da máquina dele).
+      nivelarParalelo: this.levelParallel,
     };
   }
 
@@ -497,11 +511,21 @@ export class WebChannel {
     }));
   }
 
-  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string): Promise<void> {
+  /** Sinal que dispara se a conexão cair antes da resposta terminar (a pessoa fechou a página ou a aba). */
+  private static whenClientLeaves(res: http.ServerResponse): AbortSignal {
+    const controller = new AbortController();
+    res.once('close', () => {
+      if (!res.writableFinished) controller.abort();
+    });
+    return controller.signal;
+  }
+
+  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string, gone: AbortSignal): Promise<void> {
     let response: Response;
     try {
-      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name);
+      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone);
     } catch (error) {
+      if (gone.aborted) return; // ninguém mais esperando a resposta
       if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
       throw error;
     }
@@ -538,22 +562,32 @@ export class WebChannel {
   }
 
   /** Nivela no servidor todas as faixas de uma playlist baixada (no lugar), com o andamento na barra de %. */
-  private async levelEntry(leveler: AudioLeveler, userId: string, entryId: string) {
+  private async levelEntry(leveler: AudioLeveler, userId: string, entryId: string, gone?: AbortSignal) {
     const library = this.core.library!;
     const files = library.files(userId, entryId).filter((f) => LEVELABLE.has(path.extname(f).toLowerCase()));
     if (!files.length) return { ok: false, erro: 'Playlist não encontrada ou sem faixas.' };
     const problems: string[] = [];
+    let done = 0;
+    ProgressBoard.set(userId, `🔊 Nivelando 0 de ${files.length}…`, { done: 0, total: files.length });
     try {
-      for (const [i, file] of files.entries()) {
-        ProgressBoard.set(userId, `🔊 Nivelando ${i + 1} de ${files.length}…`, { done: i, total: files.length });
+      // Várias faixas ao mesmo tempo, quantas o serviço nivela de uma vez.
+      await mapWithLimit(files, await leveler.parallel(), async (file) => {
+        // Fechou a página: as faixas que faltam não começam (as já começadas terminam e ficam niveladas).
+        if (gone?.aborted) return;
         try {
           await leveler.levelFile(file);
         } catch (error) {
           problems.push(`${path.basename(file)}: ${error instanceof UserFacingError ? error.userMessage : errorMessage(error)}`);
         }
-      }
+        done++;
+        ProgressBoard.set(userId, `🔊 Nivelando ${done} de ${files.length}…`, { done, total: files.length });
+      });
     } finally {
       ProgressBoard.clear(userId);
+    }
+    if (gone?.aborted) {
+      this.logger.info(`🔊 Nivelamento interrompido: a página foi fechada (${done} de ${files.length})`);
+      return { ok: false, erro: 'interrompido' };
     }
     library.markLeveled(userId, entryId, problems.length === 0);
     return { ok: true, niveladas: files.length - problems.length, problemas: problems };

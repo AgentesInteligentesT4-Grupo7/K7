@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+import asyncio
 import json
 import subprocess
 
@@ -261,11 +262,17 @@ threading.Thread(target=cleanup_old_jobs, daemon=True).start()
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "yt_dlp": yt_dlp.version.__version__}
+    return {"status": "ok", "yt_dlp": yt_dlp.version.__version__, "nucleos": CPU_CORES, "nivelar_paralelo": LEVEL_PARALLEL}
 
 
 # ── Nivelamento de volume (EBU R128, ffmpeg loudnorm em duas passadas) ─────────
 TARGET_LUFS = float(os.environ.get("NIVELAR_LUFS", "-14") or -14)  # padrão das plataformas de música
+# Nivelamentos ao mesmo tempo: cada um ocupa um núcleo (o loudnorm do ffmpeg não divide o trabalho), então o padrão
+# é descoberto pelo processador da máquina: todos os núcleos menos 2, que ficam para os downloads e o resto.
+# NIVELAR_PARALELO força um número. Os pedidos além disso esperam a vez.
+CPU_CORES = os.cpu_count() or 2
+LEVEL_PARALLEL = max(1, min(32, int(os.environ.get("NIVELAR_PARALELO") or 0) or CPU_CORES - 2))
+level_slots = threading.BoundedSemaphore(LEVEL_PARALLEL)
 LEVEL_DIR = Path("/tmp/nivelar")
 MAX_LEVEL_BYTES = 2 * 1024**3
 # Codec de áudio por extensão: o arquivo nivelado sai no mesmo formato. Vídeo: a imagem é copiada, só o áudio muda.
@@ -284,15 +291,34 @@ AUDIO_CODECS = {
 }
 
 
-def level_file(source: Path, target: Path) -> dict:
+class Cancelled(Exception):
+    """Quem pediu foi embora (fechou a página): o trabalho para no meio."""
+
+
+def run_ffmpeg(args: list[str], cancel: threading.Event, timeout: int) -> tuple[int, str]:
+    """Roda o ffmpeg e o interrompe na hora se `cancel` for marcado (ou se passar do tempo)."""
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    deadline = time.time() + timeout
+    while True:
+        try:
+            _, err = proc.communicate(timeout=0.5)
+            return proc.returncode, err.decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            if cancel.is_set() or time.time() > deadline:
+                proc.kill()
+                proc.communicate()
+                raise Cancelled() if cancel.is_set() else HTTPException(504, "o nivelamento passou do tempo")
+
+
+def level_file(source: Path, target: Path, cancel: threading.Event | None = None) -> dict:
     """Mede o volume (1ª passada) e aplica a correção exata (2ª), sem distorcer. Devolve o volume antes e depois."""
+    cancel = cancel or threading.Event()
     base = f"loudnorm=I={TARGET_LUFS}:TP=-1.5:LRA=11"
-    probe = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(source), "-af", f"{base}:print_format=json", "-vn", "-f", "null", "-"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
+    code, err = run_ffmpeg(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(source), "-af", f"{base}:print_format=json", "-vn", "-f", "null", "-"], cancel, 1800,
     )
-    found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", probe.stderr)
-    if probe.returncode != 0 or not found:
+    found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", err)
+    if code != 0 or not found:
         raise HTTPException(422, "não consegui ler o áudio desse arquivo")
     m = json.loads(found.group(0))
     measured = (
@@ -300,12 +326,13 @@ def level_file(source: Path, target: Path) -> dict:
         f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true"
     )
     codec = AUDIO_CODECS[source.suffix.lower()]
-    run = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(source), "-map", "0", "-map_metadata", "0", "-af", measured, "-ar", "48000" if source.suffix.lower() in {".opus", ".webm"} else "44100", *codec, str(target)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
+    rate = "48000" if source.suffix.lower() in {".opus", ".webm"} else "44100"
+    code, err = run_ffmpeg(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(source), "-map", "0", "-map_metadata", "0", "-af", measured, "-ar", rate, *codec, str(target)],
+        cancel, 3600,
     )
-    if run.returncode != 0 or not target.is_file():
-        raise HTTPException(500, f"ffmpeg falhou ao nivelar: {run.stderr[-300:]}")
+    if code != 0 or not target.is_file():
+        raise HTTPException(500, f"ffmpeg falhou ao nivelar: {err[-300:]}")
     return {"antes": float(m["input_i"]), "depois": TARGET_LUFS}
 
 
@@ -352,6 +379,19 @@ async def standardize_endpoint(request: Request, nome: str) -> Response:
     return FileResponse(target, headers=headers, background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
 
 
+def level_file_in_slot(source: Path, target: Path, cancel: threading.Event) -> dict:
+    """Nivela ocupando uma das LEVEL_PARALLEL vagas (os demais pedidos esperam); cancelado na fila, nem começa."""
+    while not level_slots.acquire(timeout=0.5):
+        if cancel.is_set():
+            raise Cancelled()
+    try:
+        if cancel.is_set():
+            raise Cancelled()
+        return level_file(source, target, cancel)
+    finally:
+        level_slots.release()
+
+
 @app.post("/nivelar")
 async def level(request: Request, nome: str) -> FileResponse:
     """Recebe o arquivo no corpo (nome= dá a extensão) e devolve a versão nivelada no mesmo formato."""
@@ -369,8 +409,19 @@ async def level(request: Request, nome: str) -> FileResponse:
                 shutil.rmtree(work, ignore_errors=True)
                 raise HTTPException(413, "arquivo grande demais para nivelar (até 2 GB)")
             out.write(chunk)
+    # Enquanto nivela, confere se quem pediu ainda está conectado: fechou a página, o ffmpeg para na hora.
+    cancel = threading.Event()
+    task = asyncio.ensure_future(run_in_threadpool(level_file_in_slot, source, target, cancel))
+    while not task.done():
+        if await request.is_disconnected():
+            cancel.set()
+            break
+        await asyncio.wait({task}, timeout=0.5)
     try:
-        result = await run_in_threadpool(level_file, source, target)
+        result = await task
+    except Cancelled:
+        shutil.rmtree(work, ignore_errors=True)
+        return Response(status_code=499)
     except Exception:
         shutil.rmtree(work, ignore_errors=True)
         raise

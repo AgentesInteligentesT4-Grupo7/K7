@@ -18,11 +18,28 @@ export interface LevelResult {
  * volume percebido (EBU R128, padrão -14 LUFS das plataformas de música), sem distorcer.
  */
 export class AudioLeveler {
+  private slots?: Promise<number>;
+
   constructor(private readonly options: { baseUrl: string; timeoutMs: number }) {}
 
+  /**
+   * Quantas músicas o serviço nivela ao mesmo tempo (ele descobre pelos núcleos da máquina dele); quem manda
+   * arquivos usa este número para não deixar núcleo parado nem formar fila à toa. Serviço fora do ar: 2.
+   */
+  parallel(): Promise<number> {
+    this.slots ??= fetch(`${this.options.baseUrl}/health`, { signal: AbortSignal.timeout(5_000) })
+      .then((res) => res.json() as Promise<{ nivelar_paralelo?: number }>)
+      .then((health) => Math.max(1, Number(health.nivelar_paralelo) || 2))
+      .catch(() => {
+        this.slots = undefined; // tenta de novo na próxima vez
+        return 2;
+      });
+    return this.slots;
+  }
+
   /** Envia o conteúdo e devolve a resposta do serviço (o arquivo nivelado), para repassar sem guardar. */
-  levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
-    return this.send('/nivelar', 'nivelar', body, name);
+  levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string, signal?: AbortSignal): Promise<Response> {
+    return this.send('/nivelar', 'nivelar', body, name, signal);
   }
 
   /**
@@ -65,7 +82,8 @@ export class AudioLeveler {
     return { from: file, to: target, duplicate: false };
   }
 
-  private async send(endpoint: string, verb: string, body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
+  /** `signal`: quem pediu foi embora (fechou a página); o serviço percebe a conexão caindo e para o ffmpeg. */
+  private async send(endpoint: string, verb: string, body: ReadableStream<Uint8Array> | Buffer, name: string, signal?: AbortSignal): Promise<Response> {
     if (!LEVELABLE.has(path.extname(name).toLowerCase())) throw new UserFacingError(`Formato ${path.extname(name) || '(sem extensão)'} não dá para ${verb}.`);
     let response: Response;
     try {
@@ -74,9 +92,10 @@ export class AudioLeveler {
         headers: { 'content-type': 'application/octet-stream' },
         body: body as never,
         duplex: 'half',
-        signal: AbortSignal.timeout(this.options.timeoutMs),
+        signal: signal ? AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs), signal]) : AbortSignal.timeout(this.options.timeoutMs),
       } as RequestInit);
     } catch (error) {
+      if (signal?.aborted) throw error;
       throw new UserFacingError(`o serviço de downloads (que sabe ${verb}) não está no ar.`, errorMessage(error), { cause: error });
     }
     if (!response.ok) {

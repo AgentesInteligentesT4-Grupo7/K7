@@ -837,18 +837,19 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     var folder = lib.folder, files = folder.files.slice();
     if (!files.length) return;
     button.disabled = true;
-    var levelled = 0, skipped = 0, problems = [];
+    var levelled = 0, skipped = 0, problems = [], finished = 0;
+    // Várias músicas ao mesmo tempo: quantas o serviço nivela de uma vez (ele descobre pelos núcleos da máquina).
+    var parallel = Math.max(1, Math.min(files.length, (state.info && state.info.nivelarParalelo) || 2));
+    var started = Date.now();
+    var report = function () {
+      var secs = Math.round((Date.now() - started) / 1000);
+      folderStatus('🔊 Nivelando ' + finished + ' de ' + files.length + ' (' + parallel + ' ao mesmo tempo · ' + secs + ' s)');
+    };
     folder.handle.getDirectoryHandle('nivelados', { create: true }).then(function (out) {
       var i = 0;
       var one = function () {
-        if (i >= files.length) {
-          button.disabled = false;
-          folderStatus('🔊 ' + levelled + ' nivelado(s) em "nivelados"' + (skipped ? ' · ' + skipped + ' já estavam' : '') +
-            (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
-          return;
-        }
+        if (i >= files.length) return Promise.resolve();
         var item = files[i++];
-        folderStatus('🔊 Nivelando ' + i + ' de ' + files.length + ': ' + item.caminho);
         return subfolder(out, item.pastas).then(function (target) {
           // Já nivelado antes: pula.
           return target.getFileHandle(item.arquivo).then(function () { skipped++; }, function () {
@@ -862,9 +863,19 @@ audio { width: 100%; max-width: 420px; height: 40px; }
                 .then(function () { levelled++; });
             });
           });
-        }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); }).then(one);
+        }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); })
+          .then(function () { finished++; report(); return one(); });
       };
-      one();
+      report();
+      // `parallel` filas puxando o próximo arquivo assim que a anterior termina.
+      var workers = [];
+      for (var w = 0; w < parallel; w++) workers.push(one());
+      return Promise.all(workers).then(function () {
+        button.disabled = false;
+        var secs = Math.round((Date.now() - started) / 1000);
+        folderStatus('🔊 ' + levelled + ' nivelado(s) em "nivelados" em ' + secs + ' s' + (skipped ? ' · ' + skipped + ' já estavam' : '') +
+          (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
+      });
     }).catch(function (err) { button.disabled = false; folderStatus('⚠️ ' + err.message); });
   }
 

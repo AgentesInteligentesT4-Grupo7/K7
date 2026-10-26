@@ -16,6 +16,8 @@ services:
     environment:
       # Vídeos de uma playlist baixados ao mesmo tempo (1 a 6). Mais que isso, o YouTube passa a bloquear.
       YTDLP_PARALELO: "${YTDLP_PARALELO:-3}"
+      # Músicas niveladas ao mesmo tempo. Vazio = automático (núcleos da máquina menos 2); um número força.
+      NIVELAR_PARALELO: "${NIVELAR_PARALELO:-}"
     volumes:
       - ytdlp-downloads:/downloads
     restart: unless-stopped
