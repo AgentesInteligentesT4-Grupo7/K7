@@ -700,21 +700,42 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   }
 
   /** Lê os áudios e vídeos da pasta (só o primeiro nível) e monta a playlist local. */
-  function scanFolder() {
-    var folder = lib.folder;
-    if (!folder || !folder.granted) return Promise.resolve();
-    var files = [], it = folder.handle.values();
+  var MAX_FOLDER_FILES = 5000;
+  var MAX_FOLDER_DEPTH = 8;
+
+  /**
+   * Lê os áudios e vídeos da pasta e das subpastas (menos "nivelados", que é a saída do nivelamento).
+   * Cada faixa guarda o caminho relativo (`pastas`), para o nivelado ir para o mesmo lugar dentro de "nivelados".
+   */
+  function walkFolder(dir, pastas, files) {
+    var it = dir.values();
     var next = function () {
       return it.next().then(function (r) {
-        if (r.done) return;
-        if (r.value.kind === 'file' && MEDIA_FILE.test(r.value.name)) files.push({ nome: r.value.name.replace(/\.[^.]+$/, ''), arquivo: r.value.name, handle: r.value });
+        if (r.done || files.length >= MAX_FOLDER_FILES) return;
+        var item = r.value;
+        if (item.kind === 'file' && MEDIA_FILE.test(item.name)) {
+          var caminho = pastas.concat(item.name).join('/');
+          files.push({ nome: caminho.replace(/\.[^.]+$/, ''), arquivo: item.name, caminho: caminho, pastas: pastas, handle: item });
+          return next();
+        }
+        if (item.kind === 'directory' && !(pastas.length === 0 && item.name === 'nivelados') && pastas.length < MAX_FOLDER_DEPTH) {
+          return walkFolder(item, pastas.concat(item.name), files).then(next);
+        }
         return next();
       });
     };
-    return next().then(function () {
-      files.sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }); });
+    return next();
+  }
+
+  function scanFolder() {
+    var folder = lib.folder;
+    if (!folder || !folder.granted) return Promise.resolve();
+    var files = [];
+    return walkFolder(folder.handle, [], files).then(function () {
+      files.sort(function (a, b) { return a.caminho.localeCompare(b.caminho, 'pt-BR', { numeric: true }); });
       folder.files = files;
-      files.forEach(function (f) { folder.saved[f.arquivo] = true; });
+      // Só os do primeiro nível contam para não gravar de novo um download com o mesmo nome.
+      files.forEach(function (f) { if (!f.pastas.length) folder.saved[f.arquivo] = true; });
       lib.localEntry = { id: 'pasta-local', titulo: '📁 ' + folder.name, formato: 'local', faixas: files, local: true };
       renderLibrary();
     }).catch(function (err) { folder.status = '⚠️ ' + err.message; renderLibrary(); });
@@ -773,28 +794,46 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   }
 
   /** Nivela os arquivos da pasta: cada um vai ao servidor, volta nivelado e é gravado em "nivelados" (o original fica). */
+  /** Abre (criando) a subpasta `pastas` dentro de `dir`: "nivelados/Rock/Anos 80". */
+  function subfolder(dir, pastas) {
+    return pastas.reduce(function (p, name) { return p.then(function (d) { return d.getDirectoryHandle(name, { create: true }); }); }, Promise.resolve(dir));
+  }
+
+  /**
+   * Nivela os arquivos da pasta e das subpastas: cada um vai ao servidor, volta nivelado e é gravado em
+   * "nivelados", na mesma estrutura de subpastas (o original fica). O que já está em "nivelados" é pulado,
+   * então rodar de novo continua de onde parou.
+   */
   function levelFolder(button) {
     var folder = lib.folder, files = folder.files.slice();
     if (!files.length) return;
     button.disabled = true;
+    var levelled = 0, skipped = 0, problems = [];
     folder.handle.getDirectoryHandle('nivelados', { create: true }).then(function (out) {
-      var i = 0, problems = 0;
+      var i = 0;
       var one = function () {
         if (i >= files.length) {
           button.disabled = false;
-          folderStatus('🔊 ' + (files.length - problems) + ' arquivo(s) nivelados em "nivelados"' + (problems ? ' · ' + problems + ' com problema' : ''));
+          folderStatus('🔊 ' + levelled + ' nivelado(s) em "nivelados"' + (skipped ? ' · ' + skipped + ' já estavam' : '') +
+            (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
           return;
         }
         var item = files[i++];
-        folderStatus('🔊 Nivelando ' + i + ' de ' + files.length + ': ' + item.nome);
-        return item.handle.getFile().then(function (file) {
-          return fetch(base + '/api/nivelar?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file });
-        }).then(function (res) {
-          if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
-          return out.getFileHandle(item.arquivo, { create: true })
-            .then(function (h) { return h.createWritable(); })
-            .then(function (w) { return res.body.pipeTo(w); });
-        }).catch(function () { problems++; }).then(one);
+        folderStatus('🔊 Nivelando ' + i + ' de ' + files.length + ': ' + item.caminho);
+        return subfolder(out, item.pastas).then(function (target) {
+          // Já nivelado antes: pula.
+          return target.getFileHandle(item.arquivo).then(function () { skipped++; }, function () {
+            return item.handle.getFile().then(function (file) {
+              return fetch(base + '/api/nivelar?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file });
+            }).then(function (res) {
+              if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
+              return target.getFileHandle(item.arquivo, { create: true })
+                .then(function (h) { return h.createWritable(); })
+                .then(function (w) { return res.body.pipeTo(w); })
+                .then(function () { levelled++; });
+            });
+          });
+        }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); }).then(one);
       };
       one();
     }).catch(function (err) { button.disabled = false; folderStatus('⚠️ ' + err.message); });
@@ -836,7 +875,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       var tools = el('div', 'folder-tools');
       if (entry.faixas.length && state.info && state.info.nivelar) {
         var level = el('button', 'retry', '🔊 Nivelar volume'); level.type = 'button';
-        level.title = 'Deixa todos no mesmo volume; as versões niveladas vão para a subpasta "nivelados"';
+        level.title = 'Deixa todos no mesmo volume, inclusive nas subpastas; as versões niveladas vão para "nivelados", na mesma estrutura';
         level.onclick = function () { levelFolder(level); };
         tools.appendChild(level);
       }
