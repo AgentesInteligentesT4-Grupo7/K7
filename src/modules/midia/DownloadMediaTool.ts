@@ -6,6 +6,7 @@ import { TaskContext } from '../../llm/orchestration/TaskContext.js';
 import type { JsonSchema } from '../../llm/types.js';
 import { BaseTool, ToolArgumentError, type ToolResult } from '../../tools/BaseTool.js';
 import { Logger } from '../../utils/Logger.js';
+import type { MediaLibrary } from './MediaLibrary.js';
 import type { MediaFormat, YtdlpClient } from './YtdlpClient.js';
 
 const YOUTUBE = /^https?:\/\/(?:(?:www|m|music)\.)?(?:youtube\.com|youtu\.be)\//i;
@@ -67,11 +68,15 @@ export class DownloadMediaTool extends BaseTool {
   readonly parameters: JsonSchema;
   private readonly logger = new Logger('Midia');
 
-  /** @param maxItems teto de vídeos por playlist (MIDIA_MAX_ITENS); 0 = sem limite. */
+  /**
+   * @param maxItems teto de vídeos por playlist (MIDIA_MAX_ITENS); 0 = sem limite.
+   * @param library biblioteca do chat (barra lateral e tocador); cada download vira uma entrada de quem pediu.
+   */
   constructor(
     private readonly client: YtdlpClient,
     private readonly workspaceDir: string,
     private readonly maxItems = 0,
+    private readonly library?: MediaLibrary,
   ) {
     super();
     this.parameters = {
@@ -107,17 +112,24 @@ export class DownloadMediaTool extends BaseTool {
     const started = Date.now();
     // O canal mostra o andamento enquanto espera ("Baixando 120 de 400…"): playlists inteiras levam minutos.
     const userId = TaskContext.current()?.userId;
-    const { files: fresh, failures, skipped } = await this.client
+    const { files: fresh, failures, skipped, title, order } = await this.client
       .download({ url, formato, playlist, maxItens, pular: known }, targetDir, (progress) => {
         this.logger.info(`⬇️ ${formato} ${progress}`);
         const [done, total] = progress.split('/');
-        if (userId) ProgressBoard.set(userId, total && total !== '?' ? `⬇️ Baixando ${done} de ${total}…` : '⬇️ Lendo a playlist…');
+        const counts = total && total !== '?' ? { done: Number(done), total: Number(total) } : undefined;
+        if (userId) ProgressBoard.set(userId, counts ? `⬇️ Baixando ${done} de ${total}…` : '⬇️ Lendo a playlist…', counts);
       })
       .finally(() => userId && ProgressBoard.clear(userId));
     for (const file of fresh) if (file.id) index.add(file.id, formato, file.path);
     index.save();
     const reused = skipped.flatMap((id) => index.file(id, formato) ?? []);
-    const files = [...fresh.map((f) => f.path), ...reused];
+    // Na ordem da playlist (os downloads em paralelo terminam fora de ordem); sem ID, vai para o fim.
+    const ordered = (order ?? []).flatMap((id) => index.file(id, formato) ?? []);
+    const files = [...new Set([...ordered, ...fresh.map((f) => f.path), ...reused])];
+    if (userId && this.library) {
+      const single = files.length === 1 ? path.parse(files[0]!).name : undefined;
+      this.library.add(userId, { titulo: title ?? single ?? `Downloads de ${new Date().toLocaleDateString('pt-BR')}`, url, formato, arquivos: files });
+    }
 
     const kind = formato === 'mp4' ? 'video' : 'audio';
     for (const file of files) ResponseAttachments.addMedia({ path: file, kind });

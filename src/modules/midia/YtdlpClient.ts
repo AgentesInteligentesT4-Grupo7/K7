@@ -36,6 +36,10 @@ export interface DownloadResult {
   failures: DownloadFailure[];
   /** IDs pedidos em `pular` que estavam no link: já existiam, não foram baixados. */
   skipped: string[];
+  /** Nome da playlist (só em playlist). */
+  title?: string;
+  /** IDs na ordem original da playlist (os downloads em paralelo terminam fora de ordem). */
+  order: string[];
 }
 
 interface Job {
@@ -44,6 +48,8 @@ interface Job {
   arquivos: DownloadedFile[];
   falhas?: DownloadFailure[];
   pulados?: string[];
+  titulo?: string | null;
+  ordem?: string[];
   erro: string | null;
 }
 
@@ -88,7 +94,7 @@ export class YtdlpClient {
       for (const file of job.arquivos) {
         saved.push({ path: await this.fetchFile(id, file.nome, file.bytes, targetDir), ...(file.id ? { id: file.id } : {}) });
       }
-      return { files: saved, failures, skipped: job.pulados ?? [] };
+      return { files: saved, failures, skipped: job.pulados ?? [], ...(job.titulo ? { title: job.titulo } : {}), order: job.ordem ?? [] };
     } finally {
       await fetch(`${this.options.baseUrl}/trabalhos/${id}`, { method: 'DELETE' }).catch(() => undefined);
     }

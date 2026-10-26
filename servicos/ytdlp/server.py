@@ -168,13 +168,13 @@ def on_postprocess(job_id: str, d: dict) -> None:
 VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/live/)([\w-]{11})")
 
 
-def playlist_entries(job_id: str, req: DownloadRequest) -> list[tuple[str, str | None]]:
-    """(link, id) dos vídeos da playlist, sem baixar. Excluídos/privados entram e falham no download, com motivo."""
+def playlist_entries(job_id: str, req: DownloadRequest) -> tuple[str | None, list[tuple[str, str | None]]]:
+    """Título e (link, id) dos vídeos da playlist, sem baixar. Excluídos/privados entram e falham no download, com motivo."""
     listing = {"extract_flat": "in_playlist", "quiet": True, "ignoreerrors": True, "logger": JobLogger(job_id), "playlistend": req.max_itens}
     with yt_dlp.YoutubeDL(listing) as ydl:
         info = ydl.extract_info(req.url, download=False) or {}
     entries = [entry for entry in info.get("entries") or [] if entry and (entry.get("url") or entry.get("id"))]
-    return [(entry.get("url") or f"https://www.youtube.com/watch?v={entry['id']}", entry.get("id")) for entry in entries]
+    return info.get("title"), [(entry.get("url") or f"https://www.youtube.com/watch?v={entry['id']}", entry.get("id")) for entry in entries]
 
 
 def download_one(job_id: str, req: DownloadRequest, url: str, total: int) -> None:
@@ -190,10 +190,12 @@ def download_one(job_id: str, req: DownloadRequest, url: str, total: int) -> Non
 def run(job_id: str, req: DownloadRequest) -> None:
     try:
         found = VIDEO_ID.search(req.url)
-        entries = playlist_entries(job_id, req) if req.playlist else [(req.url, found.group(1) if found else None)]
+        title, entries = playlist_entries(job_id, req) if req.playlist else (None, [(req.url, found.group(1) if found else None)])
         # Já baixados antes (pular) e repetidos dentro da própria playlist: não baixa de novo.
-        known, urls, skipped = set(req.pular), [], []
+        known, urls, skipped, order = set(req.pular), [], [], []
         for url, video_id in entries:
+            if video_id and video_id not in order:
+                order.append(video_id)
             if video_id and video_id in known:
                 if video_id in req.pular and video_id not in skipped:
                     skipped.append(video_id)
@@ -203,6 +205,9 @@ def run(job_id: str, req: DownloadRequest) -> None:
             urls.append(url)
         with lock:
             jobs[job_id]["pulados"] = skipped
+            # Para a biblioteca do K7: nome da playlist e a ordem original (os downloads em paralelo terminam fora de ordem).
+            jobs[job_id]["titulo"] = title
+            jobs[job_id]["ordem"] = order
             jobs[job_id]["progresso"] = f"0/{len(urls)}"
         # Alguns vídeos ao mesmo tempo (PARALLEL); cada um no próprio YoutubeDL.
         with ThreadPoolExecutor(max_workers=PARALLEL if req.playlist else 1) as pool:

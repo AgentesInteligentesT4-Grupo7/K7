@@ -168,9 +168,25 @@ export class WebChannel {
       const bundle = /^\/api\/pacotes\/([0-9a-f]{24})$/.exec(url.pathname);
       // await: sem ele, o erro (404, 413) escaparia do catch e a requisição ficaria sem resposta.
       if (req.method === 'GET' && bundle) return await this.sendZip(res, bundle[1]!, url.searchParams.get('nome'));
+      // Faixa da biblioteca: o id da entrada é imprevisível (como os nomes dos arquivos); <audio>/<video> pedem por partes (Range).
+      const track = /^\/api\/biblioteca\/([0-9a-f]{24})\/(\d{1,5})$/.exec(url.pathname);
+      if (req.method === 'GET' && track) {
+        const found = this.core.library?.track(track[1]!, Number(track[2]));
+        if (!found) throw new HttpError(404, 'Faixa não encontrada');
+        return this.sendMedia(req, res, found.path, found.nome);
+      }
       const userId = this.userIdFor(req);
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
-      if (req.method === 'GET' && url.pathname === '/api/progresso') return this.json(res, { texto: ProgressBoard.get(userId) ?? null });
+      if (req.method === 'GET' && url.pathname === '/api/progresso') {
+        const progress = ProgressBoard.get(userId);
+        return this.json(res, { texto: progress?.text ?? null, feitos: progress?.done ?? null, total: progress?.total ?? null });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/biblioteca') return this.json(res, this.library(userId));
+      const entry = /^\/api\/biblioteca\/([0-9a-f]{24})$/.exec(url.pathname);
+      if (req.method === 'DELETE' && entry) {
+        if (!this.core.library?.remove(userId, entry[1]!)) throw new HttpError(404, 'Playlist não encontrada');
+        return this.json(res, { ok: true });
+      }
       if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations(userId));
       if (req.method === 'POST' && url.pathname === '/api/conversas') {
         this.controller.newConversation(userId);
@@ -321,6 +337,7 @@ export class WebChannel {
       // Público: os nomes das vozes clonadas do dono não aparecem (e o /api/falar fica desligado).
       vozes: this.options.public ? null : (this.core.voiceClone?.list().map((v) => v.name) ?? null),
       publico: this.options.public === true,
+      biblioteca: Boolean(this.core.library),
     };
   }
 
@@ -423,6 +440,41 @@ export class WebChannel {
       'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; media-src 'self' blob:; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     });
     res.end(renderPage(nonce));
+  }
+
+  /** Playlists baixadas pelo visitante, com a URL de cada faixa para o tocador. */
+  private library(userId: string) {
+    return (this.core.library?.list(userId) ?? []).map((entry) => ({
+      id: entry.id,
+      titulo: entry.titulo,
+      formato: entry.formato,
+      criadoEm: entry.criadoEm,
+      faixas: entry.faixas.map((track) => ({ nome: track.nome, url: `/api/biblioteca/${entry.id}/${this.core.library!.indexOf(entry.id, track.arquivo)}` })),
+    }));
+  }
+
+  /** Áudio/vídeo com suporte a Range: o tocador do navegador pula para qualquer ponto sem baixar tudo. */
+  private sendMedia(req: http.IncomingMessage, res: http.ServerResponse, file: string, name: string): void {
+    const size = fs.statSync(file).size;
+    const type = MEDIA_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
+    const headers = {
+      'content-type': type,
+      'accept-ranges': 'bytes',
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, max-age=3600',
+      'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(name)}`,
+    };
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+    if (!range || (!range[1] && !range[2])) {
+      res.writeHead(200, { ...headers, 'content-length': size });
+      return void fs.createReadStream(file).pipe(res);
+    }
+    // "bytes=-500" = os últimos 500 bytes.
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return void res.writeHead(416, { 'content-range': `bytes */${size}` }).end();
+    res.writeHead(206, { ...headers, 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${size}` });
+    fs.createReadStream(file, { start, end }).pipe(res);
   }
 
   private sendFile(res: http.ServerResponse, name: string): void {

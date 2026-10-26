@@ -117,12 +117,51 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 #send { margin-left: auto; width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-text); font-size: 17px; display: grid; place-items: center; }
 #hint { max-width: 780px; margin: 6px auto 0; text-align: center; font-size: 12px; color: var(--muted); }
 #locked { margin: 20vh auto; max-width: 460px; text-align: center; padding: 20px; }
+/* Andamento de tarefas longas (ex.: playlist): barra de % */
+.progress { display: flex; flex-direction: column; gap: 6px; min-width: 240px; flex: 1; }
+.bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .6s ease; }
+
+/* Biblioteca (playlists baixadas) */
+#lib-toggle { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 3px 10px; font-size: 13px; }
+#lib-toggle.on { border-color: var(--accent); color: var(--accent); }
+#lib { width: 300px; flex-shrink: 0; background: var(--side); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+#lib-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 8px; font-weight: 600; }
+#lib-head button { margin-left: auto; border: 0; background: none; font-size: 16px; }
+#lib-list { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+.pl { border-radius: 10px; margin-bottom: 4px; }
+.pl-head { display: flex; align-items: center; gap: 6px; }
+.pl-open { flex: 1; min-width: 0; border: 0; background: none; text-align: left; padding: 8px 8px; border-radius: 8px; }
+.pl-open:hover, .track:hover { background: var(--user); }
+.pl-title { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-meta { display: block; font-size: 12px; color: var(--muted); }
+.pl-head .mini { border: 0; background: none; font-size: 13px; color: var(--muted); padding: 4px 6px; border-radius: 6px; }
+.pl-head .mini:hover { color: var(--text); background: var(--user); }
+.tracks { padding: 2px 0 6px 6px; }
+.track { display: flex; gap: 8px; width: 100%; border: 0; background: none; text-align: left; padding: 5px 8px; border-radius: 6px; font-size: 13px; }
+.track .n { color: var(--muted); min-width: 22px; text-align: right; }
+.track .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track.playing { color: var(--accent); font-weight: 600; }
+.lib-empty { color: var(--muted); font-size: 13px; padding: 8px 10px; }
+
+/* Tocador */
+#player { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 20px; display: flex; flex-direction: column; gap: 6px; }
+#player-row { display: flex; align-items: center; gap: 8px; }
+#player-row .pbtn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; width: 34px; height: 30px; }
+#player-row .pbtn.on { border-color: var(--accent); color: var(--accent); }
+#player-title { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#player-title small { color: var(--muted); }
+#player audio { width: 100%; height: 36px; }
+#player video { width: 100%; max-height: 42vh; background: #000; border-radius: 8px; }
+
 .hidden { display: none !important; }
 
 @media (max-width: 760px) {
   #side { position: fixed; z-index: 10; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow); }
   #side.open { transform: none; }
   #menu { display: block; }
+  #lib { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(320px, 90vw); box-shadow: var(--shadow); }
+  #player { padding-left: 12px; padding-right: 12px; }
   #model { display: none; }
   #messages, #composer-wrap { padding-left: 12px; padding-right: 12px; }
 }
@@ -142,6 +181,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     <button id="menu" type="button" aria-label="Conversas">☰</button>
     <div id="title">Nova conversa</div>
     <div id="model"></div>
+    <button id="lib-toggle" class="hidden" type="button" title="Playlists baixadas">🎵 Biblioteca</button>
     <button id="theme" type="button" title="Tema claro/escuro">◐</button>
   </header>
   <div id="scroll">
@@ -158,6 +198,17 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       <p>Abra o endereço completo exibido no terminal ao iniciar o canal web (ele termina com <code>#t=…</code>).</p>
     </div>
   </div>
+  <div id="player" class="hidden">
+    <div id="player-row">
+      <button class="pbtn" type="button" id="p-prev" title="Anterior">⏮</button>
+      <button class="pbtn" type="button" id="p-next" title="Próxima">⏭</button>
+      <button class="pbtn" type="button" id="p-shuffle" title="Embaralhar">🔀</button>
+      <div id="player-title"></div>
+      <button class="pbtn" type="button" id="p-close" title="Fechar o tocador">✕</button>
+    </div>
+    <audio id="p-audio" controls preload="metadata"></audio>
+    <video id="p-video" class="hidden" controls preload="metadata" playsinline></video>
+  </div>
   <div id="composer-wrap">
     <form id="composer">
       <div id="attachment"><span class="file" id="attachment-name"></span><button type="button" id="attachment-remove" title="Remover anexo">✕</button></div>
@@ -173,6 +224,10 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     <div id="hint">Enter envia · Shift+Enter quebra linha · /persona · /estilo · /modo · /memoria · tudo roda no seu computador</div>
   </div>
 </main>
+<aside id="lib" class="hidden" aria-label="Biblioteca">
+  <div id="lib-head">🎵 Biblioteca <button type="button" id="lib-close" title="Fechar">✕</button></div>
+  <div id="lib-list"><div class="lib-empty">Carregando…</div></div>
+</aside>
 <script nonce="__NONCE__">
 (function () {
   'use strict';
@@ -377,11 +432,26 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     var body = addAssistant(), started = Date.now();
     body.innerHTML = '<div class="thinking"><span class="dots"><span></span><span></span><span></span></span><span class="secs">pensando…</span></div>';
     // Tarefas longas (ex.: playlist inteira) publicam o andamento: aparece no lugar de "pensando…".
-    var progress = '';
-    var poll = setInterval(function () { api('/api/progresso').then(function (p) { progress = p.texto || ''; }).catch(function () {}); }, 3000);
+    var progress = { texto: '' };
+    var poll = setInterval(function () { api('/api/progresso').then(function (p) { progress = p || { texto: '' }; }).catch(function () {}); }, 2000);
     var timer = setInterval(function () {
       var s = body.querySelector('.secs');
-      if (s) s.textContent = (progress || 'pensando…') + ' ' + Math.round((Date.now() - started) / 1000) + ' s';
+      if (!s) return;
+      var secs = Math.round((Date.now() - started) / 1000) + ' s';
+      // Com números (ex.: 120 de 400): barra de % e porcentagem; sem eles, o texto e o tempo.
+      if (progress.total) {
+        var pct = Math.min(100, Math.round((progress.feitos / progress.total) * 100));
+        if (!body.querySelector('.progress')) {
+          var box = el('div', 'progress');
+          box.innerHTML = '<div class="bar"><i></i></div>';
+          s.parentNode.appendChild(box);
+          box.insertBefore(s, box.firstChild);
+        }
+        s.textContent = progress.texto + ' ' + pct + '% · ' + secs;
+        body.querySelector('.bar > i').style.width = pct + '%';
+      } else {
+        s.textContent = (progress.texto || 'pensando…') + ' ' + secs;
+      }
     }, 1000);
     scrollDown();
     payload.responderEmAudio = state.audioReply;
@@ -390,6 +460,7 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         if (reply.transcricao && shownText == null) addUserBefore(body.parentNode, '🎤 ' + reply.transcricao);
         renderReply(body, reply, Math.round((Date.now() - started) / 1000));
         loadConversations();
+        if (state.info && state.info.biblioteca && (reply.arquivos || []).length) loadLibrary();
       })
       .catch(function (err) { renderReply(body, { erro: '⚠️ ' + err.message }); })
       .then(function () { clearInterval(timer); clearInterval(poll); state.busy = false; $('send').disabled = false; $('input').focus(); });
@@ -503,6 +574,112 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     }).catch(function () { alert('Não consegui acessar o microfone.'); });
   };
 
+  // ── Biblioteca e tocador ───────────────────────────────────────────────────
+  var lib = { list: [], open: {}, queue: [], order: [], pos: -1, shuffle: false, entryId: null };
+  var FORMAT_LABEL = { mp3: 'MP3', wav: 'WAV', mp4: 'Vídeo' };
+
+  function setLibOpen(open) {
+    $('lib').classList.toggle('hidden', !open);
+    $('lib-toggle').classList.toggle('on', open);
+    try { localStorage.setItem('libOpen', open ? '1' : '0'); } catch (e) {}
+  }
+  $('lib-toggle').onclick = function () { setLibOpen($('lib').classList.contains('hidden')); };
+  $('lib-close').onclick = function () { setLibOpen(false); };
+
+  function loadLibrary() {
+    return api('/api/biblioteca').then(function (list) { lib.list = list; renderLibrary(); }).catch(function () {});
+  }
+
+  function renderLibrary() {
+    var box = $('lib-list');
+    box.innerHTML = '';
+    if (!lib.list.length) { box.appendChild(el('div', 'lib-empty', 'Nenhuma playlist ainda. Mande um link do YouTube no chat.')); return; }
+    lib.list.forEach(function (entry) {
+      var pl = el('div', 'pl'), head = el('div', 'pl-head');
+      var open = el('button', 'pl-open');
+      open.type = 'button';
+      open.innerHTML = '<span class="pl-title">' + esc(entry.titulo) + '</span><span class="pl-meta">' + entry.faixas.length + ' faixa(s) · ' + (FORMAT_LABEL[entry.formato] || entry.formato) + '</span>';
+      open.onclick = function () { lib.open[entry.id] = !lib.open[entry.id]; renderLibrary(); };
+      var play = el('button', 'mini', '▶'); play.type = 'button'; play.title = 'Tocar tudo';
+      play.onclick = function () { playEntry(entry, 0); };
+      var del = el('button', 'mini', '✕'); del.type = 'button'; del.title = 'Tirar da biblioteca (os arquivos continuam no computador)';
+      del.onclick = function () {
+        api('/api/biblioteca/' + entry.id, { method: 'DELETE' }).then(loadLibrary).catch(function () {});
+      };
+      head.appendChild(open); head.appendChild(play); head.appendChild(del);
+      pl.appendChild(head);
+      if (lib.open[entry.id]) {
+        var tracks = el('div', 'tracks');
+        entry.faixas.forEach(function (track, i) {
+          var row = el('button', 'track');
+          row.type = 'button';
+          row.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t">' + esc(track.nome) + '</span>';
+          if (lib.entryId === entry.id && lib.order[lib.pos] === i) row.classList.add('playing');
+          row.onclick = function () { playEntry(entry, i); };
+          tracks.appendChild(row);
+        });
+        pl.appendChild(tracks);
+      }
+      box.appendChild(pl);
+    });
+  }
+
+  function media() { return lib.video ? $('p-video') : $('p-audio'); }
+
+  /** Toca a playlist a partir da faixa `start` (com embaralhar ligado, a ordem é sorteada e a escolhida vem primeiro). */
+  function playEntry(entry, start) {
+    lib.queue = entry.faixas; lib.entryId = entry.id; lib.video = entry.formato === 'mp4';
+    lib.order = entry.faixas.map(function (_, i) { return i; });
+    if (lib.shuffle) {
+      for (var i = lib.order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var tmp = lib.order[i]; lib.order[i] = lib.order[j]; lib.order[j] = tmp; }
+      lib.order.splice(lib.order.indexOf(start), 1); lib.order.unshift(start);
+      lib.pos = 0;
+    } else lib.pos = start;
+    lib.open[entry.id] = true;
+    $('player').classList.remove('hidden');
+    $('p-audio').classList.toggle('hidden', lib.video); $('p-video').classList.toggle('hidden', !lib.video);
+    (lib.video ? $('p-audio') : $('p-video')).pause();
+    playCurrent();
+  }
+
+  function playCurrent() {
+    var track = lib.queue[lib.order[lib.pos]];
+    if (!track) return;
+    var player = media();
+    player.src = fileUrl(track.url);
+    player.play().catch(function () {});
+    var entry = lib.list.filter(function (e) { return e.id === lib.entryId; })[0];
+    $('player-title').innerHTML = esc(track.nome) + (entry ? ' <small>· ' + esc(entry.titulo) + ' · ' + (lib.pos + 1) + '/' + lib.queue.length + '</small>' : '');
+    document.title = '▶ ' + track.nome;
+    renderLibrary();
+  }
+
+  function step(delta) {
+    if (!lib.queue.length) return;
+    var next = lib.pos + delta;
+    if (next < 0 || next >= lib.order.length) return;
+    lib.pos = next; playCurrent();
+  }
+  $('p-prev').onclick = function () { if (media().currentTime > 3) media().currentTime = 0; else step(-1); };
+  $('p-next').onclick = function () { step(1); };
+  $('p-shuffle').onclick = function () {
+    lib.shuffle = !lib.shuffle;
+    $('p-shuffle').classList.toggle('on', lib.shuffle);
+    // Reorganiza só o resto da fila: a faixa atual continua tocando de onde está.
+    if (lib.pos < 0) return;
+    var current = lib.order[lib.pos];
+    var rest = lib.queue.map(function (_, i) { return i; }).filter(function (i) { return i !== current; });
+    if (lib.shuffle) for (var i = rest.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var tmp = rest[i]; rest[i] = rest[j]; rest[j] = tmp; }
+    lib.order = lib.shuffle ? [current].concat(rest) : lib.queue.map(function (_, i) { return i; });
+    lib.pos = lib.shuffle ? 0 : current;
+    renderLibrary();
+  };
+  $('p-audio').onended = $('p-video').onended = function () { step(1); };
+  $('p-close').onclick = function () {
+    $('p-audio').pause(); $('p-video').pause(); $('player').classList.add('hidden');
+    lib.entryId = null; lib.pos = -1; document.title = state.info ? state.info.nome : 'K7'; renderLibrary();
+  };
+
   // ── Início ────────────────────────────────────────────────────────────────
   // Sem token, a API responde 401 (e a página trava com a explicação), a não ser no canal público.
   api('/api/info').then(function (info) {
@@ -516,6 +693,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     info.modulos.forEach(function (m) { $('modules').appendChild(el('span', 'chip', esc(m))); });
     info.skills.forEach(function (s) { var c = el('span', 'chip', esc(s.nome)); c.title = s.descricao; $('skills').appendChild(c); });
     if (info.voz) { $('mic').classList.remove('hidden'); $('speak').classList.remove('hidden'); }
+    if (info.biblioteca) {
+      $('lib-toggle').classList.remove('hidden');
+      var saved = null; try { saved = localStorage.getItem('libOpen'); } catch (e) {}
+      // Aberta por padrão em tela larga; no celular, só quando a pessoa toca no botão.
+      setLibOpen(saved ? saved === '1' : matchMedia('(min-width: 1100px)').matches);
+      loadLibrary();
+    }
     return loadConversations();
   }).then(function () {
     if (state.conversationId) return showHistory(state.conversationId);
