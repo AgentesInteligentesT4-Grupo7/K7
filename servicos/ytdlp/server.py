@@ -24,7 +24,7 @@ import subprocess
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
 from nomes import filename as standard_filename
@@ -379,58 +379,102 @@ async def standardize_endpoint(request: Request, nome: str) -> Response:
     return FileResponse(target, headers=headers, background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
 
 
-def level_file_in_slot(source: Path, target: Path, cancel: threading.Event) -> dict:
-    """Nivela ocupando uma das LEVEL_PARALLEL vagas (os demais pedidos esperam); cancelado na fila, nem começa."""
+def measure_file(source: Path, cancel: threading.Event) -> dict:
+    """Só mede (como a análise do MP3Gain): volume integrado em LUFS, pico e o ganho que falta para o alvo."""
+    code, err = run_ffmpeg(
+        ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(source), "-af", f"loudnorm=I={TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json", "-vn", "-f", "null", "-"],
+        cancel, 1800,
+    )
+    found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", err)
+    if code != 0 or not found:
+        raise HTTPException(422, "não consegui ler o áudio desse arquivo")
+    m = json.loads(found.group(0))
+    lufs = float(m["input_i"])
+    return {"lufs": round(lufs, 1), "pico": round(float(m["input_tp"]), 1), "alvo": TARGET_LUFS, "ganho": round(TARGET_LUFS - lufs, 1)}
+
+
+def in_slot(fn, *args):
+    """Roda `fn(*args, cancel)` ocupando uma das LEVEL_PARALLEL vagas; cancelado na fila, nem começa."""
+    *rest, cancel = args
     while not level_slots.acquire(timeout=0.5):
         if cancel.is_set():
             raise Cancelled()
     try:
         if cancel.is_set():
             raise Cancelled()
-        return level_file(source, target, cancel)
+        return fn(*rest, cancel)
     finally:
         level_slots.release()
 
 
-@app.post("/nivelar")
-async def level(request: Request, nome: str) -> FileResponse:
-    """Recebe o arquivo no corpo (nome= dá a extensão) e devolve a versão nivelada no mesmo formato."""
+async def receive_file(request: Request, nome: str) -> tuple[Path, Path]:
+    """Grava o corpo do pedido numa pasta de trabalho; devolve (pasta, arquivo)."""
     ext = Path(nome).suffix.lower()
     if ext not in AUDIO_CODECS:
-        raise HTTPException(415, f"formato {ext or '(sem extensão)'} não suportado para nivelar")
+        raise HTTPException(415, f"formato {ext or '(sem extensão)'} não suportado")
     work = LEVEL_DIR / uuid.uuid4().hex
     work.mkdir(parents=True)
-    source, target = work / f"in{ext}", work / f"out{ext}"
+    source = work / f"in{ext}"
     size = 0
     with source.open("wb") as out:
         async for chunk in request.stream():
             size += len(chunk)
             if size > MAX_LEVEL_BYTES:
                 shutil.rmtree(work, ignore_errors=True)
-                raise HTTPException(413, "arquivo grande demais para nivelar (até 2 GB)")
+                raise HTTPException(413, "arquivo grande demais (até 2 GB)")
             out.write(chunk)
-    # Enquanto nivela, confere se quem pediu ainda está conectado: fechou a página, o ffmpeg para na hora.
+    return work, source
+
+
+async def while_connected(request: Request, fn, *args):
+    """Roda `fn` numa thread conferindo a conexão: quem pediu fechou a página, o ffmpeg para na hora."""
     cancel = threading.Event()
-    task = asyncio.ensure_future(run_in_threadpool(level_file_in_slot, source, target, cancel))
+    task = asyncio.ensure_future(run_in_threadpool(in_slot, fn, *args, cancel))
     while not task.done():
         if await request.is_disconnected():
             cancel.set()
             break
         await asyncio.wait({task}, timeout=0.5)
+    return await task
+
+
+@app.post("/nivelar")
+async def level(request: Request, nome: str, padronizar: bool = False) -> Response:
+    """Recebe o arquivo no corpo (nome= dá a extensão) e devolve a versão nivelada no mesmo formato.
+
+    padronizar=1: o nivelado já sai com título e artista nas etiquetas e o nome "Título - Artista" no cabeçalho X-Nome.
+    """
+    work, source = await receive_file(request, nome)
+    target = work / f"out{source.suffix}"
     try:
-        result = await task
+        result = await while_connected(request, level_file, source, target)
+        headers = {"X-Volume-Antes": f"{result['antes']:.1f}", "X-Volume-Depois": f"{result['depois']:.1f}"}
+        if padronizar:
+            tags = await run_in_threadpool(read_tags, source)
+            title, artist = standardize(Path(nome).stem, tags)
+            tagged = work / f"tag{source.suffix}"
+            await run_in_threadpool(write_tags, target, tagged, title, artist)
+            target = tagged
+            headers["X-Nome"] = quote(f"{standard_filename(title, artist)}{Path(nome).suffix}")
     except Cancelled:
         shutil.rmtree(work, ignore_errors=True)
         return Response(status_code=499)
     except Exception:
         shutil.rmtree(work, ignore_errors=True)
         raise
-    return FileResponse(
-        target,
-        filename=Path(nome).name,
-        headers={"X-Volume-Antes": f"{result['antes']:.1f}", "X-Volume-Depois": f"{result['depois']:.1f}"},
-        background=BackgroundTask(shutil.rmtree, work, ignore_errors=True),
-    )
+    return FileResponse(target, filename=Path(nome).name, headers=headers, background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
+
+
+@app.post("/medir")
+async def measure(request: Request, nome: str) -> Response:
+    """Só mede o volume (nada é alterado): {lufs, pico, alvo, ganho}."""
+    work, source = await receive_file(request, nome)
+    try:
+        return JSONResponse(await while_connected(request, measure_file, source))
+    except Cancelled:
+        return Response(status_code=499)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 @app.post("/baixar")

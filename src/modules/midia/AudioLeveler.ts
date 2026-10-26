@@ -38,8 +38,13 @@ export class AudioLeveler {
   }
 
   /** Envia o conteúdo e devolve a resposta do serviço (o arquivo nivelado), para repassar sem guardar. */
-  levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string, signal?: AbortSignal): Promise<Response> {
-    return this.send('/nivelar', 'nivelar', body, name, signal);
+  levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string, signal?: AbortSignal, standardize = false): Promise<Response> {
+    return this.send(standardize ? '/nivelar?padronizar=1' : '/nivelar', 'nivelar', body, name, signal);
+  }
+
+  /** Só mede o volume (como a análise do MP3Gain): {lufs, pico, alvo, ganho}; nada é alterado. */
+  async measureStream(body: ReadableStream<Uint8Array> | Buffer, name: string, signal?: AbortSignal): Promise<{ lufs: number; pico: number; alvo: number; ganho: number }> {
+    return (await this.send('/medir', 'medir', body, name, signal)).json() as Promise<{ lufs: number; pico: number; alvo: number; ganho: number }>;
   }
 
   /**
@@ -87,7 +92,8 @@ export class AudioLeveler {
     if (!LEVELABLE.has(path.extname(name).toLowerCase())) throw new UserFacingError(`Formato ${path.extname(name) || '(sem extensão)'} não dá para ${verb}.`);
     let response: Response;
     try {
-      response = await fetch(`${this.options.baseUrl}${endpoint}?nome=${encodeURIComponent(path.basename(name))}`, {
+      const query = `${endpoint.includes('?') ? '&' : '?'}nome=${encodeURIComponent(path.basename(name))}`;
+      response = await fetch(`${this.options.baseUrl}${endpoint}${query}`, {
         method: 'POST',
         headers: { 'content-type': 'application/octet-stream' },
         body: body as never,

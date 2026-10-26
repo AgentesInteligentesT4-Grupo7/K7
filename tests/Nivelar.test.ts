@@ -24,7 +24,10 @@ function fakeService(): http.Server {
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       if (!/\.(mp3|mp4)$/.test(name)) return void res.writeHead(415, { 'content-type': 'application/json' }).end(JSON.stringify({ detail: 'formato não suportado' }));
-      res.writeHead(200, { 'x-volume-antes': '-23.9', 'x-volume-depois': '-14.0' }).end(Buffer.concat([Buffer.from('NIVELADO:'), ...chunks]));
+      const url = new URL(req.url!, 'http://x');
+      if (url.pathname === '/medir') return void res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ lufs: -9, pico: 1.4, alvo: -14, ganho: -5 }));
+      const renamed = url.searchParams.get('padronizar') === '1' ? { 'x-nome': encodeURIComponent('Faixa - Artista.mp3') } : {};
+      res.writeHead(200, { 'x-volume-antes': '-23.9', 'x-volume-depois': '-14.0', ...renamed }).end(Buffer.concat([Buffer.from('NIVELADO:'), ...chunks]));
     });
   });
 }
@@ -92,6 +95,17 @@ describe('Nivelamento de volume', () => {
     const bad = await fetch(`${base}/api/nivelar?nome=nota.txt`, { method: 'POST', headers: { 'x-visitante': ANA }, body: 'x' });
     assert.equal(bad.status, 422);
     assert.equal((await fetch(`${base}/api/nivelar?nome=a.mp3`, { method: 'POST', body: 'x' })).status, 400, 'sem visitante');
+
+    // Nivelar e padronizar: o nome "Título - Artista" vem no cabeçalho, para gravar com ele.
+    const both = await fetch(`${base}/api/nivelar?nome=a.mp3&padronizar=1`, { method: 'POST', headers: { 'x-visitante': ANA }, body: Buffer.from('ID3') });
+    assert.equal(decodeURIComponent(both.headers.get('x-nome')!), 'Faixa - Artista.mp3');
+    assert.equal(await both.text(), 'NIVELADO:ID3');
+  });
+
+  it('só medir (análise, como o MP3Gain): volume, pico e ganho; nada volta além dos números', async () => {
+    const res = await fetch(`${base}/api/medir?nome=a.mp3`, { method: 'POST', headers: { 'x-visitante': ANA }, body: Buffer.from('ID3') });
+    assert.deepEqual(await res.json(), { lufs: -9, pico: 1.4, alvo: -14, ganho: -5 });
+    assert.equal((await fetch(`${base}/api/medir?nome=nota.txt`, { method: 'POST', headers: { 'x-visitante': ANA }, body: 'x' })).status, 422);
   });
 
   it('playlist baixada: nivela todas as faixas no servidor e fica marcada; faixa nova tira a marca', async () => {

@@ -206,7 +206,26 @@ export class WebChannel {
         // Fora da fila de mensagens: várias músicas ao mesmo tempo, até o que o serviço aguenta (núcleos dele).
         // Fechou a página: quem ainda esperava vaga nem começa, e o que estava no serviço é interrompido.
         const gone = WebChannel.whenClientLeaves(res);
-        return await this.levelSlots.run(userId, async () => (gone.aborted ? undefined : this.proxyLevel(leveler, req, res, name, gone)));
+        const standardize = url.searchParams.get('padronizar') === '1';
+        return await this.levelSlots.run(userId, async () => (gone.aborted ? undefined : this.proxyLevel(leveler, req, res, name, gone, standardize)));
+      }
+      // Só medir o volume de um arquivo da pasta do visitante (análise, como o MP3Gain): nada é alterado.
+      if (req.method === 'POST' && url.pathname === '/api/medir') {
+        const leveler = this.core.leveler;
+        if (!leveler) throw new HttpError(404, 'Nivelamento desligado nesta fita');
+        const name = path.basename(url.searchParams.get('nome') ?? '');
+        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
+        const gone = WebChannel.whenClientLeaves(res);
+        return await this.levelSlots.run(userId, async () => {
+          if (gone.aborted) return;
+          try {
+            this.json(res, await leveler.measureStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone));
+          } catch (error) {
+            if (gone.aborted) return;
+            if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
+            throw error;
+          }
+        });
       }
       // Padronizar um arquivo da pasta do visitante: nome "Título - Artista" nos cabeçalhos e o arquivo com as etiquetas.
       if (req.method === 'POST' && url.pathname === '/api/padronizar') {
@@ -520,10 +539,10 @@ export class WebChannel {
     return controller.signal;
   }
 
-  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string, gone: AbortSignal): Promise<void> {
+  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string, gone: AbortSignal, standardize = false): Promise<void> {
     let response: Response;
     try {
-      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone);
+      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone, standardize);
     } catch (error) {
       if (gone.aborted) return; // ninguém mais esperando a resposta
       if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
@@ -536,6 +555,8 @@ export class WebChannel {
       'x-content-type-options': 'nosniff',
       ...(volumes.before !== null ? { 'x-volume-antes': String(volumes.before) } : {}),
       ...(volumes.after !== null ? { 'x-volume-depois': String(volumes.after) } : {}),
+      // Nivelar e padronizar: o nome "Título - Artista" com que o arquivo deve ser gravado.
+      ...(response.headers.has('x-nome') ? { 'x-nome': response.headers.get('x-nome')! } : {}),
     });
     await pipeline(Readable.fromWeb(response.body as never), res);
   }

@@ -156,6 +156,26 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 .folder-tools .retry { border-color: var(--line); color: var(--text); }
 .folder-tools .retry:hover { border-color: var(--accent); }
 .folder-status { font-size: 12px; color: var(--muted); padding: 0 10px 4px; min-height: 0; }
+/* Painel de tarefa da pasta: barra geral e lista de todas as músicas */
+.job { margin: 6px 8px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; }
+.job-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.job-head b { flex: 1; font-size: 13px; }
+.job .bar { margin-bottom: 4px; }
+.job-meta { color: var(--muted); margin-bottom: 4px; }
+.job-filter { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); margin-bottom: 4px; cursor: pointer; }
+.job-list { max-height: 320px; overflow-y: auto; border-top: 1px solid var(--line); }
+.job-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 2px; border-bottom: 1px solid var(--line); }
+.job-row .ic { width: 16px; text-align: center; }
+.job-row .nm { flex: 1 1 60%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-row .dt { flex: 1 1 100%; padding-left: 22px; color: var(--muted); }
+.job-row[data-state="fila"] .nm, .job-row[data-state="cancelado"] .nm { color: var(--muted); }
+.job-row[data-state="ativo"] { background: var(--user); }
+.job-row[data-state="erro"] .dt { color: var(--error); }
+.job-row[data-level="baixa"] .dt { color: #3f8fd2; }
+.job-row[data-level="alta"] .dt { color: var(--warn); }
+.job-play { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+.job-play:hover { border-color: var(--accent); }
+.job.only-problems .job-row:not([data-state="erro"]) { display: none; }
 .pl-head a.mini { text-decoration: none; font-size: 13px; padding: 4px 6px; border-radius: 6px; }
 .pl-head a.mini:hover { background: var(--user); }
 .fails { margin: 0 8px 6px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
@@ -828,55 +848,252 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     return pastas.reduce(function (p, name) { return p.then(function (d) { return d.getDirectoryHandle(name, { create: true }); }); }, Promise.resolve(dir));
   }
 
-  /**
-   * Nivela os arquivos da pasta e das subpastas: cada um vai ao servidor, volta nivelado e é gravado em
-   * "nivelados", na mesma estrutura de subpastas (o original fica). O que já está em "nivelados" é pulado,
-   * então rodar de novo continua de onde parou.
-   */
-  function levelFolder(button) {
-    var folder = lib.folder, files = folder.files.slice();
-    if (!files.length) return;
-    button.disabled = true;
-    var levelled = 0, skipped = 0, problems = [], finished = 0;
-    // Várias músicas ao mesmo tempo: quantas o serviço nivela de uma vez (ele descobre pelos núcleos da máquina).
-    var parallel = Math.max(1, Math.min(files.length, (state.info && state.info.nivelarParalelo) || 2));
-    var started = Date.now();
-    var report = function () {
-      var secs = Math.round((Date.now() - started) / 1000);
-      folderStatus('🔊 Nivelando ' + finished + ' de ' + files.length + ' (' + parallel + ' ao mesmo tempo · ' + secs + ' s)');
+  // ── Tarefas da pasta (nivelar, padronizar): lista de todas as músicas e barra de progresso ─────────────
+  // O painel é um elemento guardado em `lib.job`: a biblioteca é redesenhada a cada poucos segundos e só
+  // recoloca o mesmo painel, então o andamento não se perde nem pisca.
+  var JOB_STATES = {
+    fila: { icon: '⏳', label: 'na fila' },
+    ativo: { icon: '🔄', label: 'em andamento' },
+    feito: { icon: '✓', label: 'feito' },
+    pulado: { icon: '↷', label: 'pulado' },
+    erro: { icon: '⚠', label: 'com problema' },
+    cancelado: { icon: '✕', label: 'cancelado' },
+  };
+
+  function startJob(title, items, parallel) {
+    var job = {
+      title: title, parallel: parallel, started: Date.now(), done: 0, cancelled: false, finished: false,
+      controllers: [], counts: { feito: 0, pulado: 0, erro: 0, cancelado: 0 },
+      rows: [], el: el('div', 'job'),
     };
-    folder.handle.getDirectoryHandle('nivelados', { create: true }).then(function (out) {
-      var i = 0;
-      var one = function () {
-        if (i >= files.length) return Promise.resolve();
-        var item = files[i++];
-        return subfolder(out, item.pastas).then(function (target) {
-          // Já nivelado antes: pula.
-          return target.getFileHandle(item.arquivo).then(function () { skipped++; }, function () {
-            return item.handle.getFile().then(function (file) {
-              return fetch(base + '/api/nivelar?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file });
-            }).then(function (res) {
-              if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
-              return target.getFileHandle(item.arquivo, { create: true })
-                .then(function (h) { return h.createWritable(); })
-                .then(function (w) { return res.body.pipeTo(w); })
-                .then(function () { levelled++; });
-            });
-          });
-        }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); })
-          .then(function () { finished++; report(); return one(); });
+    var head = el('div', 'job-head');
+    head.appendChild(el('b', '', esc(title)));
+    var cancel = el('button', 'retry', 'Cancelar'); cancel.type = 'button';
+    cancel.onclick = function () { cancelJob(job); };
+    var close = el('button', 'retry hidden', 'Fechar'); close.type = 'button';
+    close.onclick = function () { if (lib.job === job) { lib.job = null; renderLibrary(); } };
+    head.appendChild(cancel); head.appendChild(close);
+    job.cancelButton = cancel; job.closeButton = close;
+    job.el.appendChild(head);
+    var bar = el('div', 'bar'); bar.appendChild(el('i')); job.bar = bar.firstChild;
+    job.el.appendChild(bar);
+    job.meta = el('div', 'job-meta'); job.el.appendChild(job.meta);
+    var filter = el('label', 'job-filter');
+    var check = document.createElement('input'); check.type = 'checkbox';
+    check.onchange = function () { job.el.classList.toggle('only-problems', check.checked); };
+    filter.appendChild(check); filter.appendChild(document.createTextNode(' só problemas'));
+    job.el.appendChild(filter);
+    var list = el('div', 'job-list');
+    items.forEach(function (item) {
+      var row = el('div', 'job-row');
+      row.dataset.state = 'fila';
+      row.innerHTML = '<span class="ic">' + JOB_STATES.fila.icon + '</span><span class="nm">' + esc(item.caminho) + '</span><span class="dt"></span>';
+      row.title = item.caminho;
+      list.appendChild(row);
+      job.rows.push(row);
+    });
+    job.el.appendChild(list);
+    job.timer = setInterval(function () { updateJob(job); }, 1000);
+    lib.job = job;
+    updateJob(job);
+    renderLibrary();
+    return job;
+  }
+
+  function setJobRow(job, index, state, detail, extra) {
+    var row = job.rows[index];
+    var previous = row.dataset.state;
+    row.dataset.state = state;
+    row.querySelector('.ic').textContent = JOB_STATES[state].icon;
+    row.querySelector('.ic').title = JOB_STATES[state].label;
+    row.querySelector('.dt').textContent = detail || '';
+    if (extra && extra.level) row.dataset.level = extra.level;
+    // ▶ original / ▶ nivelado: toca no player para comparar (direto do computador).
+    (extra && extra.play || []).forEach(function (p) {
+      var b = el('button', 'job-play', '▶ ' + esc(p.label)); b.type = 'button';
+      b.onclick = function () { playPreview(p.handle, p.title); };
+      row.appendChild(b);
+    });
+    if (state in job.counts && !(previous in job.counts)) { job.counts[state]++; job.done++; }
+    if (state === 'ativo' && !job.scrolled) { job.scrolled = true; row.scrollIntoView({ block: 'nearest' }); }
+    updateJob(job);
+  }
+
+  function updateJob(job) {
+    var total = job.rows.length;
+    var pct = total ? Math.round((job.done / total) * 100) : 100;
+    var secs = Math.round(((job.finishedAt || Date.now()) - job.started) / 1000);
+    var time = secs >= 60 ? Math.floor(secs / 60) + ' min ' + (secs % 60) + ' s' : secs + ' s';
+    job.bar.style.width = pct + '%';
+    var c = job.counts;
+    var parts = [job.done + ' de ' + total + ' (' + pct + '%)', time];
+    if (!job.finished) parts.push(job.parallel + ' ao mesmo tempo');
+    if (c.feito) parts.push('✓ ' + c.feito);
+    if (c.pulado) parts.push('↷ ' + c.pulado);
+    if (c.erro) parts.push('⚠ ' + c.erro);
+    if (c.cancelado) parts.push('✕ ' + c.cancelado);
+    job.meta.textContent = (job.finished ? (job.cancelled ? 'Cancelado · ' : 'Concluído · ') : '') + parts.join(' · ');
+  }
+
+  function cancelJob(job) {
+    if (job.finished) return;
+    job.cancelled = true;
+    job.controllers.forEach(function (c) { c.abort(); });
+    job.cancelButton.disabled = true;
+    job.cancelButton.textContent = 'Cancelando…';
+  }
+
+  /**
+   * Roda `worker(item, signal)` em `job.parallel` filas; cada resultado é { state: 'feito' | 'pulado', detail }.
+   * Erro vira "com problema" com a mensagem; cancelar para de puxar a fila e interrompe os envios em andamento.
+   */
+  function runJob(job, items, worker) {
+    var next = 0;
+    var one = function () {
+      if (next >= items.length) return Promise.resolve();
+      var index = next++;
+      if (job.cancelled) { setJobRow(job, index, 'cancelado'); return one(); }
+      var controller = new AbortController();
+      job.controllers.push(controller);
+      setJobRow(job, index, 'ativo', '');
+      return Promise.resolve()
+        .then(function () { return worker(items[index], controller.signal); })
+        .then(function (result) { setJobRow(job, index, result.state, result.detail, result); })
+        .catch(function (err) {
+          if (job.cancelled) setJobRow(job, index, 'cancelado');
+          else setJobRow(job, index, 'erro', err && err.message ? err.message : String(err));
+        })
+        .then(function () { job.controllers.splice(job.controllers.indexOf(controller), 1); return one(); });
+    };
+    var workers = [];
+    for (var w = 0; w < Math.max(1, Math.min(job.parallel, items.length)); w++) workers.push(one());
+    return Promise.all(workers).then(function () {
+      job.finished = true; job.finishedAt = Date.now();
+      clearInterval(job.timer);
+      job.cancelButton.classList.add('hidden'); job.closeButton.classList.remove('hidden');
+      updateJob(job);
+      renderLibrary();
+    });
+  }
+
+  function jobRunning() { return Boolean(lib.job && !lib.job.finished); }
+
+  function failOn(res) {
+    if (res.ok) return res;
+    return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
+  }
+
+  /** Como o MP3Gain mostra: estava baixa (precisa subir), alta (precisa baixar) ou já no ponto. */
+  function loudness(before, target) {
+    var b = Number(before), t = Number(target);
+    if (before === null || before === '' || isNaN(b) || isNaN(t)) return { text: '', level: '' };
+    var gain = t - b, dB = (gain > 0 ? '+' : '−') + Math.abs(gain).toFixed(1).replace('.', ',') + ' dB';
+    if (gain > 1) return { text: 'estava baixa (' + dB + ')', level: 'baixa' };
+    if (gain < -1) return { text: 'estava alta (' + dB + ')', level: 'alta' };
+    return { text: 'já estava no ponto', level: 'ok' };
+  }
+
+  /** Toca um arquivo do computador no player (comparar original e nivelado). */
+  function playPreview(handle, title) {
+    lib.preview = { id: 'preview', titulo: 'Comparação', formato: 'local', local: true, faixas: [{ nome: title, arquivo: handle.name, handle: handle }] };
+    playEntry(lib.preview, 0);
+  }
+
+  var LUFS = function (v) { return v === null || v === '' || isNaN(Number(v)) ? '?' : Number(v).toFixed(1).replace('.', ','); };
+
+  var LEVELED_MAP = '.k7-nivelados.json';
+
+  /** "caminho original → nome em nivelados" (modo nivelar e padronizar), para retomar mesmo com o nome mudando. */
+  function readLeveledMap(out) {
+    return out.getFileHandle(LEVELED_MAP)
+      .then(function (h) { return h.getFile(); })
+      .then(function (f) { return f.text(); })
+      .then(function (t) { return JSON.parse(t) || {}; })
+      .catch(function () { return {}; });
+  }
+
+  /**
+   * Nivela a pasta e as subpastas: cada música vai ao servidor e volta nivelada para "nivelados", na mesma
+   * estrutura (o original fica). Com `standardize`, volta também com o nome "Título - Artista" e as etiquetas.
+   * O que já está em "nivelados" é pulado: rodar de novo continua de onde parou.
+   */
+  function levelFolder(standardize) {
+    var folder = lib.folder, files = folder.files.slice();
+    if (!files.length || jobRunning()) return;
+    var parallel = Math.max(1, (state.info && state.info.nivelarParalelo) || 2);
+    var out, map;
+    folder.handle.getDirectoryHandle('nivelados', { create: true }).then(function (dir) {
+      out = dir;
+      return readLeveledMap(out);
+    }).then(function (saved) {
+      map = saved;
+      // O mapa é regravado de tempos em tempos (e no fim): um cancelamento não perde o que já foi feito.
+      var dirty = false;
+      var saveMap = function () {
+        if (!dirty) return Promise.resolve();
+        dirty = false;
+        return writeTo(out, LEVELED_MAP, new Blob([JSON.stringify(map, null, 1)]).stream()).catch(function () {});
       };
-      report();
-      // `parallel` filas puxando o próximo arquivo assim que a anterior termina.
-      var workers = [];
-      for (var w = 0; w < parallel; w++) workers.push(one());
-      return Promise.all(workers).then(function () {
-        button.disabled = false;
-        var secs = Math.round((Date.now() - started) / 1000);
-        folderStatus('🔊 ' + levelled + ' nivelado(s) em "nivelados" em ' + secs + ' s' + (skipped ? ' · ' + skipped + ' já estavam' : '') +
-          (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
+      var flush = setInterval(saveMap, 5000);
+      var job = startJob(standardize ? '🔊✏️ Nivelando e padronizando' : '🔊 Nivelando o volume', files, parallel);
+      return runJob(job, files, function (item, signal) {
+        return subfolder(out, item.pastas).then(function (target) {
+          var done = standardize ? map[item.caminho] : item.arquivo;
+          var already = done ? target.getFileHandle(done) : Promise.reject(new Error('novo'));
+          return already.then(function () {
+            return target.getFileHandle(done).then(function (levelled) {
+              return {
+                state: 'pulado', detail: 'já estava em "nivelados"' + (standardize ? ' como "' + done + '"' : ''),
+                play: [{ label: 'original', handle: item.handle, title: item.nome + ' (original)' }, { label: 'nivelado', handle: levelled, title: item.nome + ' (nivelado)' }],
+              };
+            });
+          }, function () {
+            return item.handle.getFile()
+              .then(function (file) {
+                var url = base + '/api/nivelar?nome=' + encodeURIComponent(file.name) + (standardize ? '&padronizar=1' : '');
+                return fetch(url, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file, signal: signal });
+              })
+              .then(failOn)
+              .then(function (res) {
+                var name = standardize ? decodeURIComponent(res.headers.get('x-nome') || '') || item.arquivo : item.arquivo;
+                var before = res.headers.get('x-volume-antes'), after = res.headers.get('x-volume-depois');
+                var judged = loudness(before, after);
+                var detail = LUFS(before) + ' → ' + LUFS(after) + ' LUFS' + (judged.text ? ' · ' + judged.text : '') + (name !== item.arquivo ? ' · → ' + name : '');
+                return writeTo(target, name, res.body).then(function () {
+                  if (standardize) { map[item.caminho] = name; dirty = true; }
+                  return target.getFileHandle(name).then(function (levelled) {
+                    return {
+                      state: 'feito', detail: detail, level: judged.level,
+                      play: [{ label: 'original', handle: item.handle, title: item.nome + ' (original)' }, { label: 'nivelado', handle: levelled, title: item.nome + ' (nivelado)' }],
+                    };
+                  });
+                });
+              });
+          });
+        });
+      }).then(function () { clearInterval(flush); return saveMap(); });
+    }).catch(function (err) { folderStatus('⚠️ ' + err.message); });
+  }
+
+  /** Só mede o volume de cada música da pasta (nada é alterado), como a análise do MP3Gain. */
+  function analyzeFolder() {
+    var folder = lib.folder, files = folder.files.slice();
+    if (!files.length || jobRunning()) return;
+    var parallel = Math.max(1, (state.info && state.info.nivelarParalelo) || 2);
+    var job = startJob('📊 Analisando o volume', files, parallel);
+    runJob(job, files, function (item, signal) {
+      return item.handle.getFile().then(function (file) {
+        return fetch(base + '/api/medir?nome=' + encodeURIComponent(file.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: file, signal: signal });
+      }).then(failOn).then(function (res) { return res.json(); }).then(function (m) {
+        var judged = loudness(m.lufs, m.alvo);
+        var peak = m.pico > -1 ? ' · pico ' + (m.pico > 0 ? '+' : '') + String(m.pico).replace('.', ',') + ' dB (pode distorcer)' : '';
+        return {
+          state: 'feito', level: judged.level,
+          detail: LUFS(m.lufs) + ' LUFS · ' + judged.text.replace('já estava', 'já está').replace('estava', 'está') + peak,
+          play: [{ label: 'ouvir', handle: item.handle, title: item.nome }],
+        };
       });
-    }).catch(function (err) { button.disabled = false; folderStatus('⚠️ ' + err.message); });
+    });
   }
 
   function writeTo(dir, name, stream) {
@@ -887,58 +1104,53 @@ audio { width: 100%; max-width: 420px; height: 40px; }
 
   /**
    * Padroniza os nomes da pasta e das subpastas: "Título - Artista", sem "(2)" nem "(Official Video)", com título e
-   * artista gravados nas etiquetas (o servidor decide o nome e regrava as etiquetas; o arquivo volta para a pasta).
-   * Nome que já existe na mesma pasta é a mesma música: a cópia vai para "duplicados" (nada é apagado).
+   * artista gravados nas etiquetas. O envio e as etiquetas vão em paralelo; renomear fica em fila dentro de cada
+   * pasta (duas músicas não disputam o mesmo nome). Nome que já existe na mesma pasta é a mesma música: a cópia
+   * vai para "duplicados" (nada é apagado).
    */
-  function standardizeFolder(button) {
+  function standardizeFolder() {
     var folder = lib.folder, files = folder.files.slice();
-    if (!files.length) return;
-    button.disabled = true;
-    var renamed = 0, tagged = 0, duplicates = 0, unchanged = 0, problems = [];
-    var i = 0;
-    var one = function () {
-      if (i >= files.length) {
-        button.disabled = false;
-        folderStatus('✏️ ' + renamed + ' renomeado(s)' + (tagged ? ' · ' + tagged + ' só com etiquetas novas' : '') +
-          (unchanged ? ' · ' + unchanged + ' já estavam certos' : '') +
-          (duplicates ? ' · ' + duplicates + ' repetido(s) movidos para "duplicados"' : '') +
-          (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
-        return scanFolder();
-      }
-      var item = files[i++];
-      folderStatus('✏️ Padronizando ' + i + ' de ' + files.length + ': ' + item.caminho);
+    if (!files.length || jobRunning()) return;
+    var parallel = Math.max(1, (state.info && state.info.nivelarParalelo) || 2);
+    var locks = {};
+    var inFolder = function (key, fn) {
+      var run = (locks[key] || Promise.resolve()).then(fn, fn);
+      locks[key] = run.catch(function () {});
+      return run;
+    };
+    var job = startJob('✏️ Padronizando os nomes', files, parallel);
+    runJob(job, files, function (item, signal) {
       var dir, file;
       return subfolder(folder.handle, item.pastas).then(function (d) {
         dir = d;
         return item.handle.getFile();
       }).then(function (f) {
         file = f;
-        return fetch(base + '/api/padronizar?nome=' + encodeURIComponent(f.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: f });
-      }).then(function (res) {
-        if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
+        return fetch(base + '/api/padronizar?nome=' + encodeURIComponent(f.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: f, signal: signal });
+      }).then(failOn).then(function (res) {
         var name = decodeURIComponent(res.headers.get('x-nome') || '') || item.arquivo;
         var content = function () { return res.status === 204 || !res.body ? file.stream() : res.body; };
-        var sameName = name === item.arquivo;
         // Só maiúsculas/minúsculas mudam: o Windows trata como o mesmo arquivo; fica o nome atual, com as etiquetas novas.
-        if (!sameName && name.toLowerCase() === item.arquivo.toLowerCase()) { name = item.arquivo; sameName = true; }
-        if (sameName) {
-          if (res.status === 204) { unchanged++; return; }
-          return writeTo(dir, item.arquivo, content()).then(function () { tagged++; });
-        }
-        return dir.getFileHandle(name).then(function () {
-          // Já existe uma com o nome padronizado: esta é a repetida.
-          return subfolder(folder.handle, ['duplicados'].concat(item.pastas))
-            .then(function (dups) { return writeTo(dups, item.arquivo, file.stream()); })
-            .then(function () { return dir.removeEntry(item.arquivo); })
-            .then(function () { duplicates++; });
-        }, function () {
-          return writeTo(dir, name, content())
-            .then(function () { return dir.removeEntry(item.arquivo); })
-            .then(function () { renamed++; });
+        if (name !== item.arquivo && name.toLowerCase() === item.arquivo.toLowerCase()) name = item.arquivo;
+        return inFolder(item.pastas.join('/'), function () {
+          if (name === item.arquivo) {
+            if (res.status === 204) return { state: 'pulado', detail: 'já estava certo' };
+            return writeTo(dir, item.arquivo, content()).then(function () { return { state: 'feito', detail: 'etiquetas de título e artista gravadas' }; });
+          }
+          return dir.getFileHandle(name).then(function () {
+            // Já existe uma com o nome padronizado: esta é a repetida.
+            return subfolder(folder.handle, ['duplicados'].concat(item.pastas))
+              .then(function (dups) { return writeTo(dups, item.arquivo, file.stream()); })
+              .then(function () { return dir.removeEntry(item.arquivo); })
+              .then(function () { return { state: 'feito', detail: 'repetida de "' + name + '" → duplicados' }; });
+          }, function () {
+            return writeTo(dir, name, content())
+              .then(function () { return dir.removeEntry(item.arquivo); })
+              .then(function () { return { state: 'feito', detail: '→ ' + name }; });
+          });
         });
-      }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); }).then(one);
-    };
-    one();
+      });
+    }).then(scanFolder);
   }
 
   /** Nivela no servidor todas as faixas de uma playlist baixada. */
@@ -976,16 +1188,20 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       appendEntry(card, entry);
       var tools = el('div', 'folder-tools');
       if (entry.faixas.length && state.info && state.info.nivelar) {
-        var level = el('button', 'retry', '🔊 Nivelar volume'); level.type = 'button';
+        var busy = jobRunning();
+        var both = el('button', 'retry', '🔊✏️ Nivelar e padronizar'); both.type = 'button'; both.disabled = busy;
+        both.title = 'Nivela o volume e dá o nome "Título - Artista" (com etiquetas) de uma vez: tudo sai em "nivelados", os originais ficam como estão';
+        both.onclick = function () { levelFolder(true); };
+        var level = el('button', 'retry', '🔊 Só nivelar'); level.type = 'button'; level.disabled = busy;
         level.title = 'Deixa todos no mesmo volume, inclusive nas subpastas; as versões niveladas vão para "nivelados", na mesma estrutura';
-        level.onclick = function () { levelFolder(level); };
-        tools.appendChild(level);
-      }
-      if (entry.faixas.length && state.info && state.info.nivelar) {
-        var rename = el('button', 'retry', '✏️ Padronizar nomes'); rename.type = 'button';
-        rename.title = '"Título - Artista", sem "(2)" nem "(Official Video)", com as etiquetas de título e artista; repetidas vão para "duplicados"';
-        rename.onclick = function () { standardizeFolder(rename); };
-        tools.appendChild(rename);
+        level.onclick = function () { levelFolder(false); };
+        var rename = el('button', 'retry', '✏️ Só padronizar nomes'); rename.type = 'button'; rename.disabled = busy;
+        rename.title = '"Título - Artista", sem "(2)" nem "(Official Video)", com as etiquetas de título e artista, na própria pasta; repetidas vão para "duplicados"';
+        rename.onclick = standardizeFolder;
+        var analyze = el('button', 'retry', '📊 Analisar volume'); analyze.type = 'button'; analyze.disabled = busy;
+        analyze.title = 'Só mede o volume de cada música (como o MP3Gain): mostra quais estão baixas ou altas, sem alterar nada';
+        analyze.onclick = analyzeFolder;
+        tools.appendChild(both); tools.appendChild(level); tools.appendChild(rename); tools.appendChild(analyze);
       }
       var rescan = el('button', 'retry', '↻ Reler'); rescan.type = 'button'; rescan.onclick = function () { scanFolder(); };
       var change = el('button', 'retry', 'Trocar pasta'); change.type = 'button'; change.onclick = pickFolder;
@@ -995,6 +1211,8 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     }
     var status = el('div', 'folder-status'); status.id = 'folder-status'; status.textContent = folder ? folder.status : '';
     card.appendChild(status);
+    // O painel da tarefa (lista das músicas e barra) é o mesmo elemento a cada redesenho: nada se perde.
+    if (lib.job) card.appendChild(lib.job.el);
     box.appendChild(card);
   }
 
@@ -1083,7 +1301,11 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   }
 
   function media() { return lib.video ? $('p-video') : $('p-audio'); }
-  function entryById(id) { return id === 'pasta-local' ? lib.localEntry : lib.list.filter(function (e) { return e.id === id; })[0]; }
+  function entryById(id) {
+    if (id === 'pasta-local') return lib.localEntry;
+    if (id === 'preview') return lib.preview;
+    return lib.list.filter(function (e) { return e.id === id; })[0];
+  }
 
   /** Toca a playlist a partir da faixa `start` (com embaralhar ligado, a ordem é sorteada e a escolhida vem primeiro). */
   function playEntry(entry, start) {
