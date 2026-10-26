@@ -110,6 +110,30 @@ export class MediaLibrary {
     return { titulo: entry.titulo, arquivos };
   }
 
+  /**
+   * Arquivos renomeados ou unidos na pasta de downloads (padronização): as faixas passam a apontar para o nome
+   * novo; duas faixas que viraram o mesmo arquivo ficam uma só.
+   */
+  renameFiles(renames: Map<string, string>): void {
+    let changed = false;
+    for (const entry of this.entries) {
+      const seen = new Set<string>();
+      const faixas: LibraryTrack[] = [];
+      for (const track of entry.faixas) {
+        const arquivo = renames.get(track.arquivo) ?? track.arquivo;
+        if (arquivo !== track.arquivo) changed = true;
+        if (seen.has(arquivo)) {
+          changed = true;
+          continue;
+        }
+        seen.add(arquivo);
+        faixas.push({ nome: path.parse(arquivo).name, arquivo });
+      }
+      entry.faixas = faixas;
+    }
+    if (changed) this.save();
+  }
+
   /** Marca a entrada do dono como nivelada (o botão some até chegar faixa nova). */
   markLeveled(dono: string, id: string, leveled = true): void {
     const entry = this.get(dono, id);

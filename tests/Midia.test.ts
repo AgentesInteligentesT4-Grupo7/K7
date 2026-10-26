@@ -55,19 +55,24 @@ describe('Módulo midia: cliente do serviço yt-dlp', () => {
   before(async () => (okUrl = await listen(ok.server)));
   after(() => ok.server.close());
 
-  it('pede o download, acompanha até terminar, copia o arquivo (sem sobrescrever) e apaga o trabalho no serviço', async () => {
+  it('pede o download, acompanha até terminar, copia o arquivo e apaga o trabalho; o mesmo nome não vira "(2)"', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'midia-'));
-    fs.writeFileSync(path.join(dir, 'Musica.mp3'), 'antigo');
     const progress: string[] = [];
     const client = new YtdlpClient({ baseUrl: okUrl, timeoutMs: 5_000, pollMs: 10 });
     const { files, failures } = await client.download({ url: 'https://youtu.be/x', formato: 'mp3', playlist: false, maxItens: 25 }, dir, (p) => progress.push(p));
-    assert.deepEqual(files.map((f) => path.basename(f.path)), ['Musica (2).mp3']);
+    assert.deepEqual(files.map((f) => path.basename(f.path)), ['Musica.mp3']);
     assert.deepEqual(failures, [{ link: 'https://youtu.be/AAAAAAAAAAA', motivo: 'vídeo privado' }], 'vídeo pulado volta com link e motivo');
     assert.equal(fs.readFileSync(files[0]!.path, 'utf8'), 'ID3-audio');
-    assert.equal(fs.readFileSync(path.join(dir, 'Musica.mp3'), 'utf8'), 'antigo', 'o arquivo que já existia fica');
     assert.deepEqual(progress, ['0/?', '1/1']);
     assert.deepEqual(ok.requests[0]!.body, { url: 'https://youtu.be/x', formato: 'mp3', playlist: false, max_itens: 25 });
     assert.equal(ok.requests.at(-1)!.method, 'DELETE');
+
+    // O nome já vem padronizado ("Título - Artista"): se já existe, é a mesma música e o arquivo é reaproveitado.
+    const again = fs.mkdtempSync(path.join(os.tmpdir(), 'midia-'));
+    fs.writeFileSync(path.join(again, 'Musica.mp3'), 'antigo');
+    const second = await client.download({ url: 'https://youtu.be/x', formato: 'mp3', playlist: false }, again);
+    assert.deepEqual(second.files.map((f) => path.basename(f.path)), ['Musica.mp3']);
+    assert.deepEqual(fs.readdirSync(again), ['Musica.mp3'], 'sem "Musica (2).mp3"');
   });
 
   it('erro do yt-dlp vira mensagem que a pessoa entende; serviço fora do ar diz como subir', async () => {

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { UserFacingError } from '../../errors/AppErrors.js';
+import { type AudioLeveler, LEVELABLE } from './AudioLeveler.js';
 import type { LibraryEntry, MediaLibrary } from './MediaLibrary.js';
 import type { DownloadFailure, MediaFormat, YtdlpClient } from './YtdlpClient.js';
 
@@ -34,6 +35,14 @@ class DownloadIndex {
     const name = this.entries[`${id}.${format}`];
     const full = name && path.join(path.dirname(this.file_), name);
     return full && fs.existsSync(full) ? full : undefined;
+  }
+
+  /** Arquivos renomeados ou unidos (padronização): os IDs passam a apontar para o nome novo. */
+  rename(renames: Map<string, string>): void {
+    for (const [key, name] of Object.entries(this.entries)) {
+      const next = renames.get(name);
+      if (next) this.entries[key] = next;
+    }
   }
 
   add(id: string, format: string, filePath: string): void {
@@ -119,6 +128,50 @@ export class MediaDownloader {
     index.save();
     record(files, result.title, result.failures);
     return { files, fresh: result.files.length, reused: reused.length, failures: result.failures, ...(entry ? { entry } : {}) };
+  }
+
+  /**
+   * Padroniza os nomes e as etiquetas de tudo que está na pasta de downloads ("Título - Artista", sem "(2)" nem
+   * "(Official Video)"). Arquivos que viram o mesmo nome são a mesma música: fica um só. O índice e a biblioteca
+   * acompanham os nomes novos.
+   */
+  async standardizeAll(
+    leveler: AudioLeveler,
+    onProgress?: (done: number, total: number, name: string) => void,
+  ): Promise<{ total: number; renamed: number; merged: number; problems: string[] }> {
+    const dir = this.downloadsDir;
+    const files = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => !f.startsWith('.') && LEVELABLE.has(path.extname(f).toLowerCase())).sort()
+      : [];
+    const renames = new Map<string, string>();
+    const problems: string[] = [];
+    let renamed = 0;
+    let merged = 0;
+    for (const [i, name] of files.entries()) {
+      onProgress?.(i, files.length, name);
+      const file = path.join(dir, name);
+      if (!fs.existsSync(file)) continue;
+      try {
+        const result = await leveler.standardizeFile(file);
+        const to = path.basename(result.to);
+        if (to !== name) renames.set(name, to);
+        if (result.duplicate) merged++;
+        else if (to !== name) renamed++;
+      } catch (error) {
+        problems.push(`${name}: ${error instanceof UserFacingError ? error.userMessage : String(error)}`);
+      }
+    }
+    // Renomeado em cadeia (A→B e depois B→C): todos apontam para o nome final.
+    for (const [from, to] of renames) {
+      let final = to;
+      for (let hops = 0; renames.has(final) && hops < 10; hops++) final = renames.get(final)!;
+      renames.set(from, final);
+    }
+    const index = DownloadIndex.load(dir);
+    index.rename(renames);
+    index.save();
+    this.library?.renameFiles(renames);
+    return { total: files.length, renamed, merged, problems };
   }
 
   /** Baixa de novo só os links que falharam na entrada; os que voltarem a falhar continuam na lista. */

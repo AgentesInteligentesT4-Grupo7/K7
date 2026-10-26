@@ -746,7 +746,8 @@ audio { width: 100%; max-width: 420px; height: 40px; }
           files.push({ nome: caminho.replace(/\.[^.]+$/, ''), arquivo: item.name, caminho: caminho, pastas: pastas, handle: item });
           return next();
         }
-        if (item.kind === 'directory' && !(pastas.length === 0 && item.name === 'nivelados') && pastas.length < MAX_FOLDER_DEPTH) {
+        var output = pastas.length === 0 && (item.name === 'nivelados' || item.name === 'duplicados');
+        if (item.kind === 'directory' && !output && pastas.length < MAX_FOLDER_DEPTH) {
           return walkFolder(item, pastas.concat(item.name), files).then(next);
         }
         return next();
@@ -867,6 +868,68 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     }).catch(function (err) { button.disabled = false; folderStatus('⚠️ ' + err.message); });
   }
 
+  function writeTo(dir, name, stream) {
+    return dir.getFileHandle(name, { create: true })
+      .then(function (h) { return h.createWritable(); })
+      .then(function (w) { return stream.pipeTo(w); });
+  }
+
+  /**
+   * Padroniza os nomes da pasta e das subpastas: "Título - Artista", sem "(2)" nem "(Official Video)", com título e
+   * artista gravados nas etiquetas (o servidor decide o nome e regrava as etiquetas; o arquivo volta para a pasta).
+   * Nome que já existe na mesma pasta é a mesma música: a cópia vai para "duplicados" (nada é apagado).
+   */
+  function standardizeFolder(button) {
+    var folder = lib.folder, files = folder.files.slice();
+    if (!files.length) return;
+    button.disabled = true;
+    var renamed = 0, tagged = 0, duplicates = 0, unchanged = 0, problems = [];
+    var i = 0;
+    var one = function () {
+      if (i >= files.length) {
+        button.disabled = false;
+        folderStatus('✏️ ' + renamed + ' renomeado(s)' + (tagged ? ' · ' + tagged + ' só com etiquetas novas' : '') +
+          (unchanged ? ' · ' + unchanged + ' já estavam certos' : '') +
+          (duplicates ? ' · ' + duplicates + ' repetido(s) movidos para "duplicados"' : '') +
+          (problems.length ? ' · ' + problems.length + ' com problema: ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? '…' : '') : ''));
+        return scanFolder();
+      }
+      var item = files[i++];
+      folderStatus('✏️ Padronizando ' + i + ' de ' + files.length + ': ' + item.caminho);
+      var dir, file;
+      return subfolder(folder.handle, item.pastas).then(function (d) {
+        dir = d;
+        return item.handle.getFile();
+      }).then(function (f) {
+        file = f;
+        return fetch(base + '/api/padronizar?nome=' + encodeURIComponent(f.name), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/octet-stream' }), body: f });
+      }).then(function (res) {
+        if (!res.ok) return res.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erro || ('HTTP ' + res.status)); });
+        var name = decodeURIComponent(res.headers.get('x-nome') || '') || item.arquivo;
+        var content = function () { return res.status === 204 || !res.body ? file.stream() : res.body; };
+        var sameName = name === item.arquivo;
+        // Só maiúsculas/minúsculas mudam: o Windows trata como o mesmo arquivo; fica o nome atual, com as etiquetas novas.
+        if (!sameName && name.toLowerCase() === item.arquivo.toLowerCase()) { name = item.arquivo; sameName = true; }
+        if (sameName) {
+          if (res.status === 204) { unchanged++; return; }
+          return writeTo(dir, item.arquivo, content()).then(function () { tagged++; });
+        }
+        return dir.getFileHandle(name).then(function () {
+          // Já existe uma com o nome padronizado: esta é a repetida.
+          return subfolder(folder.handle, ['duplicados'].concat(item.pastas))
+            .then(function (dups) { return writeTo(dups, item.arquivo, file.stream()); })
+            .then(function () { return dir.removeEntry(item.arquivo); })
+            .then(function () { duplicates++; });
+        }, function () {
+          return writeTo(dir, name, content())
+            .then(function () { return dir.removeEntry(item.arquivo); })
+            .then(function () { renamed++; });
+        });
+      }).catch(function (err) { problems.push(item.caminho + ' (' + (err && err.message ? err.message : err) + ')'); }).then(one);
+    };
+    one();
+  }
+
   /** Nivela no servidor todas as faixas de uma playlist baixada. */
   function levelEntry(entry, button) {
     button.disabled = true;
@@ -906,6 +969,12 @@ audio { width: 100%; max-width: 420px; height: 40px; }
         level.title = 'Deixa todos no mesmo volume, inclusive nas subpastas; as versões niveladas vão para "nivelados", na mesma estrutura';
         level.onclick = function () { levelFolder(level); };
         tools.appendChild(level);
+      }
+      if (entry.faixas.length && state.info && state.info.nivelar) {
+        var rename = el('button', 'retry', '✏️ Padronizar nomes'); rename.type = 'button';
+        rename.title = '"Título - Artista", sem "(2)" nem "(Official Video)", com as etiquetas de título e artista; repetidas vão para "duplicados"';
+        rename.onclick = function () { standardizeFolder(rename); };
+        tools.appendChild(rename);
       }
       var rescan = el('button', 'retry', '↻ Reler'); rescan.type = 'button'; rescan.onclick = function () { scanFolder(); };
       var change = el('button', 'retry', 'Trocar pasta'); change.type = 'button'; change.onclick = pickFolder;

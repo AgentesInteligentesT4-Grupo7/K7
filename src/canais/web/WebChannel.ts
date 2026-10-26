@@ -197,6 +197,14 @@ export class WebChannel {
         if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
         return await this.enqueue(userId, () => this.proxyLevel(leveler, req, res, name));
       }
+      // Padronizar um arquivo da pasta do visitante: nome "Título - Artista" nos cabeçalhos e o arquivo com as etiquetas.
+      if (req.method === 'POST' && url.pathname === '/api/padronizar') {
+        const leveler = this.core.leveler;
+        if (!leveler) throw new HttpError(404, 'Padronização desligada nesta fita');
+        const name = path.basename(url.searchParams.get('nome') ?? '');
+        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
+        return await this.enqueue(userId, () => this.proxyStandardize(leveler, req, res, name));
+      }
       const levelEntry = /^\/api\/biblioteca\/([0-9a-f]{24})\/nivelar$/.exec(url.pathname);
       if (req.method === 'POST' && levelEntry) {
         const leveler = this.core.leveler;
@@ -505,6 +513,27 @@ export class WebChannel {
       ...(volumes.before !== null ? { 'x-volume-antes': String(volumes.before) } : {}),
       ...(volumes.after !== null ? { 'x-volume-depois': String(volumes.after) } : {}),
     });
+    await pipeline(Readable.fromWeb(response.body as never), res);
+  }
+
+  private async proxyStandardize(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string): Promise<void> {
+    let response: Response;
+    try {
+      response = await leveler.standardizeStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name);
+    } catch (error) {
+      if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
+      throw error;
+    }
+    const pass = Object.fromEntries(['x-nome', 'x-titulo', 'x-artista'].flatMap((h) => (response.headers.has(h) ? [[h, response.headers.get(h)!]] : [])));
+    res.writeHead(response.status === 204 ? 204 : 200, {
+      ...(response.status === 204 ? {} : { 'content-type': 'application/octet-stream' }),
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      // A página lê o nome novo destes cabeçalhos (fetch só expõe os personalizados com esta lista).
+      'access-control-expose-headers': 'x-nome, x-titulo, x-artista',
+      ...pass,
+    });
+    if (response.status === 204 || !response.body) return void res.end();
     await pipeline(Readable.fromWeb(response.body as never), res);
   }
 

@@ -11,6 +11,6 @@ RUN apt-get update \
 RUN pip install --no-cache-dir "yt-dlp[default]==2026.10.21" "fastapi>=0.115,<1" "uvicorn>=0.32,<1"
 
 WORKDIR /app
-COPY server.py .
+COPY server.py nomes.py ./
 EXPOSE 8899
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8899"]

@@ -21,11 +21,55 @@ export class AudioLeveler {
   constructor(private readonly options: { baseUrl: string; timeoutMs: number }) {}
 
   /** Envia o conteúdo e devolve a resposta do serviço (o arquivo nivelado), para repassar sem guardar. */
-  async levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
-    if (!LEVELABLE.has(path.extname(name).toLowerCase())) throw new UserFacingError(`Formato ${path.extname(name) || '(sem extensão)'} não dá para nivelar.`);
+  levelStream(body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
+    return this.send('/nivelar', 'nivelar', body, name);
+  }
+
+  /**
+   * Padronização do nome ("Título - Artista", sem "(2)" nem "(Official Video)") e das etiquetas: a resposta traz o
+   * nome novo nos cabeçalhos e, quando as etiquetas mudaram, o arquivo regravado (204 = só o nome pode mudar).
+   */
+  standardizeStream(body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
+    return this.send('/padronizar', 'padronizar', body, name);
+  }
+
+  /**
+   * Padroniza um arquivo do servidor no lugar. Se o nome padronizado já existir na pasta, é a mesma música:
+   * o arquivo atual sai e fica o que já estava (`duplicate`).
+   */
+  async standardizeFile(file: string): Promise<{ from: string; to: string; duplicate: boolean }> {
+    const response = await this.standardizeStream(Readable.toWeb(fs.createReadStream(file)) as ReadableStream<Uint8Array>, file);
+    const name = path.basename(decodeURIComponent(response.headers.get('x-nome') ?? '') || path.basename(file));
+    const target = path.join(path.dirname(file), name);
+    const same = path.resolve(target).toLowerCase() === path.resolve(file).toLowerCase();
+    if (!same && fs.existsSync(target)) {
+      await response.body?.cancel();
+      fs.rmSync(file, { force: true });
+      return { from: file, to: target, duplicate: true };
+    }
+    if (response.status !== 204 && response.body) {
+      const temp = `${file}.padronizando`;
+      try {
+        await pipeline(Readable.fromWeb(response.body as never), fs.createWriteStream(temp));
+        fs.renameSync(temp, file);
+      } finally {
+        fs.rmSync(temp, { force: true });
+      }
+    }
+    // Só muda maiúscula/minúscula no Windows: renomear direto não pega, então passa por um nome provisório.
+    if (!same || path.basename(file) !== name) {
+      const step = `${file}.renomeando`;
+      fs.renameSync(file, step);
+      fs.renameSync(step, target);
+    }
+    return { from: file, to: target, duplicate: false };
+  }
+
+  private async send(endpoint: string, verb: string, body: ReadableStream<Uint8Array> | Buffer, name: string): Promise<Response> {
+    if (!LEVELABLE.has(path.extname(name).toLowerCase())) throw new UserFacingError(`Formato ${path.extname(name) || '(sem extensão)'} não dá para ${verb}.`);
     let response: Response;
     try {
-      response = await fetch(`${this.options.baseUrl}/nivelar?nome=${encodeURIComponent(path.basename(name))}`, {
+      response = await fetch(`${this.options.baseUrl}${endpoint}?nome=${encodeURIComponent(path.basename(name))}`, {
         method: 'POST',
         headers: { 'content-type': 'application/octet-stream' },
         body: body as never,
@@ -33,11 +77,11 @@ export class AudioLeveler {
         signal: AbortSignal.timeout(this.options.timeoutMs),
       } as RequestInit);
     } catch (error) {
-      throw new UserFacingError('o serviço de downloads (que nivela o volume) não está no ar.', errorMessage(error), { cause: error });
+      throw new UserFacingError(`o serviço de downloads (que sabe ${verb}) não está no ar.`, errorMessage(error), { cause: error });
     }
     if (!response.ok) {
       const detail = ((await response.json().catch(() => ({}))) as { detail?: string }).detail;
-      throw new UserFacingError(`Não consegui nivelar "${path.basename(name)}": ${detail ?? `HTTP ${response.status}`}`);
+      throw new UserFacingError(`Não consegui ${verb} "${path.basename(name)}": ${detail ?? `HTTP ${response.status}`}`);
     }
     return response;
   }

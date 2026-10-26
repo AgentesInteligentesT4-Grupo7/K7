@@ -15,7 +15,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import json
 import subprocess
@@ -23,8 +23,11 @@ import subprocess
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
+
+from nomes import filename as standard_filename
+from nomes import standardize
 from pydantic import BaseModel, Field
 
 DOWNLOADS = Path("/downloads")
@@ -50,32 +53,25 @@ class DownloadRequest(BaseModel):
     pular: list[str] = Field(default_factory=list)
 
 
-# Entre parênteses/colchetes: ruído (sai do nome) e o que diferencia uma versão da outra (fica).
-NOISE = re.compile(
-    r"official|oficial|v[ií]deo|clipe|\bclip\b|[aá]udio|lyric|letra|legendad|visuali[sz]er|\bhd\b|\bhq\b|\b4k\b|\bmv\b|m/v|full album",
-    re.IGNORECASE,
-)
-KEEP = re.compile(r"feat|\bft\b|remix|ao vivo|\blive\b|ac[uú]stic|acoustic|vers[aã]o|version|cover|instrumental|remaster", re.IGNORECASE)
-# Caracteres proibidos no Windows e os substitutos que o yt-dlp usa no lugar deles.
-FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f｜⧸⧹＂？＊：＜＞]')
+def read_tags(path: Path) -> dict:
+    """Etiquetas do arquivo (title, artist, encoded_by...), em minúsculas."""
+    probe = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)], capture_output=True, text=True, timeout=120)
+    try:
+        tags = json.loads(probe.stdout or "{}").get("format", {}).get("tags") or {}
+    except json.JSONDecodeError:
+        return {}
+    return {str(k).lower(): v for k, v in tags.items()}
 
 
-def clean_title(title: str, artist: str | None = None, track: str | None = None) -> str:
-    """Nome padronizado da música: "Artista - Faixa" quando o YouTube informa, sem "(Official Video)" e afins."""
-    name = f"{artist} - {track}" if artist and track else title
-
-    def bracket(match: re.Match) -> str:
-        inner = match.group(0)[1:-1]
-        return match.group(0) if KEEP.search(inner) else " "
-
-    name = re.sub(r"\([^()]*\)|\[[^\[\]]*\]|【[^】]*】", bracket, name)
-    # "Música | Clipe Oficial" / "Música - Official Video": o trecho final só de ruído sai.
-    name = re.sub(r"\s*[|｜]\s*[^|｜]*$", lambda m: "" if NOISE.search(m.group(0)) else m.group(0), name)
-    name = re.sub(r"\s+[-–—]\s*(official|oficial|clipe|v[ií]deo)\b[^-–—]*$", "", name, flags=re.IGNORECASE)
-    name = FORBIDDEN.sub(" ", name)
-    name = re.sub(r"\s+[-–—]+\s+", " - ", name)
-    name = re.sub(r"\s{2,}", " ", name).strip(" .-–—_")
-    return name or "audio"
+def write_tags(source: Path, target: Path, title: str, artist: str | None) -> None:
+    """Grava título e artista (e a marca encoded_by=K7) sem mexer no áudio nem no vídeo (cópia direta)."""
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(source), "-map", "0", "-c", "copy", "-map_metadata", "0",
+            "-metadata", f"title={title}", "-metadata", f"artist={artist or ''}", "-metadata", "encoded_by=K7"]
+    if source.suffix.lower() == ".mp3":
+        args += ["-id3v2_version", "3"]
+    run = subprocess.run([*args, str(target)], capture_output=True, text=True, timeout=600)
+    if run.returncode != 0 or not target.is_file():
+        raise RuntimeError(f"ffmpeg falhou ao gravar as etiquetas: {run.stderr[-300:]}")
 
 
 def failure_reason(message: str) -> str:
@@ -126,14 +122,6 @@ class JobLogger:
                 failures.append(failure)
 
 
-def unique(folder: Path, stem: str, ext: str) -> Path:
-    target = folder / f"{stem}{ext}"
-    for i in range(2, 10_000):
-        if not target.exists():
-            return target
-        target = folder / f"{stem} ({i}){ext}"
-    return target
-
 
 def options(job_id: str, req: DownloadRequest) -> dict:
     folder = DOWNLOADS / job_id
@@ -161,15 +149,36 @@ def options(job_id: str, req: DownloadRequest) -> dict:
 
 
 def on_postprocess(job_id: str, d: dict) -> None:
-    # MoveFiles é o último passo: o arquivo já tem a extensão final; aqui ganha o nome padronizado.
-    if d.get("status") == "finished" and d.get("postprocessor") == "MoveFiles":
-        info = d.get("info_dict") or {}
-        path = Path(info.get("filepath") or "")
-        if path.is_file():
-            with lock:
-                target = unique(path.parent, clean_title(info.get("title") or path.stem, info.get("artist"), info.get("track")), path.suffix)
-                path = path.rename(target)
-                jobs[job_id]["arquivos"].append({"nome": path.name, "id": info.get("id"), "titulo": info.get("title"), "bytes": path.stat().st_size})
+    """MoveFiles é o último passo (extensão final): o arquivo ganha "Título - Artista" e as etiquetas.
+
+    Dois vídeos com o mesmo nome padronizado são a mesma música: fica um arquivo só (sem "(2)").
+    """
+    if d.get("status") != "finished" or d.get("postprocessor") != "MoveFiles":
+        return
+    info = d.get("info_dict") or {}
+    path = Path(info.get("filepath") or "")
+    if not path.is_file():
+        return
+    # Com artista e faixa informados pelo YouTube (YouTube Music), eles valem mais que o título do vídeo.
+    source = f"{info['artist']} - {info['track']}" if info.get("artist") and info.get("track") else (info.get("title") or path.stem)
+    title, artist = standardize(source)
+    with lock:
+        target = path.parent / f"{standard_filename(title, artist)}{path.suffix}"
+        duplicate = target.exists() and target != path
+        if not duplicate:
+            path = path.rename(target)
+    if duplicate:
+        path.unlink(missing_ok=True)
+        path = target
+    else:
+        tagged = path.with_name(f".etiquetas-{uuid.uuid4().hex}{path.suffix}")
+        try:
+            write_tags(path, tagged, title, artist)
+            os.replace(tagged, path)
+        except Exception:  # noqa: BLE001 - sem etiqueta, o arquivo continua bom
+            tagged.unlink(missing_ok=True)
+    with lock:
+        jobs[job_id]["arquivos"].append({"nome": path.name, "id": info.get("id"), "titulo": title, "bytes": path.stat().st_size})
 
 
 VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/live/)([\w-]{11})")
@@ -298,6 +307,49 @@ def level_file(source: Path, target: Path) -> dict:
     if run.returncode != 0 or not target.is_file():
         raise HTTPException(500, f"ffmpeg falhou ao nivelar: {run.stderr[-300:]}")
     return {"antes": float(m["input_i"]), "depois": TARGET_LUFS}
+
+
+def standardize_file(source: Path, target: Path, nome: str) -> dict:
+    tags = read_tags(source)
+    title, artist = standardize(Path(nome).stem, tags)
+    new_name = f"{standard_filename(title, artist)}{source.suffix.lower() if not Path(nome).suffix else Path(nome).suffix}"
+    unchanged = tags.get("encoded_by") == "K7" and tags.get("title") == title and (tags.get("artist") or None) == artist
+    if not unchanged:
+        write_tags(source, target, title, artist)
+    return {"nome": new_name, "titulo": title, "artista": artist or "", "mudou": not unchanged}
+
+
+@app.post("/padronizar")
+async def standardize_endpoint(request: Request, nome: str) -> Response:
+    """Recebe o arquivo (nome= é o nome atual) e devolve o nome "Título - Artista" nos cabeçalhos.
+
+    Corpo da resposta: o arquivo com título e artista gravados nas etiquetas; 204 quando as etiquetas já estavam
+    certas (aí só o nome pode ter mudado e quem chamou só renomeia).
+    """
+    ext = Path(nome).suffix.lower()
+    if ext not in AUDIO_CODECS:
+        raise HTTPException(415, f"formato {ext or '(sem extensão)'} não suportado")
+    work = LEVEL_DIR / uuid.uuid4().hex
+    work.mkdir(parents=True)
+    source, target = work / f"in{ext}", work / f"out{ext}"
+    size = 0
+    with source.open("wb") as out:
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_LEVEL_BYTES:
+                shutil.rmtree(work, ignore_errors=True)
+                raise HTTPException(413, "arquivo grande demais (até 2 GB)")
+            out.write(chunk)
+    try:
+        result = await run_in_threadpool(standardize_file, source, target, nome)
+    except Exception as error:
+        shutil.rmtree(work, ignore_errors=True)
+        raise HTTPException(500, str(error)[:300]) from error
+    headers = {"X-Nome": quote(result["nome"]), "X-Titulo": quote(result["titulo"]), "X-Artista": quote(result["artista"])}
+    if not result["mudou"]:
+        shutil.rmtree(work, ignore_errors=True)
+        return Response(status_code=204, headers=headers)
+    return FileResponse(target, headers=headers, background=BackgroundTask(shutil.rmtree, work, ignore_errors=True))
 
 
 @app.post("/nivelar")

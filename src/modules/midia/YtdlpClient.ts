@@ -140,15 +140,13 @@ export class YtdlpClient {
     }
   }
 
-  /** Copia o arquivo para a pasta; se já existir um com o mesmo nome, acrescenta " (2)", " (3)"... */
+  /** Copia o arquivo para a pasta. O nome já vem padronizado ("Título - Artista"): se já existir, é a mesma música. */
   private async fetchFile(id: string, name: string, bytes: number, targetDir: string): Promise<string> {
-    const { name: base, ext } = path.parse(path.basename(name));
-    let target = path.join(targetDir, `${base}${ext}`);
-    // Mesma música já baixada antes (mesmo nome e tamanho): reaproveita em vez de criar "música (2).mp3".
-    if (fs.existsSync(target) && fs.statSync(target).size === bytes) return target;
+    const target = path.join(targetDir, path.basename(name));
+    // Mesmo nome padronizado = mesma música já baixada: reaproveita (sem criar "música (2).mp3").
+    if (fs.existsSync(target) && fs.statSync(target).size > 0) return target;
     const response = await fetch(`${this.options.baseUrl}/trabalhos/${id}/arquivos/${encodeURIComponent(name)}`);
-    if (!response.ok || !response.body) throw new Error(`serviço ytdlp HTTP ${response.status} ao entregar "${name}"`);
-    for (let i = 2; fs.existsSync(target); i++) target = path.join(targetDir, `${base} (${i})${ext}`);
+    if (!response.ok || !response.body) throw new Error(`serviço ytdlp HTTP ${response.status} ao entregar "${name}" (${bytes} bytes)`);
     await pipeline(Readable.fromWeb(response.body as never), fs.createWriteStream(target));
     return target;
   }
