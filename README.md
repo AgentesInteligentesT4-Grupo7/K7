@@ -123,6 +123,8 @@ O K7 é o **tocador** (núcleo + módulos + canais). Cada finalidade é um **per
 com `perfil.yaml` (identidade, módulos, canais, privacidade), `skills/` e `.env` próprios, **sem código**.
 Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw-perfis`).
 
+**Passo a passo para criar uma fita:** [docs/criar-fita.md](docs/criar-fita.md).
+
 ```bash
 npm run dev -- --perfil pessoal       # bot do Telegram do perfil (cada perfil tem o seu bot)
 npm run chat -- --perfil promo        # terminal
