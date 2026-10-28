@@ -46,6 +46,8 @@ export interface ProfileManifest {
   guardrails?: GuardrailsConfig;
   /** `vitrine: true`: a fita aparece no site do K7 (`npm run site`) para qualquer visitante escolher. */
   vitrine?: boolean;
+  /** `extensao: extensao/index.ts`: o código da fita (ferramentas, painel web, comandos), carregado com o tocador. */
+  extensao?: string;
 }
 
 /** Módulos previstos na spec que ainda não existem neste tocador. */
@@ -121,6 +123,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     variaveis,
     ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
     ...(raw.vitrine !== undefined ? { vitrine: typeof raw.vitrine === 'boolean' ? raw.vitrine : fail('vitrine', 'deve ser true ou false') } : {}),
+    ...(raw.extensao !== undefined ? { extensao: parseExtension(raw.extensao, fail) } : {}),
   };
 }
 
@@ -189,4 +192,13 @@ function str(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   const text = String(value).trim();
   return text || undefined;
+}
+
+/** Caminho da extensão dentro da fita: relativo, sem "..", terminando em .ts, .mts, .js ou .mjs. */
+function parseExtension(value: unknown, fail: (field: string, problem: string) => never): string {
+  const rel = typeof value === 'string' ? value.trim().replace(/\\/g, '/') : '';
+  if (!rel || rel.startsWith('/') || /^[a-z]:/i.test(rel) || rel.split('/').includes('..') || !/\.(m?ts|m?js)$/.test(rel)) {
+    return fail('extensao', 'deve ser o caminho de um arquivo .ts ou .js dentro da fita (ex.: "extensao/index.ts")');
+  }
+  return rel;
 }

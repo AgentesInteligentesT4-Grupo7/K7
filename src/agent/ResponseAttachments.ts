@@ -7,7 +7,7 @@ export interface GeneratedImage {
   caption?: string;
 }
 
-/** Áudio, vídeo ou outro arquivo produzido por uma ferramenta (ex.: download do módulo midia). */
+/** Áudio, vídeo ou outro arquivo produzido por uma ferramenta (ex.: download de uma fita). */
 export interface GeneratedMedia {
   /** Caminho absoluto do arquivo no workspace. */
   path: string;

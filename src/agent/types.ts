@@ -27,7 +27,7 @@ export interface AgentResponse {
   isAudio: boolean;
   /** Imagens geradas por ferramentas (módulo imagens), entregues pelo canal. */
   images?: GeneratedImage[];
-  /** Áudios, vídeos e arquivos produzidos por ferramentas (módulo midia), entregues pelo canal. */
+  /** Áudios, vídeos e arquivos produzidos por ferramentas (ex.: extensão de uma fita), entregues pelo canal. */
   media?: GeneratedMedia[];
 }
 

@@ -67,7 +67,7 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 
 ## 4. Non-Goals (Fora do Escopo)
 
-- NG-01: **Perfis com código** (JavaScript/TypeScript, scripts, binários). Perfis trazem conteúdo e **descrições** de APIs (RF-13); código entra só como **módulo** — interno ou externo com confiança explícita (RF-14). Evita executar código baixado sem autorização.
+- NG-01: ~~Perfis com código~~ (revisto em 27/10/2026, RF-15): a fita pode trazer o próprio código numa **extensão**, para que o tocador não carregue código que só uma fita usa. Instalar continua sem executar nada, e fita com código só entra com a **confirmação** de quem instala.
 - NG-02: Alterar ou migrar o **AgroMinds**.
 - NG-03: Loja/registro público de perfis. A instalação é por caminho local ou URL Git.
 - NG-04: Vários perfis no **mesmo processo** (cada perfil = um processo, com seu próprio bot).
@@ -96,7 +96,8 @@ O usuário vai iniciar dois projetos pessoais (promoções e histórias ilustrad
 | RF-07 | **Isolamento:** cada perfil tem `perfis/<nome>/.env` (segredos, fora do Git), `dados/<nome>/` (SQLite, vozes, cache, saídas), `workspace/<nome>/` e skills próprias. O `.env` do tocador guarda só o que é comum (ex.: endereços de serviços locais), e o do perfil sobrescreve. | Must | Nenhum perfil lê o banco, as vozes ou os arquivos de outro. |
 | RF-08 | **Skills em camadas:** skills dos módulos ligados + skills do perfil; em conflito de nome, vale a do perfil. Marcadores `{{AGENT_NAME}}` etc. são preenchidos com a identidade do perfil. | Must | O perfil pode sobrescrever uma skill de módulo sem editar o tocador. |
 | RF-09 | **Compatibilidade:** o manifesto declara `requer.tocador: ">=1.0"` e módulos necessários; perfil incompatível não sobe e explica o que falta (ex.: "o perfil historias precisa do módulo imagens, disponível a partir do tocador 1.2"). | Must | Mensagem acionável em vez de erro genérico. |
-| RF-10 | **Segurança na instalação:** o instalador **recusa** perfis com arquivos executáveis ou de código (`.js`, `.ts`, `.mjs`, `.cjs`, `.py`, `.sh`, `.ps1`, `.bat`, `.exe`, `package.json`…), mostra a origem e o resumo do manifesto antes de concluir e nunca executa nada do perfil. | Must | Um perfil com `install.sh` é recusado com a lista dos arquivos proibidos. |
+| RF-10 | **Segurança na instalação:** o instalador nunca executa nada da fita, recusa links simbólicos e fitas acima de 100 MB e, se a fita trouxer arquivos de código (`.js`, `.ts`, `.py`, `.sh`, `Dockerfile`, `package.json`…), lista os arquivos e só instala (ou atualiza) com a confirmação de quem instala (`--confiar` pula a pergunta). | Must | Uma fita com `install.sh` sem confirmação é recusada com a lista dos arquivos; confirmada, instala e fica marcada com `codigo: true`. |
+| RF-15 | **Extensão da fita:** `extensao: extensao/index.ts` no manifesto aponta o código da fita (`export default function ativar(k7)`), carregado pelo tocador (TypeScript via tsx). Pela API `k7` ([src/fitas/FitaApi.ts](../src/fitas/FitaApi.ts)) a fita registra ferramentas, rotas web em `/api/x/`, um painel na página do chat (`window.K7`), comandos (`npm run fita -- <fita> <comando>`) e verificações de início. A extensão não importa nada de `src/`; os testes dela rodam com `npm run fita -- <fita> testes`. | Must | A Rebobina (downloads, biblioteca, player, nivelar, padronizar) roda inteira da própria fita, sem código dela no tocador. |
 | RF-11 | **Migração:** o K7 atual vira o perfil `pessoal` (identidade, skills, `.env`, banco e vozes movidos para a nova estrutura); `promo` e `historias` são criados a partir de modelos. A pasta `K7-Promo` pode ser apagada depois de migrada. | Must | Após migrar, o bot pessoal responde com o mesmo histórico de antes. |
 | RF-13 | **Ferramentas HTTP declarativas:** o perfil pode descrever APIs REST simples em `ferramentas/*.yaml` (nome, descrição, método, URL, parâmetros com tipo, parâmetros fixos, autenticação via variável do `.env` do perfil, `hosts_permitidos`, campos da resposta a extrair). O módulo genérico `http` do tocador as transforma em ferramentas do LLM. Garantias: só os hosts declarados (e nunca endereços internos), chave lida do `.env` e jamais exposta ao LLM, timeout de 15 s, resposta limitada (ex.: 100 KB) e marcada como dado externo. | Must | Um perfil com `clima.yaml` (Open-Meteo) ganha a ferramenta `previsao_do_tempo` sem nenhum código. |
 | RF-14 | **Módulos externos (código com confiança explícita):** integrações com lógica (cálculos, várias chamadas, OAuth, arquivos) entram como módulo em pacote/repositório separado, instalado por `npm run modulo -- instalar <origem>` com **aviso e confirmação** ("isto é código e vai rodar na sua máquina"), versão/commit fixos e registro em `modulos/.confiaveis.json`. Alternativa equivalente: **servidores MCP** declarados no perfil, que só iniciam após a mesma confirmação. Um perfil que exija módulo externo não instalado explica como instalá-lo. | Should | Um perfil que depende do módulo externo `agro-dados` não sobe sem ele e mostra o comando de instalação; instalar exige confirmação explícita. |
@@ -194,7 +195,7 @@ Sem mudança de esquema: cada perfil usa o mesmo esquema SQLite em `dados/<perfi
 | Cenário | Trigger | Comportamento esperado |
 |---------|---------|----------------------|
 | EC-01: Dois perfis com o mesmo token do Telegram | `.env` copiado sem trocar o token | O segundo a subir detecta o conflito (409) e explica que cada perfil precisa de um bot próprio. |
-| EC-02: Perfil com código | Repositório com `.js`, `.sh` etc. | Instalação recusada (RF-10). |
+| EC-02: Perfil com código | Repositório com `.js`, `.sh` etc. | Pergunta antes; sem confirmação, recusada (RF-10). |
 | EC-03: Skill do perfil com o mesmo nome de uma de módulo | Sobrescrita intencional | Vale a do perfil, com aviso no log. |
 | EC-04: Perfil removido com dados | `remover` sem `--apagar-dados` | Dados preservados em `dados/<nome>/`; reinstalar recupera tudo. |
 | EC-05: `.env` do perfil faltando variável obrigatória | Variável listada em `variaveis` vazia | O perfil não sobe e lista exatamente o que preencher. |
@@ -203,7 +204,7 @@ Sem mudança de esquema: cada perfil usa o mesmo esquema SQLite em `dados/<perfi
 
 ## 12. Segurança e Privacidade
 
-- **Perfis sem código** (NG-01, RF-10): instalar uma fita nunca executa nada.
+- **Instalar não executa nada** (RF-10): o código de uma fita só roda quando ela toca, e só se foi confirmado na instalação.
 - **Segredos por perfil:** `perfis/<nome>/.env` fica fora do Git (do tocador e do perfil); o `.env.example` do perfil documenta as variáveis sem valores.
 - **Dados isolados por perfil** (RF-07): o bot de promoções (público) nunca enxerga memória, vozes ou arquivos do perfil pessoal.
 

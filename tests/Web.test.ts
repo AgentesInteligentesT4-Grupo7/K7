@@ -34,6 +34,7 @@ function fakeCore(): Core {
     tts: { name: 'tts', voice: 'v', synthesize: async () => ({ audio: Buffer.from('ogg'), format: 'ogg' }) },
     stt: { transcribe: async () => 'transcrito' },
     documents: new DocumentExtractor(),
+    extensions: { routes: [] },
     createController: (output: IOutputHandler) => ({
       async handle(input: AgentInput) {
         inputs.push(input);

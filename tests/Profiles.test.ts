@@ -9,7 +9,7 @@ import { AgentController } from '../src/agent/AgentController.js';
 import { Config } from '../src/config/Config.js';
 import { ModuleDisabledError } from '../src/errors/AppErrors.js';
 import { moduleSkillDirs } from '../src/modules/registry.js';
-import { ProfileInstaller, findForbiddenFiles, parseSource } from '../src/profiles/ProfileInstaller.js';
+import { ProfileInstaller, inspectProfile, parseSource } from '../src/profiles/ProfileInstaller.js';
 import { buildProfileEnv, listProfiles, loadConfig, loadProfile, selectedProfile } from '../src/profiles/ProfileLoader.js';
 import { ProfileError, parseManifest, satisfiesVersion } from '../src/profiles/ProfileManifest.js';
 import { createProfile } from '../src/profiles/ProfileTemplate.js';
@@ -256,10 +256,10 @@ describe('Instalador de perfis', () => {
     assert.ok(!fs.existsSync(path.join(profilesDir, 'promo', 'instalar.sh')));
   });
 
-  it('recusa perfis com código ou links e lista os arquivos', () => {
+  it('lista os arquivos de código da fita (fora de .git)', () => {
     const dir = tmpDir();
     writeFiles(dir, { 'perfil.yaml': MANIFEST, 'install.sh': 'echo', 'skills/x/helper.ts': '', 'package.json': '{}', '.git/hooks/post-checkout': 'x' });
-    assert.deepEqual(findForbiddenFiles(dir).sort(), ['install.sh', 'package.json', 'skills/x/helper.ts']);
+    assert.deepEqual(inspectProfile(dir), { blocked: [], code: ['install.sh', 'package.json', 'skills/x/helper.ts'] });
   });
 
   it('instala de pasta local: copia sem .env/dados, cria .env do exemplo, registra e lista pendências', async () => {
@@ -299,10 +299,36 @@ describe('Instalador de perfis', () => {
     const installer = new ProfileInstaller({ profilesDir: path.join(tmpDir(), 'perfis'), playerVersion: '1.0.0' });
     const withCode = tmpDir();
     writeFiles(withCode, { 'perfil.yaml': MANIFEST, 'install.sh': 'curl x | sh' });
-    await assert.rejects(installer.install(withCode), /Perfil recusado.*\n {2}install\.sh/s);
+    await assert.rejects(installer.install(withCode), /Perfil recusado: a fita traz código.*\n {2}install\.sh/s);
     const newer = tmpDir();
     writeFiles(newer, { 'perfil.yaml': MANIFEST.replace('>=1.0', '>=1.2') });
     await assert.rejects(installer.install(newer), /requer o tocador >=1.2/);
+  });
+
+  it('fita com código: só instala com a confirmação, que vê os arquivos; recusar não deixa nada', async () => {
+    const profilesDir = path.join(tmpDir(), 'perfis');
+    const src = tmpDir();
+    writeFiles(src, { 'perfil.yaml': `${MANIFEST}\nextensao: extensao/index.ts\n`, 'extensao/index.ts': 'export default () => {};' });
+    const asked: Array<{ files: string[]; update: boolean }> = [];
+    let answer = false;
+    const installer = new ProfileInstaller({
+      profilesDir,
+      playerVersion: '1.0.0',
+      confirmCode: async (request) => (asked.push({ files: request.files, update: request.update }), answer),
+    });
+    await assert.rejects(installer.install(src), /não foi confirmada/);
+    assert.ok(!fs.existsSync(path.join(profilesDir, 'promo')));
+    answer = true;
+    const result = await installer.install(src);
+    assert.equal(result.manifest.extensao, 'extensao/index.ts');
+    assert.equal(installer.readRegistry().promo?.codigo, true);
+    assert.deepEqual(asked, [
+      { files: ['extensao/index.ts'], update: false },
+      { files: ['extensao/index.ts'], update: false },
+    ]);
+    // Atualizar pergunta de novo (o código pode ter mudado).
+    await installer.update('promo');
+    assert.deepEqual(asked.at(-1), { files: ['extensao/index.ts'], update: true });
   });
 
   it('npm: extrai o .tgz sem tar do sistema e barra caminhos fora do destino e links', () => {

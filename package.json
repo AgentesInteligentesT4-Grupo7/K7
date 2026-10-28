@@ -20,7 +20,7 @@
     "perfil": "tsx src/cli/perfil.ts",
     "web": "tsx src/canais/web/web.ts",
     "site": "tsx src/canais/site/site.ts",
-    "padronizar": "tsx src/cli/padronizar.ts",
+    "fita": "tsx src/cli/fita.ts",
     "imagens:modelo": "tsx src/cli/imagens.ts"
   },
   "dependencies": {

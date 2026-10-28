@@ -133,6 +133,8 @@ export class Config {
   readonly guardrails: GuardrailsConfig;
   /** Pasta do perfil em uso (evals/ e skills/ próprios). */
   readonly profileDir: string | undefined;
+  /** Código da fita (`extensao:` do perfil.yaml), carregado com o tocador; ausente = fita sem extensão. */
+  readonly extensionPath: string | undefined;
   /** Pasta das ferramentas HTTP declarativas (módulo "http"); com perfil, `<perfil>/ferramentas`. */
   readonly httpToolsDir: string | undefined;
   /** Ambiente efetivo (com perfil, já mesclado): de onde as ferramentas HTTP leem suas chaves. */
@@ -188,15 +190,6 @@ export class Config {
   /** Teto para o max_iterations que uma skill pode pedir no frontmatter (spec web-search RF-10). */
   readonly maxIterationsHardCap: number;
   /** Módulo imagens (spec image-generation): ComfyUI na GPU. */
-  /** Módulo midia: downloads do YouTube pelo serviço yt-dlp (servicos/ytdlp). */
-  readonly midia: {
-    /** YTDLP_BASE_URL (padrão http://127.0.0.1:8899). */
-    baseUrl: string;
-    /** MIDIA_TIMEOUT_MS: espera máxima de um download (playlists inteiras demoram; padrão 4 h). */
-    timeoutMs: number;
-    /** MIDIA_MAX_ITENS: teto de vídeos de uma playlist por pedido; 0 (padrão) = sem limite. */
-    maxItems: number;
-  };
   readonly images: {
     baseUrl: string;
     models: Record<string, string>;
@@ -307,6 +300,7 @@ export class Config {
     this.defaultMode = parseMode(env.MODO_PADRAO);
     if (env.MODO_PADRAO?.trim() && !this.defaultMode) throw new ConfigError('MODO_PADRAO deve ser normal, reformular ou verificado');
     this.profileDir = env.PERFIL_DIR?.trim() ? path.resolve(rootDir, env.PERFIL_DIR.trim()) : undefined;
+    this.extensionPath = env.FITA_EXTENSAO?.trim() ? path.resolve(rootDir, env.FITA_EXTENSAO.trim()) : undefined;
     this.httpToolsDir = env.FERRAMENTAS_DIR?.trim() ? path.resolve(rootDir, env.FERRAMENTAS_DIR.trim()) : undefined;
     this.env = env;
     this.tmpDir = path.resolve(rootDir, env.TMP_DIR?.trim() || './tmp');
@@ -361,11 +355,6 @@ export class Config {
     this.maxIterationsHardCap = Math.max(this.maxIterations, Config.positiveInt(env.MAX_ITERATIONS_HARD_CAP, 10));
     const quality = (env.IMAGE_QUALITY?.trim().toLowerCase() || 'rapido') as 'rapido' | 'qualidade';
     if (quality !== 'rapido' && quality !== 'qualidade') throw new ConfigError('IMAGE_QUALITY deve ser rapido ou qualidade');
-    this.midia = {
-      baseUrl: (env.YTDLP_BASE_URL?.trim() || 'http://127.0.0.1:8899').replace(/\/+$/, ''),
-      timeoutMs: Config.positiveInt(env.MIDIA_TIMEOUT_MS, 4 * 3600_000),
-      maxItems: Math.max(0, Math.floor(Number(env.MIDIA_MAX_ITENS ?? 0)) || 0),
-    };
     this.images = {
       baseUrl: (env.COMFYUI_BASE_URL?.trim() || 'http://localhost:8188').replace(/\/+$/, ''),
       models: parseImageModels(env.IMAGE_MODELS),

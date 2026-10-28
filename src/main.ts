@@ -25,6 +25,7 @@ async function bootstrap(): Promise<void> {
 
   const services: ServiceChannel[] = [];
   const core = createCore(config, { tmpDir: config.tmpDir, cleanTmp: true, databaseMaintenance: true, healthChecks: true });
+  await core.ready;
   if (config.channels.has('telegram')) services.push(createTelegramChannel(core));
   if (config.channels.has('web')) services.push(new WebChannel(core, config.web));
 

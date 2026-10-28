@@ -127,6 +127,7 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     // Estruturado: vai como JSON já validado; o Config só o relê.
     GUARDRAILS: manifest.guardrails ? JSON.stringify(manifest.guardrails) : undefined,
     MODULOS_OPCOES: JSON.stringify(manifest.opcoesModulos),
+    FITA_EXTENSAO: manifest.extensao ? path.join(profile.dir, manifest.extensao) : undefined,
   };
   for (const [key, value] of Object.entries(fromManifest)) if (value !== undefined) env[key] = value;
 

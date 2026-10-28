@@ -1,12 +1,14 @@
 # Como criar uma fita
 
 Uma **fita** (ou perfil) é o que faz o K7 virar um agente específico: um baixador de músicas, um ajudante de cozinha,
-um assistente do agronegócio. O **tocador** (este repositório) tem todo o código; a fita só **descreve** o agente.
+um assistente do agronegócio. O **tocador** (este repositório) tem o que serve a qualquer agente (LLMs, memória,
+canais, voz, módulos); a fita **descreve** o agente e, se precisar, traz o **próprio código**.
 
-> **Fita não tem código.** Só YAML e Markdown: identidade, quais módulos do tocador ligar, skills escritas em texto,
-> personas, estilos, APIs descritas em YAML e segredos no `.env`. O instalador recusa fita com `.js`, `.ts`, `.py`,
-> `.sh`, `.ps1` ou `package.json`. Se a fita precisa de algo que o tocador ainda não faz, isso vira um **módulo** no
-> tocador (código, testes, revisão) e a fita só o liga.
+> **Comece sem código.** A maioria das fitas é só YAML e Markdown: identidade, quais módulos do tocador ligar, skills
+> escritas em texto, personas, estilos, APIs descritas em YAML e segredos no `.env`.
+> Quando a fita precisa de algo que só ela usa (ex.: a Rebobina baixa do YouTube e tem um player), esse código fica
+> **na fita**, numa extensão (seção 12), e não no tocador: outro agente não carrega o que não usa. O instalador
+> avisa que a fita traz código e só instala com a sua confirmação, porque ele roda com o mesmo acesso do tocador.
 
 Para o desenho completo (por que é assim, segurança, instalação), veja a spec
 [specs/profiles-modules.md](../specs/profiles-modules.md). Este guia é o passo a passo.
@@ -37,6 +39,10 @@ minha-fita/
 ├── ferramentas/       APIs REST descritas em YAML, sem código (módulo http, opcional)
 ├── conhecimento/      documentos que o agente consulta: PDF, Markdown, texto (módulo conhecimento, opcional)
 ├── evals/             perguntas para avaliar os modelos nesta fita (opcional)
+├── extensao/          código da fita: index.ts com ativar(k7) (opcional, seção 12)
+├── web/               painel da fita no chat web: painel.js e painel.css (opcional, seção 12)
+├── servicos/          containers que a extensão usa (Docker; opcional)
+├── testes/            testes da extensão (*.test.ts; opcional)
 ├── .env.example       nomes dos segredos, sem valores (vai para o Git)
 ├── .env               os segredos de verdade (NUNCA vai para o Git)
 ├── .gitignore         .env, dados/, áudios e vídeos
@@ -66,8 +72,8 @@ identidade:
     Você baixa áudio e vídeo do YouTube: recebe o link, entende o formato e entrega o arquivo.
     Fora desse objetivo, responda só: "Essa opção não está disponível aqui."
 
-modulos:
-  midia: {}
+modulos: {}                 # nenhum módulo do tocador: tudo o que ela faz vem da extensão
+extensao: extensao/index.ts # o código da fita (seção 12)
 
 canais: [telegram, terminal, web]
 privacidade: publico
@@ -103,6 +109,7 @@ variaveis: {}
 | `modo_padrao` | não | Raciocínio: `normal`, `reformular` (reescreve a pergunta antes) ou `verificado` (confere a resposta). |
 | `vitrine` | não | `true` para aparecer no site do K7 (`npm run site`), para qualquer visitante escolher. |
 | `guardrails` | não | Limites do agente (seção 8). |
+| `extensao` | não | Arquivo com o código da fita (`extensao/index.ts`): ferramentas, painel web, comandos (seção 12). |
 | `variaveis` | não | Segredos que o `.env` da fita precisa ter, com a descrição: `{ CLIMA_API_KEY: "chave da API de clima" }`. O tocador avisa os que faltam. |
 
 ### Módulos disponíveis
@@ -118,7 +125,6 @@ variaveis: {}
 | `anexos` | Entender imagens e documentos enviados (visão, OCR) | — |
 | `imagens` | Gerar imagens: ilustração, HQ, anime, mangá | ComfyUI (Docker, GPU) |
 | `conhecimento` | Responder com base nos documentos de `conhecimento/`, com citação | Embeddings (Ollama ou Gemini) |
-| `midia` | Baixar do YouTube, biblioteca, tocador, nivelar volume, padronizar nomes | Serviço `servicos/ytdlp` (Docker) |
 
 Módulo desligado some de verdade: sem `arquivos`, nenhuma ferramenta de arquivo; sem `voz`, áudios são recusados.
 Ligue **só o que a fita usa**: menos ferramentas, menos chance de o agente sair do objetivo.
@@ -302,7 +308,64 @@ Depois de instalar, copie `.env.example` para `.env` e preencha.
 - [ ] `npm run perfil -- listar` mostra a fita sem erro.
 - [ ] Só os módulos que a fita usa estão ligados.
 - [ ] Cada skill tem `description` com exemplos de pedidos entre aspas.
-- [ ] Nenhum arquivo de código, nenhum segredo, nenhum dado pessoal nos arquivos (o `.env` está no `.gitignore`).
+- [ ] Nenhum segredo nem dado pessoal nos arquivos (o `.env` está no `.gitignore`).
+- [ ] Com extensão: `npm run fita -- <fita> testes` passa, e a extensão não importa nada de `src/` do tocador.
 - [ ] Fita pública: `guardrails` com `topicos` e `injecao`, e `instrucoes` com a resposta para pedidos fora do assunto.
 - [ ] Testada no canal em que vai rodar (seção 10).
 - [ ] `README.md` diz o que a fita faz, como rodar e os serviços de que precisa.
+
+## 12. Código da fita (`extensao/`)
+
+Para o que só esta fita faz. O `perfil.yaml` aponta o arquivo (`extensao: extensao/index.ts`) e o tocador o carrega
+quando a fita toca (TypeScript direto, sem compilar). A extensão **não importa nada do tocador**: tudo vem do objeto
+`k7` que ela recebe. Copie [src/fitas/FitaApi.ts](../src/fitas/FitaApi.ts) para `extensao/k7.ts` para ter os tipos.
+
+```ts
+import type { FitaApi } from './k7.js';
+
+export default async function ativar(k7: FitaApi): Promise<void> {
+  // Ferramenta para o agente (o modelo decide quando usar)
+  k7.ferramenta({
+    name: 'contar_letras',
+    description: 'Conta as letras de uma palavra.',
+    parameters: { type: 'object', properties: { palavra: { type: 'string' } }, required: ['palavra'] },
+    async run(args, ctx) {
+      ctx.progresso('Contando…');                 // aparece na tela enquanto espera
+      return `${String(args.palavra).length} letras`;
+    },
+  });
+
+  // Rota no chat web (sempre em /api/x/) e painel na página
+  k7.web.rota('GET', /^\/api\/x\/contagem$/, (ctx) => ctx.json({ visitante: ctx.userId }));
+  k7.web.painel({ script: 'web/painel.js', estilo: 'web/painel.css' });
+
+  // npm run fita -- minha-fita limpar
+  k7.comando('limpar', 'Apaga os arquivos temporários da fita', async () => { /* ... */ });
+
+  // Ao subir o tocador: confere o serviço (falha vira aviso, não derruba nada)
+  k7.aoIniciar(async () => k7.log.info('pronto'));
+}
+```
+
+| No `k7` | Para quê |
+|---|---|
+| `fita.dir`, `fita.workspaceDir`, `fita.dadosDir`, `fita.env` | Pasta da fita, pastas de trabalho e de dados dela no tocador, variáveis do `.env` |
+| `ferramenta(tool)` | Ferramenta do agente. `ctx` traz `userId`, `progresso()` (barra de %) e `anexarMidia()` (áudio/vídeo junto da resposta) |
+| `web.rota(método, /^\/api\/x\/.../, handler, { visitante })` | Rota do chat web. `ctx` traz `userId`, `json`, `midia` (com Range), `zip`, `emFila`, `progresso`, `saiu` (a pessoa fechou a página) |
+| `web.painel({ script, estilo })` | Arquivos da fita incluídos na página do chat |
+| `comando(nome, descrição, fn)` | `npm run fita -- <fita> <nome>` |
+| `aoIniciar(fn)` | Verificações quando o tocador sobe |
+| `util.limitador(n)`, `util.emParalelo(itens, n, fn)` | Tarefas ao mesmo tempo, com teto |
+| `log.info/aviso/erro` | Log com o nome da fita |
+
+**Erros para a pessoa:** um erro com a propriedade `userMessage` (texto) aparece como está no chat, no Telegram e na
+página (status 422). Os demais viram "falha interna" e vão para o log.
+
+**Painel web:** o script roda depois do da página e usa `window.K7`: `api(caminho)`, `fileUrl(caminho)`,
+`authHeaders()`, `el()`, `esc()`, `saveToFolder()`, `state` e os avisos `onReady(info)`, `onReply(resposta)` e
+`onBusy(true/false)`. Rotas com `{ visitante: false }` (ex.: arquivo aberto por `<audio>`) não recebem quem é o
+visitante: use ids imprevisíveis nelas.
+
+**Testes:** `testes/*.test.ts` com `node:test`, rodados por `npm run fita -- <fita> testes`. Para não depender do
+tocador, teste as peças da extensão direto ou com um `k7` de mentira (a Rebobina tem um em `testes/k7-falso.ts`).
+

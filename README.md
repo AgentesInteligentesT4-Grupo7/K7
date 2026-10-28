@@ -309,25 +309,17 @@ docker stop comfyui | docker start comfyui                     # desligar / reli
   O ComfyUI redesenha por cima da foto mantendo composição e cores; `intensidade` fiel, equilibrado (padrão) ou
   criativo. Com pessoas, o rosto pode mudar (use "fiel"). Foto nunca vira o estilo `realista`.
 
-## Downloads do YouTube (módulo `midia`)
+## Fitas com código próprio (extensões)
 
-Baixa áudio (MP3 ou WAV) ou vídeo (MP4) de um link ou de uma playlist do YouTube e entrega os arquivos pelo canal.
-Quem baixa é um container com yt-dlp, ffmpeg e deno (sem GPU, nada instalado no Windows):
+O que é de uma fita só fica na fita, não no tocador. Uma fita pode trazer o próprio código em `extensao/index.ts`
+(`extensao:` no `perfil.yaml`): ferramentas para o agente, rotas e um painel no chat web, comandos de terminal e os
+serviços que ela usa. O tocador carrega a extensão quando a fita toca; outras fitas não carregam nada disso.
 
-```bash
-docker compose -f servicos/ytdlp/docker-compose.yml up -d --build
-```
-
-- Ligue com `modulos: midia` no perfil (a fita `rebobina` já vem pronta) ou em `MODULES`.
-- Ferramenta `baixar_youtube` (url, formato `mp3`/`wav`/`mp4`, playlist, max_itens); arquivos em `<workspace>/downloads`.
-- No Telegram, áudio chega como música e vídeo como vídeo; acima de 50 MB (limite dos bots), o bot avisa onde salvou.
-- Playlists: inteiras por padrão (`MIDIA_MAX_ITENS` põe um teto, se quiser). Vídeos excluídos, privados ou bloqueados são
-  pulados e listados com o link e o motivo. Só links do YouTube são aceitos.
-- Nomes padronizados, sem numeração: sai o "(Official Video)", "[Official Audio]", "(Lyrics)"... e ficam "(feat. ...)",
-  "(Remix)", "(Ao Vivo)"; com artista e faixa informados pelo YouTube, vira "Artista - Música".
-- No navegador, vários arquivos ganham **Baixar tudo (.zip)** e, no Chrome/Edge em `localhost`, **Salvar numa pasta…**.
-- O YouTube muda com frequência: se parar de baixar, suba a versão do yt-dlp em `servicos/ytdlp/Dockerfile` e reconstrua.
-- Os termos do YouTube restringem downloads: use para vídeos seus, com licença livre ou com permissão do autor.
+- Comandos da fita: `npm run fita -- <fita> <comando>` (ex.: `npm run fita -- rebobina padronizar`).
+- Testes da fita: `npm run fita -- <fita> testes` (roda `testes/*.test.ts` da pasta da fita).
+- Exemplo completo: a fita **Rebobina** (downloads do YouTube, biblioteca, player, nivelar volume, padronizar nomes)
+  mora no repositório dela, com o serviço yt-dlp em `servicos/ytdlp`.
+- Como escrever uma: [docs/criar-fita.md](docs/criar-fita.md#12-código-da-fita-extensao).
 
 ## Voz clonada (sua voz a partir de texto)
 

@@ -20,7 +20,7 @@ export interface OutputStrategies {
   audio: IAudioOutputStrategy;
   /** Imagens geradas (módulo imagens); sem ela, as imagens são ignoradas. */
   image?: IOutputStrategy<GeneratedImage[]>;
-  /** Áudios e vídeos produzidos por ferramentas (módulo midia); sem ela, são ignorados. */
+  /** Áudios e vídeos produzidos por ferramentas (ex.: extensão de uma fita); sem ela, são ignorados. */
   media?: IOutputStrategy<GeneratedMedia[]>;
 }
 

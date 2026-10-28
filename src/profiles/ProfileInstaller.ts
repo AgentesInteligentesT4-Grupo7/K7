@@ -26,15 +26,17 @@ export interface InstalledRecord {
   commit?: string;
   instaladoEm: string;
   atualizadoEm?: string;
+  /** A fita traz código (extensão, serviços) e a instalação foi confirmada. */
+  codigo?: boolean;
 }
 
-/** Extensões e arquivos que um perfil não pode trazer (RF-10): perfis são conteúdo, nunca código. */
-const FORBIDDEN_EXTENSIONS = new Set([
+/** Arquivos de código: a fita pode trazer (extensão, serviços), mas só instala com a confirmação de quem instala. */
+const CODE_EXTENSIONS = new Set([
   '.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.py', '.pyw', '.rb', '.pl', '.php', '.lua',
   '.sh', '.bash', '.zsh', '.fish', '.ps1', '.psm1', '.psd1', '.bat', '.cmd', '.vbs', '.wsf', '.com',
   '.exe', '.dll', '.so', '.dylib', '.msi', '.scr', '.jar', '.class', '.wasm', '.node', '.apk', '.app',
 ]);
-const FORBIDDEN_NAMES = new Set(['package.json', 'makefile', 'dockerfile', 'docker-compose.yml', 'docker-compose.yaml', '.npmrc', '.gitmodules']);
+const CODE_NAMES = new Set(['package.json', 'makefile', 'dockerfile', 'docker-compose.yml', 'docker-compose.yaml', '.npmrc', '.gitmodules']);
 /** Pastas que não fazem parte do conteúdo do perfil. */
 const SKIPPED_DIRS = new Set(['.git', 'dados', 'node_modules']);
 const MAX_PROFILE_BYTES = 100 * 1024 * 1024;
@@ -61,9 +63,13 @@ export function parseSource(input: string, cwd = process.cwd()): ProfileSource {
   throw new ProfileError(`Origem não reconhecida: "${text}". Use uma pasta, uma URL Git, usuario/nome (GitHub) ou @escopo/nome (npm).`);
 }
 
-/** Lista os arquivos proibidos (código, links) de uma pasta de perfil; vazia = aprovada. */
-export function findForbiddenFiles(dir: string): string[] {
+/**
+ * O que a pasta da fita traz: `blocked` nunca é aceito (links simbólicos, tamanho acima do limite); `code` são os
+ * arquivos de código (extensão, scripts, Dockerfile), que só entram com confirmação.
+ */
+export function inspectProfile(dir: string): { blocked: string[]; code: string[] } {
   const problems: string[] = [];
+  const code: string[] = [];
   let total = 0;
   const walk = (current: string): void => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
@@ -73,16 +79,23 @@ export function findForbiddenFiles(dir: string): string[] {
         problems.push(`${rel} (link simbólico)`);
       } else if (entry.isDirectory()) {
         if (!(current === dir && SKIPPED_DIRS.has(entry.name))) walk(full);
-      } else if (FORBIDDEN_NAMES.has(entry.name.toLowerCase()) || FORBIDDEN_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
-        problems.push(rel);
       } else {
+        if (CODE_NAMES.has(entry.name.toLowerCase()) || CODE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) code.push(rel);
         total += fs.statSync(full).size;
       }
     }
   };
   walk(dir);
   if (total > MAX_PROFILE_BYTES) problems.push(`(tamanho total ${Math.round(total / 1024 / 1024)} MB acima do limite de ${MAX_PROFILE_BYTES / 1024 / 1024} MB)`);
-  return problems;
+  return { blocked: problems, code: code.sort() };
+}
+
+export interface CodeConfirmation {
+  name: string;
+  origin: string;
+  /** Arquivos de código da fita (caminhos relativos). */
+  files: string[];
+  update: boolean;
 }
 
 export interface InstallerOptions {
@@ -93,6 +106,11 @@ export interface InstallerOptions {
   /** Caminho do npm-cli.js (npm_execpath), para rodar o npm sem shell. */
   npmCliPath?: string;
   log?: (line: string) => void;
+  /**
+   * Fita com código: pergunta a quem instala (o código roda com o mesmo acesso do tocador). Sem esta função ou com
+   * resposta negativa, a fita não é instalada.
+   */
+  confirmCode?: (request: CodeConfirmation) => Promise<boolean>;
 }
 
 export interface InstallResult {
@@ -103,7 +121,7 @@ export interface InstallResult {
   pendingVariables: string[];
 }
 
-/** Instala, atualiza e remove perfis. Nunca executa nada que venha do perfil (RF-10). */
+/** Instala, atualiza e remove perfis. Instalar nunca executa nada da fita; fita com código só entra com confirmação. */
 export class ProfileInstaller {
   private readonly runner: ProcessRunner;
   private readonly log: (line: string) => void;
@@ -136,10 +154,19 @@ export class ProfileInstaller {
       if (!PROFILE_NAME_PATTERN.test(name)) throw new ProfileError(`Nome de perfil inválido: "${name}"`);
       const dir = path.join(this.options.profilesDir, name);
       if (fs.existsSync(dir)) throw new ProfileError(`Já existe um perfil "${name}" em ${dir}. Use "atualizar ${name}" ou --nome <outro>.`);
+      const code = await this.approveCode(staging, { name, origin: source.input, update: false });
 
       fs.mkdirSync(this.options.profilesDir, { recursive: true });
       fs.cpSync(staging, dir, { recursive: true });
-      this.writeRecord(name, { nome: name, origem: source.input, tipo: source.kind, versao: manifest.versao, commit, instaladoEm: new Date().toISOString() });
+      this.writeRecord(name, {
+        nome: name,
+        origem: source.input,
+        tipo: source.kind,
+        versao: manifest.versao,
+        commit,
+        instaladoEm: new Date().toISOString(),
+        ...(code ? { codigo: true } : {}),
+      });
       return { name, dir, manifest, pendingVariables: this.prepareEnv(dir, manifest) };
     } finally {
       fs.rmSync(staging, { recursive: true, force: true });
@@ -158,13 +185,16 @@ export class ProfileInstaller {
     try {
       const commit = await this.fetch(parseSource(record.origem), staging);
       const manifest = this.validate(staging);
+      // Pergunta de novo antes de trocar: o código pode ter mudado.
+      const code = await this.approveCode(staging, { name, origin: record.origem, update: true });
       // Troca só o conteúdo: .env e dados do perfil ficam intactos.
       for (const entry of fs.readdirSync(dir)) {
         if (entry === '.env' || SKIPPED_DIRS.has(entry)) continue;
         fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
       }
       fs.cpSync(staging, dir, { recursive: true, force: true });
-      this.writeRecord(name, { ...record, versao: manifest.versao, commit, atualizadoEm: new Date().toISOString() });
+      const { codigo: _previous, ...rest } = record;
+      this.writeRecord(name, { ...rest, versao: manifest.versao, commit, atualizadoEm: new Date().toISOString(), ...(code ? { codigo: true } : {}) });
       this.log(`🔄 ${name}: ${record.versao} → ${manifest.versao}`);
       return { name, dir, manifest, pendingVariables: this.prepareEnv(dir, manifest) };
     } finally {
@@ -181,6 +211,7 @@ export class ProfileInstaller {
     let manifest: ProfileManifest;
     try {
       manifest = this.validate(dir);
+      if (before !== (await git('rev-parse', 'HEAD')).stdout.trim()) await this.approveCode(dir, { name, origin: dir, update: true });
     } catch (error) {
       await git('reset', '--hard', '--quiet', before);
       throw new ProfileError(`${(error as Error).message}\nA versão anterior (${before.slice(0, 7)}) foi mantida.`);
@@ -260,15 +291,21 @@ export class ProfileInstaller {
   }
 
   private validate(dir: string): ProfileManifest {
-    const forbidden = findForbiddenFiles(dir);
-    if (forbidden.length) {
-      throw new ProfileError(`Perfil recusado: perfis não podem conter código nem links (RF-10). Arquivos proibidos:\n  ${forbidden.join('\n  ')}`);
-    }
+    const { blocked } = inspectProfile(dir);
+    if (blocked.length) throw new ProfileError(`Perfil recusado: links simbólicos ou tamanho acima do limite:\n  ${blocked.join('\n  ')}`);
     const manifest = readManifest(dir);
     if (manifest.tocador && !satisfiesVersion(this.options.playerVersion, manifest.tocador)) {
       throw new ProfileError(`O perfil "${manifest.nome}" requer o tocador ${manifest.tocador}, mas este é o ${this.options.playerVersion}.`);
     }
     return manifest;
+  }
+
+  /** Fita com código só passa com a confirmação de quem instala; devolve se ela tem código. */
+  private async approveCode(dir: string, request: Omit<CodeConfirmation, 'files'>): Promise<boolean> {
+    const { code } = inspectProfile(dir);
+    if (!code.length) return false;
+    if (await this.options.confirmCode?.({ ...request, files: code })) return true;
+    throw new ProfileError(`Perfil recusado: a fita traz código e a instalação não foi confirmada. Arquivos de código:\n  ${code.join('\n  ')}`);
   }
 
   /** Cria o .env do perfil a partir do .env.example (sem sobrescrever) e lista o que falta preencher. */

@@ -3,17 +3,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import type { AgentController } from '../../agent/AgentController.js';
 import { ProgressBoard } from '../../agent/ProgressBoard.js';
-import { publishProgress } from '../../modules/midia/DownloadMediaTool.js';
-import { AudioLeveler, LEVELABLE } from '../../modules/midia/AudioLeveler.js';
-import type { MediaDownloader } from '../../modules/midia/MediaDownloader.js';
 import type { AgentInput } from '../../agent/types.js';
 import type { Core } from '../../app/createCore.js';
+import { type ExtensionRoute, fromExtension } from '../../fitas/ExtensionHost.js';
+import type { WebRotaCtx } from '../../fitas/FitaApi.js';
 import { DocumentParseError, EmptyAudioError, UnsupportedAttachmentError, UserFacingError, errorMessage } from '../../errors/AppErrors.js';
-import { KeyedLimiter, mapWithLimit } from '../../utils/KeyedLimiter.js';
 import { Logger } from '../../utils/Logger.js';
 import { sanitizeText, truncate } from '../../utils/text.js';
 import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
@@ -93,9 +89,6 @@ export class WebChannel {
   private server?: http.Server;
   /** Fila de mensagens de cada visitante (como a fila por chat do Telegram). */
   private readonly queues = new Map<string, Promise<unknown>>();
-  /** Nivelamentos ao mesmo tempo por visitante (o número vem do serviço, pelos núcleos da máquina dele). */
-  private levelParallel = 2;
-  private levelSlots = new KeyedLimiter(2);
   /** Horários das mensagens recentes por visitante ('*' = todos), para o limite do modo público. */
   private readonly hits = new Map<string, number[]>();
 
@@ -135,13 +128,8 @@ export class WebChannel {
   }
 
   async start(): Promise<void> {
-    if (this.core.leveler) {
-      this.levelParallel = await this.core.leveler.parallel();
-      this.levelSlots = new KeyedLimiter(this.levelParallel);
-    }
     this.server = http.createServer((req, res) => void this.route(req, res));
-    // Respostas com modelos locais levam minutos e o download de uma playlist inteira passa de uma hora.
-    // Sem teto: o download de uma playlist inteira passa de uma hora (a página mostra o andamento enquanto espera).
+    // Sem teto: respostas com modelos locais e tarefas longas das fitas passam de uma hora (a página mostra o andamento).
     this.server.requestTimeout = 0;
     this.server.headersTimeout = 60 * 1000;
     await new Promise<void>((resolve, reject) => {
@@ -181,78 +169,14 @@ export class WebChannel {
       const bundle = /^\/api\/pacotes\/([0-9a-f]{24})$/.exec(url.pathname);
       // await: sem ele, o erro (404, 413) escaparia do catch e a requisição ficaria sem resposta.
       if (req.method === 'GET' && bundle) return await this.sendZip(res, bundle[1]!, url.searchParams.get('nome'));
-      // Faixa da biblioteca: o id da entrada é imprevisível (como os nomes dos arquivos); <audio>/<video> pedem por partes (Range).
-      const track = /^\/api\/biblioteca\/([0-9a-f]{24})\/(\d{1,5})$/.exec(url.pathname);
-      const libraryZip = /^\/api\/biblioteca\/([0-9a-f]{24})\/zip$/.exec(url.pathname);
-      if (req.method === 'GET' && libraryZip) return await this.sendLibraryZip(res, libraryZip[1]!);
-      if (req.method === 'GET' && track) {
-        const found = this.core.library?.track(track[1]!, Number(track[2]));
-        if (!found) throw new HttpError(404, 'Faixa não encontrada');
-        return this.sendMedia(req, res, found.path, found.nome);
-      }
+      // Rotas da extensão da fita (/api/x/...). As de `visitante: false` (ex.: arquivos abertos por <audio>) vêm sem cabeçalho.
+      const extension = this.core.extensions.routes.find((r) => r.method === req.method && r.path.test(url.pathname));
+      if (extension) return await this.runExtension(extension, req, res, url);
       const userId = this.userIdFor(req);
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
       if (req.method === 'GET' && url.pathname === '/api/progresso') {
         const progress = ProgressBoard.get(userId);
         return this.json(res, { texto: progress?.text ?? null, feitos: progress?.done ?? null, total: progress?.total ?? null });
-      }
-      if (req.method === 'GET' && url.pathname === '/api/biblioteca') return this.json(res, this.library(userId));
-      // Nivelar um arquivo da pasta do visitante: o corpo é o arquivo; a resposta, a versão nivelada (nada fica guardado).
-      if (req.method === 'POST' && url.pathname === '/api/nivelar') {
-        const leveler = this.core.leveler;
-        if (!leveler) throw new HttpError(404, 'Nivelamento desligado nesta fita');
-        const name = path.basename(url.searchParams.get('nome') ?? '');
-        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
-        // Fora da fila de mensagens: várias músicas ao mesmo tempo, até o que o serviço aguenta (núcleos dele).
-        // Fechou a página: quem ainda esperava vaga nem começa, e o que estava no serviço é interrompido.
-        const gone = WebChannel.whenClientLeaves(res);
-        const standardize = url.searchParams.get('padronizar') === '1';
-        return await this.levelSlots.run(userId, async () => (gone.aborted ? undefined : this.proxyLevel(leveler, req, res, name, gone, standardize)));
-      }
-      // Só medir o volume de um arquivo da pasta do visitante (análise, como o MP3Gain): nada é alterado.
-      if (req.method === 'POST' && url.pathname === '/api/medir') {
-        const leveler = this.core.leveler;
-        if (!leveler) throw new HttpError(404, 'Nivelamento desligado nesta fita');
-        const name = path.basename(url.searchParams.get('nome') ?? '');
-        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
-        const gone = WebChannel.whenClientLeaves(res);
-        return await this.levelSlots.run(userId, async () => {
-          if (gone.aborted) return;
-          try {
-            this.json(res, await leveler.measureStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone));
-          } catch (error) {
-            if (gone.aborted) return;
-            if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
-            throw error;
-          }
-        });
-      }
-      // Padronizar um arquivo da pasta do visitante: nome "Título - Artista" nos cabeçalhos e o arquivo com as etiquetas.
-      if (req.method === 'POST' && url.pathname === '/api/padronizar') {
-        const leveler = this.core.leveler;
-        if (!leveler) throw new HttpError(404, 'Padronização desligada nesta fita');
-        const name = path.basename(url.searchParams.get('nome') ?? '');
-        if (!name) throw new HttpError(400, 'Informe o nome do arquivo');
-        return await this.enqueue(userId, () => this.proxyStandardize(leveler, req, res, name));
-      }
-      const levelEntry = /^\/api\/biblioteca\/([0-9a-f]{24})\/nivelar$/.exec(url.pathname);
-      if (req.method === 'POST' && levelEntry) {
-        const leveler = this.core.leveler;
-        if (!leveler || !this.core.library) throw new HttpError(404, 'Nivelamento desligado nesta fita');
-        const gone = WebChannel.whenClientLeaves(res);
-        return this.json(res, await this.enqueue(userId, () => this.levelEntry(leveler, userId, levelEntry[1]!, gone)));
-      }
-      const retry =/^\/api\/biblioteca\/([0-9a-f]{24})\/tentar-de-novo$/.exec(url.pathname);
-      if (req.method === 'POST' && retry) {
-        const downloader = this.core.mediaDownloader;
-        if (!downloader) throw new HttpError(404, 'Downloads desligados nesta fita');
-        // Direto, sem o modelo: baixa só os links que falharam e soma à mesma playlist.
-        return this.json(res, await this.enqueue(userId, () => this.retryFailed(downloader, userId, retry[1]!)));
-      }
-      const entry = /^\/api\/biblioteca\/([0-9a-f]{24})$/.exec(url.pathname);
-      if (req.method === 'DELETE' && entry) {
-        if (!this.core.library?.remove(userId, entry[1]!)) throw new HttpError(404, 'Playlist não encontrada');
-        return this.json(res, { ok: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/conversas') return this.json(res, this.conversations(userId));
       if (req.method === 'POST' && url.pathname === '/api/conversas') {
@@ -409,10 +333,6 @@ export class WebChannel {
       // Público: os nomes das vozes clonadas do dono não aparecem (e o /api/falar fica desligado).
       vozes: this.options.public ? null : (this.core.voiceClone?.list().map((v) => v.name) ?? null),
       publico: this.options.public === true,
-      biblioteca: Boolean(this.core.library),
-      nivelar: Boolean(this.core.leveler),
-      // Quantas músicas a página manda nivelar de uma vez (o serviço descobre pelos núcleos da máquina dele).
-      nivelarParalelo: this.levelParallel,
     };
   }
 
@@ -514,20 +434,40 @@ export class WebChannel {
       'x-frame-options': 'DENY',
       'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; media-src 'self' blob:; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     });
-    res.end(renderPage(nonce));
+    res.end(renderPage(nonce, this.core.extensions.panel));
   }
 
-  /** Playlists baixadas pelo visitante, com a URL de cada faixa para o tocador. */
-  private library(userId: string) {
-    return (this.core.library?.list(userId) ?? []).map((entry) => ({
-      id: entry.id,
-      titulo: entry.titulo,
-      formato: entry.formato,
-      criadoEm: entry.criadoEm,
-      falhas: entry.falhas ?? [],
-      nivelada: entry.nivelada === true,
-      faixas: entry.faixas.map((track) => ({ nome: track.nome, arquivo: track.arquivo, url: `/api/biblioteca/${entry.id}/${this.core.library!.indexOf(entry.id, track.arquivo)}` })),
-    }));
+  /** Rota de uma extensão: recebe os mesmos recursos que as rotas do tocador (visitante, mídia, .zip, fila). */
+  private async runExtension(route: ExtensionRoute, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+    const userId = route.visitor ? this.userIdFor(req) : '';
+    const ctx: WebRotaCtx = {
+      req,
+      res,
+      url,
+      params: route.path.exec(url.pathname)!.slice(1),
+      userId,
+      publico: this.options.public === true,
+      saiu: WebChannel.whenClientLeaves(res),
+      json: (data, status) => this.json(res, data, status),
+      midia: (file, name) => this.sendMedia(req, res, file, name),
+      zip: (entries, name) => this.writeZipResponse(res, entries, name),
+      lerJson: () => this.readJson(req),
+      falhar: (status, message) => {
+        throw new HttpError(status, message);
+      },
+      emFila: (task) => this.enqueue(userId || 'x', task),
+      progresso: (text, counts) => userId && ProgressBoard.set(userId, text, counts),
+      limparProgresso: () => userId && ProgressBoard.clear(userId),
+    };
+    try {
+      await route.handler(ctx);
+    } catch (caught) {
+      // Fechou a página no meio: ninguém mais espera a resposta.
+      if (ctx.saiu.aborted && !(caught instanceof HttpError)) return;
+      const error = fromExtension(caught);
+      if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
+      throw error;
+    }
   }
 
   /** Sinal que dispara se a conexão cair antes da resposta terminar (a pessoa fechou a página ou a aba). */
@@ -537,93 +477,6 @@ export class WebChannel {
       if (!res.writableFinished) controller.abort();
     });
     return controller.signal;
-  }
-
-  private async proxyLevel(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string, gone: AbortSignal, standardize = false): Promise<void> {
-    let response: Response;
-    try {
-      response = await leveler.levelStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name, gone, standardize);
-    } catch (error) {
-      if (gone.aborted) return; // ninguém mais esperando a resposta
-      if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
-      throw error;
-    }
-    const volumes = AudioLeveler.volumes(response);
-    res.writeHead(200, {
-      'content-type': 'application/octet-stream',
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-      ...(volumes.before !== null ? { 'x-volume-antes': String(volumes.before) } : {}),
-      ...(volumes.after !== null ? { 'x-volume-depois': String(volumes.after) } : {}),
-      // Nivelar e padronizar: o nome "Título - Artista" com que o arquivo deve ser gravado.
-      ...(response.headers.has('x-nome') ? { 'x-nome': response.headers.get('x-nome')! } : {}),
-    });
-    await pipeline(Readable.fromWeb(response.body as never), res);
-  }
-
-  private async proxyStandardize(leveler: AudioLeveler, req: http.IncomingMessage, res: http.ServerResponse, name: string): Promise<void> {
-    let response: Response;
-    try {
-      response = await leveler.standardizeStream(Readable.toWeb(req) as ReadableStream<Uint8Array>, name);
-    } catch (error) {
-      if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
-      throw error;
-    }
-    const pass = Object.fromEntries(['x-nome', 'x-titulo', 'x-artista'].flatMap((h) => (response.headers.has(h) ? [[h, response.headers.get(h)!]] : [])));
-    res.writeHead(response.status === 204 ? 204 : 200, {
-      ...(response.status === 204 ? {} : { 'content-type': 'application/octet-stream' }),
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-      // A página lê o nome novo destes cabeçalhos (fetch só expõe os personalizados com esta lista).
-      'access-control-expose-headers': 'x-nome, x-titulo, x-artista',
-      ...pass,
-    });
-    if (response.status === 204 || !response.body) return void res.end();
-    await pipeline(Readable.fromWeb(response.body as never), res);
-  }
-
-  /** Nivela no servidor todas as faixas de uma playlist baixada (no lugar), com o andamento na barra de %. */
-  private async levelEntry(leveler: AudioLeveler, userId: string, entryId: string, gone?: AbortSignal) {
-    const library = this.core.library!;
-    const files = library.files(userId, entryId).filter((f) => LEVELABLE.has(path.extname(f).toLowerCase()));
-    if (!files.length) return { ok: false, erro: 'Playlist não encontrada ou sem faixas.' };
-    const problems: string[] = [];
-    let done = 0;
-    ProgressBoard.set(userId, `🔊 Nivelando 0 de ${files.length}…`, { done: 0, total: files.length });
-    try {
-      // Várias faixas ao mesmo tempo, quantas o serviço nivela de uma vez.
-      await mapWithLimit(files, await leveler.parallel(), async (file) => {
-        // Fechou a página: as faixas que faltam não começam (as já começadas terminam e ficam niveladas).
-        if (gone?.aborted) return;
-        try {
-          await leveler.levelFile(file);
-        } catch (error) {
-          problems.push(`${path.basename(file)}: ${error instanceof UserFacingError ? error.userMessage : errorMessage(error)}`);
-        }
-        done++;
-        ProgressBoard.set(userId, `🔊 Nivelando ${done} de ${files.length}…`, { done, total: files.length });
-      });
-    } finally {
-      ProgressBoard.clear(userId);
-    }
-    if (gone?.aborted) {
-      this.logger.info(`🔊 Nivelamento interrompido: a página foi fechada (${done} de ${files.length})`);
-      return { ok: false, erro: 'interrompido' };
-    }
-    library.markLeveled(userId, entryId, problems.length === 0);
-    return { ok: true, niveladas: files.length - problems.length, problemas: problems };
-  }
-
-  private async retryFailed(downloader: MediaDownloader, userId: string, entryId: string) {
-    try {
-      const outcome = await downloader
-        .retry(userId, entryId, (progress) => publishProgress(userId, progress))
-        .finally(() => ProgressBoard.clear(userId));
-      return { ok: true, novos: outcome.fresh + outcome.reused, falhas: outcome.failures };
-    } catch (error) {
-      if (error instanceof UserFacingError) return { ok: false, erro: error.userMessage };
-      throw error;
-    }
   }
 
   /** Áudio/vídeo com suporte a Range: o tocador do navegador pula para qualquer ponto sem baixar tudo. */
@@ -668,15 +521,6 @@ export class WebChannel {
     const entries = this.output.bundleEntries(id);
     if (!entries?.length) throw new HttpError(404, 'Pacote não encontrado');
     await this.writeZipResponse(res, entries, requestedName);
-  }
-
-  /** A playlist inteira da biblioteca num .zip, com o nome dela. */
-  private async sendLibraryZip(res: http.ServerResponse, id: string): Promise<void> {
-    const bundle = this.core.library?.bundle(id);
-    if (!bundle?.arquivos.length) throw new HttpError(404, 'Playlist não encontrada');
-    const plain = bundle.titulo.normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const name = `${plain.replace(/[^\w .-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70) || 'playlist'}.zip`;
-    await this.writeZipResponse(res, bundle.arquivos, name);
   }
 
   private async writeZipResponse(res: http.ServerResponse, entries: Array<{ name: string; path: string }>, requestedName: string | null): Promise<void> {

@@ -41,6 +41,7 @@ async function main(): Promise<void> {
     databaseMaintenance: false,
     healthChecks: flag('verbose'),
   });
+  await core.ready;
 
   const output = new TerminalOutputHandler({
     outputDir: path.resolve(path.dirname(config.dbPath), 'terminal'),

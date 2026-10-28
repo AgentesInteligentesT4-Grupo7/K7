@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { errorMessage } from '../errors/AppErrors.js';
-import { ProfileInstaller } from '../profiles/ProfileInstaller.js';
+import { type CodeConfirmation, ProfileInstaller } from '../profiles/ProfileInstaller.js';
 import { listProfiles, playerVersion, profileDirs, readManifest } from '../profiles/ProfileLoader.js';
 import type { ProfileManifest } from '../profiles/ProfileManifest.js';
 import { createProfile } from '../profiles/ProfileTemplate.js';
@@ -10,7 +10,7 @@ import { createProfile } from '../profiles/ProfileTemplate.js';
 const USAGE = `Uso: npm run perfil -- <comando>
 
   novo <nome>                     cria um perfil vazio a partir do modelo
-  instalar <origem> [--nome x]    instala uma fita. Origens:
+  instalar <origem> [--nome x]    instala uma fita (com código: pede confirmação; --confiar pula). Origens:
                                     ./pasta/local
                                     https://github.com/usuario/perfil-promo
                                     usuario/promo        (GitHub: tenta usuario/perfil-promo e depois usuario/promo)
@@ -30,7 +30,24 @@ const installer = new ProfileInstaller({
   playerVersion: version,
   npmCliPath: process.env.npm_execpath,
   log: (line) => console.log(line),
+  confirmCode,
 });
+
+/** Fita com código: mostra os arquivos e só segue se a pessoa digitar "sim" (--confiar pula a pergunta). */
+async function confirmCode(request: CodeConfirmation): Promise<boolean> {
+  const shown = request.files.slice(0, 20).map((f) => `     ${f}`);
+  if (request.files.length > 20) shown.push(`     ... e mais ${request.files.length - 20}`);
+  console.log(
+    `\n⚠️  A fita "${request.name}" (${request.origin}) traz código, que roda com o mesmo acesso do K7 ` +
+      `(arquivos, rede, chaves do .env).${request.update ? ' A versão nova pode ter mudado o código.' : ''}\n` +
+      `   Arquivos de código:\n${shown.join('\n')}\n   Só confirme se você confia em quem fez a fita.`,
+  );
+  if (process.argv.includes('--confiar')) return true;
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question('Digite "sim" para instalar: ');
+  rl.close();
+  return answer.trim().toLowerCase() === 'sim';
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
