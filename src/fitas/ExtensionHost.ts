@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { load as parseYaml } from 'js-yaml';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ProgressBoard } from '../agent/ProgressBoard.js';
@@ -215,6 +216,7 @@ export class ExtensionHost {
       util: {
         limitador: (max) => new KeyedLimiter(max),
         emParalelo: (itens, max, tarefa) => mapWithLimit(itens, max, tarefa),
+        lerYaml: (texto) => parseYaml(texto),
       },
       processoPrincipal: this.options.principal === true,
       tarefa: (nome, intervaloMs, executar) => {

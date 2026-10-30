@@ -28,8 +28,8 @@ async function main(): Promise<void> {
   if (command === 'testes') {
     const profile = loadProfile(name, dirs, playerVersion(rootDir));
     if (!fs.existsSync(path.join(profile.dir, 'testes'))) throw new ProfileError(`a fita ${name} não tem a pasta testes/`);
-    // O tsx vem do tocador: a fita não precisa de node_modules próprio.
-    const result = spawnSync(process.execPath, ['--import', import.meta.resolve('tsx'), '--test', 'testes/**/*.test.ts'], { cwd: profile.dir, stdio: 'inherit' });
+    // O tsx vem do tocador: a fita não precisa de node_modules próprio (K7_DIR: os testes acham o tocador).
+    const result = spawnSync(process.execPath, ['--import', import.meta.resolve('tsx'), '--test', 'testes/**/*.test.ts'], { cwd: profile.dir, stdio: 'inherit', env: { ...process.env, K7_DIR: rootDir } });
     process.exitCode = result.status ?? 1;
     return;
   }

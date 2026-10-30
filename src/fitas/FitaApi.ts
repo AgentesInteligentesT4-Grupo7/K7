@@ -40,6 +40,8 @@ export interface FitaApi {
     limitador(max: number): { run<T>(chave: string, tarefa: () => Promise<T>): Promise<T> };
     /** Roda `tarefa` para cada item com até `max` ao mesmo tempo; o resultado sai na ordem. */
     emParalelo<T, R>(itens: T[], max: number, tarefa: (item: T, i: number) => Promise<R>): Promise<R[]>;
+    /** Lê um texto YAML (ex.: regras da fita escritas para gente revisar); erro de sintaxe vira exceção. */
+    lerYaml(texto: string): unknown;
   };
   /** `true` só no processo principal (o bot): servidores próprios e tarefas da fita rodam só nele. */
   processoPrincipal: boolean;
