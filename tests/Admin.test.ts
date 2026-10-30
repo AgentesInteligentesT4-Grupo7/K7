@@ -114,16 +114,12 @@ describe('Página de administração das fitas', () => {
   });
 });
 
-describe('Página de administração: uma fita por vez no mesmo bot', () => {
+describe('Página de administração: um bot por fita', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'k7-admin-bot-'));
   const perfis = path.join(root, 'perfis');
-  const chamadas: string[] = [];
-  // Telegram de mentira: getMe diz quem é o bot; o resto (nome, descrição, comandos) só responde ok.
-  const telegram = http.createServer((req, res) => {
-    const metodo = String(req.url).split('/').pop()!;
-    chamadas.push(metodo);
-    const result = metodo === 'getMe' ? { id: 123, is_bot: true, first_name: 'K7', username: 'k7_bot' } : true;
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, result }));
+  // Telegram de mentira: getMe diz quem é o bot.
+  const telegram = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, result: { id: 123, is_bot: true, first_name: 'K7', username: 'k7_bot' } }));
   });
   const runner = new FitaRunner({
     rootDir: root,
@@ -142,10 +138,13 @@ describe('Página de administração: uma fita por vez no mesmo bot', () => {
       fs.writeFileSync(path.join(perfis, nome, 'perfil.yaml'), `nome: ${nome}\ndescricao: Fita ${nome}\nidentidade: { nome: ${nome.toUpperCase()}, emoji: "🧪" }\ncanais: ${canais}\nmodulos: []\n`);
       if (env) fs.writeFileSync(path.join(perfis, nome, '.env'), env);
     };
-    fita('agro', '[telegram, terminal]', 'TELEGRAM_BOT_TOKEN=123:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n');
-    fita('videos', '[terminal]');
+    const token = 'TELEGRAM_BOT_TOKEN=123:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n';
+    fita('agro', '[telegram, terminal]', token);
+    fita('copia', '[telegram, terminal]', token);
+    fita('videos', '[telegram, terminal]');
+    fita('sotexto', '[terminal]');
     const apiRoot = `http://127.0.0.1:${(telegram.address() as { port: number }).port}`;
-    server = new AdminServer({ port: 0, rootDir: root, env: { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k', TELEGRAM_API_ROOT: apiRoot, TELEGRAM_ALLOWED_USER_IDS: '1' }, token: TOKEN, runner });
+    server = new AdminServer({ port: 0, rootDir: root, env: { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k', TELEGRAM_API_ROOT: apiRoot }, token: TOKEN, runner });
     await server.start();
     base = new URL(server.url).origin;
   });
@@ -155,18 +154,17 @@ describe('Página de administração: uma fita por vez no mesmo bot', () => {
     telegram.close();
   });
 
-  it('mostra o bot e quem toca nele; trocar desliga a outra, passa o token e o canal e reconfigura o bot', async () => {
+  it('aponta fitas que dividem o bot e as sem bot; não liga uma fita com o bot de outra já ligada', async () => {
     assert.equal((await api('/api/fitas/agro/ligar', 'POST', {})).status, 200);
-    const bots = (await (await api('/api/bots')).json()) as Array<{ id: string; username: string; fitas: string[]; tocando: string[] }>;
-    assert.deepEqual(bots, [{ id: '123', username: 'k7_bot', fitas: ['agro'], tocando: ['agro'] }]);
-
-    const r = (await (await api('/api/bots/123/tocar', 'POST', { fita: 'videos' })).json()) as { tocando: string; feitos: string[]; falhas: string[] };
-    assert.equal(r.tocando, 'videos');
-    assert.ok(r.feitos.includes('agro desligada') && r.feitos.includes('token do bot no .env da fita') && r.feitos.includes('canal Telegram ligado no perfil.yaml'), r.feitos.join(' | '));
-    assert.match(fs.readFileSync(path.join(perfis, 'videos', '.env'), 'utf8'), /^TELEGRAM_BOT_TOKEN=123:/m);
-    assert.match(fs.readFileSync(path.join(perfis, 'videos', 'perfil.yaml'), 'utf8'), /canais: \[terminal, telegram\]/);
-    assert.ok(chamadas.includes('setMyName') && chamadas.includes('setMyCommands'), 'o bot ganha o nome e os comandos da fita');
-    const depois = (await (await api('/api/bots')).json()) as Array<{ fitas: string[]; tocando: string[] }>;
-    assert.deepEqual([depois[0]!.fitas, depois[0]!.tocando], [['agro', 'videos'], ['videos']]);
+    const info = (await (await api('/api/bots')).json()) as { bots: Array<Record<string, unknown>>; semBot: string[]; gerenteConfigurado: boolean };
+    assert.deepEqual(info, {
+      bots: [{ id: '123', username: 'k7_bot', fitas: ['agro', 'copia'], ligadas: ['agro'], dividido: true }],
+      semBot: ['videos'],
+      gerenteConfigurado: false,
+    });
+    const r = await api('/api/fitas/copia/ligar', 'POST', {});
+    assert.equal(r.status, 409);
+    assert.match(((await r.json()) as { erro: string }).erro, /mesmo da "agro"[\s\S]*Crie um bot próprio para "copia"/);
+    assert.equal(runner.state('agro').rodando, true, 'a outra continua respondendo');
   });
 });

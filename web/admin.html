@@ -122,7 +122,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var token = (/[#&]t=([\w-]+)/.exec(location.hash) || [])[1] || '';
-  var state = { fitas: [], bots: [], botMsg: null, sel: null, tab: 'geral', logTimer: null, managedTimer: null };
+  var state = { fitas: [], bots: { bots: [], semBot: [] }, sel: null, tab: 'geral', logTimer: null, managedTimer: null };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
@@ -146,46 +146,48 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 
   // ── Lista ───────────────────────────────────────────────────────────────
   function load() {
-    return Promise.all([api('/api/fitas'), api('/api/bots').catch(function () { return []; })]).then(function (r) {
+    return Promise.all([api('/api/fitas'), api('/api/bots').catch(function () { return { bots: [], semBot: [] }; })]).then(function (r) {
       state.fitas = r[0]; state.bots = r[1];
       renderList(); if (state.sel) renderDetail();
     });
   }
 
-  // ── Bots do Telegram: qual fita toca em cada um, e trocar ─────────────────
+  // ── Bots do Telegram: um por fita (criados pelo gerente) ─────────────────
+  function fitaDe(nome) { return state.fitas.find(function (x) { return x.nome === nome; }); }
+  function rotulo(nome) { var f = fitaDe(nome); return f ? f.emoji + ' ' + f.titulo : nome; }
+  function botaoCriar(nome) {
+    var b = el('button', '', '＋ Criar bot para ' + esc(rotulo(nome))); b.type = 'button';
+    b.addEventListener('click', function () { state.sel = nome; state.tab = 'telegram'; stopTimers(); renderList(); renderDetail(); });
+    return b;
+  }
   function renderBots(list) {
-    if (!state.bots.length) return;
+    var info = state.bots;
+    if (!info.bots.length && !info.semBot.length) return;
     var box = el('section', 'box bots');
     box.appendChild(el('h3', '', '📻 Bots do Telegram'));
-    state.bots.forEach(function (b) {
-      var tocando = b.tocando[0];
-      var atual = state.fitas.find(function (x) { return x.nome === tocando; });
+    info.bots.forEach(function (b) {
       var linha = el('div', 'bot');
       linha.appendChild(el('div', '', '<b>' + (b.username ? '@' + esc(b.username) : 'bot ' + esc(b.id)) + '</b> · ' +
-        (atual ? 'tocando <span class="pill on">' + esc(atual.emoji + ' ' + atual.titulo) + '</span>' : '<span class="pill">parado</span>')));
-      var row = el('div', 'row');
-      var sel = el('select');
-      sel.setAttribute('aria-label', 'Fita para tocar neste bot');
-      state.fitas.filter(function (x) { return !x.erro; }).forEach(function (x) {
-        var o = el('option', '', esc(x.emoji + ' ' + x.titulo)); o.value = x.nome;
-        if (x.nome === (tocando || b.fitas[0])) o.selected = true;
-        sel.appendChild(o);
-      });
-      var btn = el('button', 'primary', tocando ? '⇄ Trocar' : '▶ Tocar'); btn.type = 'button';
-      var out = el('div');
-      if (state.botMsg && state.botMsg.id === b.id) msg(out, state.botMsg.kind, state.botMsg.text);
-      btn.addEventListener('click', function () {
-        busy(btn, function () {
-          return api('/api/bots/' + b.id + '/tocar', 'POST', { fita: sel.value }).then(function (r) {
-            state.botMsg = { id: b.id, kind: r.falhas.length ? 'warn' : 'ok', text: '▶ ' + r.tocando + ' tocando no bot. ' + r.feitos.join(' · ') + (r.falhas.length ? ' · Não deu: ' + r.falhas.join('; ') : '') };
-          }).catch(function (e) { state.botMsg = { id: b.id, kind: 'err', text: e.message }; }).then(load);
-        });
-      });
-      row.appendChild(sel); row.appendChild(btn);
-      linha.appendChild(row); linha.appendChild(out);
+        b.fitas.map(function (n) { return '<span class="pill ' + (b.ligadas.indexOf(n) >= 0 ? 'on' : '') + '">' + esc(rotulo(n)) + (b.ligadas.indexOf(n) >= 0 ? ' ● ligada' : '') + '</span>'; }).join('')));
+      if (b.dividido) {
+        linha.appendChild(el('div', 'msg warn', 'Estas fitas dividem o mesmo bot: só uma responde por vez e as conversas se misturam. Crie um bot próprio para cada uma.'));
+        var row = el('div', 'row');
+        b.fitas.slice(1).forEach(function (n) { row.appendChild(botaoCriar(n)); });
+        linha.appendChild(row);
+      }
       box.appendChild(linha);
     });
-    box.appendChild(el('p', 'help', 'Uma fita por vez em cada bot. Trocar desliga a que está tocando, passa o nome, a descrição, os comandos e a foto do bot para a escolhida e liga. Quem tem acesso e os dados são de cada fita.'));
+    if (info.semBot.length) {
+      var sem = el('div', 'bot');
+      sem.appendChild(el('div', 'help', 'Com o canal Telegram, mas ainda sem bot:'));
+      var row = el('div', 'row');
+      info.semBot.forEach(function (n) { row.appendChild(botaoCriar(n)); });
+      sem.appendChild(row);
+      box.appendChild(sem);
+    }
+    box.appendChild(el('p', 'help', info.gerenteConfigurado
+      ? 'Cada fita tem o próprio bot e todas podem ficar ligadas juntas. "Criar bot" abre a aba Telegram da fita: o bot gerente gera o link, você confirma no celular e o K7 configura nome, descrição, comandos e foto.'
+      : 'Cada fita tem o próprio bot. Para criá-los daqui, defina TELEGRAM_GERENTE_TOKEN (o bot gerente, criado uma vez no @BotFather com o modo de gerenciar bots ligado) no .env do K7 e reinicie esta página.'));
     list.appendChild(box);
   }
 
