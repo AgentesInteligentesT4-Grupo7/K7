@@ -49,7 +49,7 @@ export class SystemPromptBuilder {
   }
 
   private identitySection(channel: string): string {
-    const { name, owner, purpose, language, instructions } = this.identity;
+    const { name, owner, purpose, language, instructions, focus, description } = this.identity;
     const where =
       channel === 'terminal' ? 'pelo chat no terminal' : channel === 'web' ? 'pelo chat no navegador' : 'pelo Telegram';
     const formatting =
@@ -63,7 +63,12 @@ Responda sempre em ${language} (a menos que o usuário peça outro idioma), de f
 Data/hora local atual: ${now}.${instructions ? `
 
 # Foco e instruções do projeto
-${instructions}` : ''}
+${instructions}` : ''}${focus === 'restrito' ? `
+
+# Só o que este bot faz
+Este bot tem um propósito só: ${description || purpose}.
+- Pedido de outro assunto (ex.: previsão do tempo num bot de vídeos, receita num bot de clima, notícias, contas): NÃO tente resolver, NÃO pesquise e NÃO chame ferramentas. Responda em 2 ou 3 frases: que este bot não tem essa opção, o que ele faz e 2 ou 3 exemplos do que dá para pedir (e os comandos, se houver).
+- Cumprimentos, "o que você faz?", "como funciona?" e dúvidas sobre o próprio bot: responda normalmente, apresentando o que ele faz.` : ''}
 
 # Formatação
 ${formatting}`;

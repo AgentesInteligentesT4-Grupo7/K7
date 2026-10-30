@@ -178,6 +178,14 @@ escaneia, toca em **Iniciar** e já conversa; você recebe "Maria entrou pelo co
 `npm run perfil -- acessos demonstracao bloquear <id>`. Se faltar alguma variável, o K7 não sobe e diz exatamente o
 que preencher e em qual `.env`.
 
+**5.4 Trocar a fita do bot:** um bot do Telegram toca uma fita por vez. Na página de administração, o cartão
+**📻 Bots do Telegram** (no topo da lista) mostra cada bot e a fita que está tocando nele. Escolha outra fita e clique
+em **⇄ Trocar**: o K7 desliga a fita que estava no bot, dá o token e o canal Telegram à nova (se ela não tiver), troca o
+nome, a descrição, os comandos e a foto do bot pelos dela e a liga. **Aparece:** no Telegram, o menu de comandos muda
+(ex.: `/clima` some e entram os da Rebobina). Com `foco: restrito` no perfil.yaml, pedir "temperatura" à Rebobina
+responde que esse bot não faz isso, o que ele faz e exemplos. Quem tem acesso e os dados são de cada fita: quem foi
+convidado para a AgroMinds precisa de convite na Rebobina.
+
 ## Cena 6 — Uma fita com código: a Rebobina (6 min)
 
 **Mostrar a pasta:** `extensao/` (o código: ferramenta `baixar_youtube`, biblioteca, nivelar, padronizar), `web/`

@@ -15,6 +15,10 @@ export interface AgentIdentity {
   instructions: string;
   /** Idioma padrão das respostas (AGENT_LANGUAGE). */
   language: string;
+  /** `restrito`: só o propósito da fita; o resto recebe "isso este bot não faz" (AGENT_FOCO, do `foco:` da fita). */
+  focus: 'livre' | 'restrito';
+  /** O que o bot faz, em uma frase (AGENT_DESCRICAO, da `descricao:` da fita): usado ao recusar um assunto. */
+  description: string;
 }
 
 export const DEFAULT_IDENTITY: AgentIdentity = {
@@ -24,6 +28,8 @@ export const DEFAULT_IDENTITY: AgentIdentity = {
   purpose: 'agente pessoal de IA',
   instructions: '',
   language: 'português do Brasil',
+  focus: 'livre',
+  description: '',
 };
 
 export function identityFromEnv(env: NodeJS.ProcessEnv): AgentIdentity {
@@ -36,6 +42,8 @@ export function identityFromEnv(env: NodeJS.ProcessEnv): AgentIdentity {
     // "\n" literal no .env vira quebra de linha (o dotenv não expande em valores sem aspas duplas).
     instructions: (env.AGENT_INSTRUCTIONS ?? '').replace(/\\n/g, '\n').trim(),
     language: pick(env.AGENT_LANGUAGE, DEFAULT_IDENTITY.language),
+    focus: env.AGENT_FOCO?.trim() === 'restrito' ? 'restrito' : 'livre',
+    description: env.AGENT_DESCRICAO?.trim() ?? '',
   };
 }
 

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { qrDataUrl } from '../telegram/acesso/convite.js';
 import type { AccessStatus } from '../telegram/acesso/TelegramAccessStore.js';
 import { FitaTelegram } from '../telegram/configuracao/FitaTelegram.js';
+import { TelegramBotSetup, setEnvVariable } from '../telegram/configuracao/TelegramBotSetup.js';
 import { disabledExtension, editManifest, type ManifestChanges } from '../../profiles/ManifestEditor.js';
 import { type CodeConfirmation, ProfileInstaller, inspectProfile } from '../../profiles/ProfileInstaller.js';
 import { listProfiles, playerVersion, profileDirs } from '../../profiles/ProfileLoader.js';
@@ -105,6 +106,13 @@ export class AdminServer {
     });
   }
 
+  private readonly botNames = new Map<string, string>();
+
+  private get setup(): TelegramBotSetup {
+    const apiRoot = this.options.env.TELEGRAM_API_ROOT;
+    return new TelegramBotSetup(apiRoot ? { apiRoot } : {});
+  }
+
   private telegram(fita: string): FitaTelegram {
     return new FitaTelegram(fita, { env: this.options.env, rootDir: this.options.rootDir });
   }
@@ -122,6 +130,13 @@ export class AdminServer {
 
       const p = url.pathname;
       if (req.method === 'GET' && p === '/api/fitas') return this.json(res, await this.listFitas());
+      if (req.method === 'GET' && p === '/api/bots') return this.json(res, await this.bots());
+      const trocar = /^\/api\/bots\/(\d{1,20})\/tocar$/.exec(p);
+      if (req.method === 'POST' && trocar) {
+        const { fita } = (await this.readJson(req)) as { fita?: string };
+        if (!fita) throw new HttpError(400, 'Escolha a fita');
+        return this.json(res, await this.play(trocar[1]!, fita));
+      }
       if (req.method === 'POST' && p === '/api/fitas') {
         const { nome } = (await this.readJson(req)) as { nome?: string };
         if (!nome || !PROFILE_NAME_PATTERN.test(nome)) throw new HttpError(400, 'Nome inválido: letras minúsculas, números e hífen (ex.: minha-fita)');
@@ -240,6 +255,75 @@ export class AdminServer {
     throw new HttpError(404, 'Não encontrado');
   }
 
+  /**
+   * Os bots do Telegram das fitas (pelo token no .env de cada uma) e qual fita está tocando em cada um: várias fitas
+   * podem usar o mesmo bot, uma de cada vez (o Telegram só entrega as mensagens a um programa).
+   */
+  private async bots() {
+    const groups = new Map<string, { token: string; fitas: string[] }>();
+    for (const { name, dir } of listProfiles(this.dirs)) {
+      const token = botToken(dir);
+      if (!token) continue;
+      const id = token.split(':')[0]!;
+      const group = groups.get(id) ?? { token, fitas: [] };
+      group.fitas.push(name);
+      groups.set(id, group);
+    }
+    return Promise.all(
+      [...groups].map(async ([id, group]) => {
+        let username: string | null = null;
+        try {
+          username = (this.botNames.get(id) ?? (await this.setup.info(group.token)).username) || null;
+          if (username) this.botNames.set(id, username);
+        } catch {
+          // Token recusado ou sem rede: a página mostra o número do bot.
+        }
+        return { id, username, fitas: group.fitas, tocando: group.fitas.filter((n) => this.runner.state(n).rodando) };
+      }),
+    );
+  }
+
+  /**
+   * Põe a fita no bot: desliga a que estava tocando nele, dá o token e o canal Telegram à fita (se ela ainda não
+   * tiver), troca o nome, a descrição, os comandos e a foto do bot pelos da fita e liga. As pessoas liberadas e os
+   * dados são de cada fita (quem usava a outra pode não ter acesso a esta).
+   */
+  private async play(botId: string, nome: string) {
+    const target = this.find(nome, true)!;
+    const bot = (await this.bots()).find((b) => b.id === botId);
+    if (!bot) throw new HttpError(404, 'Nenhuma fita usa esse bot');
+    const own = botToken(target.dir);
+    if (own && own.split(':')[0] !== botId) throw new HttpError(409, `A fita "${nome}" já tem outro bot. Tire o TELEGRAM_BOT_TOKEN do .env dela para usar este.`);
+    const feitos: string[] = [];
+    if (!own) {
+      const source = listProfiles(this.dirs).find((p) => bot.fitas.includes(p.name))!;
+      setEnvVariable(path.join(target.dir, '.env'), 'TELEGRAM_BOT_TOKEN', botToken(source.dir)!, path.join(target.dir, '.env.example'));
+      feitos.push('token do bot no .env da fita');
+    }
+    const canais = target.manifest?.canais ?? ['telegram', 'terminal'];
+    if (!canais.includes('telegram')) {
+      const file = path.join(target.dir, 'perfil.yaml');
+      fs.writeFileSync(file, editManifest(fs.readFileSync(file, 'utf8'), { canais: [...canais, 'telegram'] as ChannelId[] }));
+      feitos.push('canal Telegram ligado no perfil.yaml');
+    }
+    for (const other of bot.fitas.filter((n) => n !== nome)) {
+      if (this.runner.state(other).rodando) {
+        await this.runner.stop(other);
+        feitos.push(`${other} desligada`);
+      }
+    }
+    await this.runner.stop(nome);
+    let falhas: string[] = [];
+    try {
+      const sync = await this.telegram(nome).sync();
+      feitos.push(...sync.feitos);
+      falhas = sync.falhas;
+    } catch (error) {
+      falhas.push(error instanceof UserFacingError ? error.userMessage : error instanceof Error ? error.message : String(error));
+    }
+    return { tocando: nome, feitos, falhas, processo: this.runner.start(nome) };
+  }
+
   private async listFitas() {
     const registry = this.installer(async () => false).readRegistry();
     return listProfiles(this.dirs).map(({ name, dir, manifest, error }) => {
@@ -355,6 +439,11 @@ export class AdminServer {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(data));
   }
+}
+
+/** TELEGRAM_BOT_TOKEN do .env da fita (o token não é herdado do .env do K7). */
+function botToken(dir: string): string | undefined {
+  return /^TELEGRAM_BOT_TOKEN=\s*"?([^"\s]+)"?\s*$/m.exec(readText(path.join(dir, '.env')))?.[1];
 }
 
 function readText(file: string): string {

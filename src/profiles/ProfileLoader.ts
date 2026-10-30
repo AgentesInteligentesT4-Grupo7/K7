@@ -16,7 +16,7 @@ export interface LoadedProfile {
  * Variáveis do `.env` raiz que nunca passam para um perfil: cada perfil tem a própria identidade
  * e o próprio bot (dois processos com o mesmo token brigam pelo polling — 409).
  */
-const NOT_INHERITED = ['TELEGRAM_BOT_TOKEN', 'AGENT_NAME', 'AGENT_EMOJI', 'OWNER_NAME', 'AGENT_PURPOSE', 'AGENT_INSTRUCTIONS', 'AGENT_LANGUAGE'];
+const NOT_INHERITED = ['TELEGRAM_BOT_TOKEN', 'AGENT_NAME', 'AGENT_EMOJI', 'OWNER_NAME', 'AGENT_PURPOSE', 'AGENT_INSTRUCTIONS', 'AGENT_LANGUAGE', 'AGENT_FOCO', 'AGENT_DESCRICAO'];
 
 /** Pastas onde os perfis são procurados (PERFIS_DIR, separadas por vírgula; padrão ./perfis). */
 export function profileDirs(env: NodeJS.ProcessEnv, rootDir: string): string[] {
@@ -119,6 +119,8 @@ export function buildProfileEnv(baseEnv: NodeJS.ProcessEnv, rootDir: string, pro
     AGENT_PURPOSE: manifest.identidade.proposito,
     AGENT_INSTRUCTIONS: manifest.identidade.instrucoes,
     AGENT_LANGUAGE: manifest.identidade.idioma,
+    AGENT_FOCO: manifest.foco,
+    AGENT_DESCRICAO: manifest.descricao || undefined,
     MODULES: manifest.modulos.join(','),
     CHANNELS: manifest.canais?.join(','),
     PRIVACY_DEFAULT: manifest.privacidade,

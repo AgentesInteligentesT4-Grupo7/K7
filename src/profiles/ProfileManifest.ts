@@ -46,6 +46,11 @@ export interface ProfileManifest {
   guardrails?: GuardrailsConfig;
   /** `vitrine: true`: a fita aparece no site do K7 (`npm run site`) para qualquer visitante escolher. */
   vitrine?: boolean;
+  /**
+   * `foco: restrito`: o agente só trata do propósito da fita; pedido de outro assunto ("temperatura" num bot de
+   * vídeos) recebe "isso este bot não faz", o que ele faz e exemplos. Padrão `livre` (assistente geral).
+   */
+  foco?: 'livre' | 'restrito';
   /** `extensao: extensao/index.ts`: o código da fita (ferramentas, painel web, comandos), carregado com o tocador. */
   extensao?: string;
   /** Bloco `telegram:` do bot desta fita: quem pode usar (lista, convite, aberto), pedidos e limite por hora. */
@@ -125,6 +130,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     variaveis,
     ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
     ...(raw.vitrine !== undefined ? { vitrine: typeof raw.vitrine === 'boolean' ? raw.vitrine : fail('vitrine', 'deve ser true ou false') } : {}),
+    ...(raw.foco !== undefined ? { foco: raw.foco === 'restrito' || raw.foco === 'livre' ? raw.foco : fail('foco', 'deve ser livre ou restrito') } : {}),
     ...(raw.extensao !== undefined ? { extensao: parseExtension(raw.extensao, fail) } : {}),
     ...(raw.telegram !== undefined ? { telegram: parseTelegram(raw.telegram, fail) } : {}),
   };

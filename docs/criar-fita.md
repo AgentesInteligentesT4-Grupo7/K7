@@ -109,6 +109,7 @@ variaveis: {}
 | `estilo_padrao` | não | Estilo de escrita padrão (um dos de `estilos/` ou do tocador, ex.: `informal`). |
 | `modo_padrao` | não | Raciocínio: `normal`, `reformular` (reescreve a pergunta antes) ou `verificado` (confere a resposta). |
 | `vitrine` | não | `true` para aparecer no site do K7 (`npm run site`), para qualquer visitante escolher. |
+| `foco` | não | `restrito`: o agente só trata do propósito da fita (a `descricao`); pedido de outro assunto ("temperatura" num bot de vídeos) recebe "isso este bot não faz", o que ele faz e exemplos, sem pesquisar. Padrão `livre`. |
 | `telegram` | não | Quem pode usar o bot da fita: `{ acesso: lista \| convite \| aberto, pedidos: true, limite_hora: 30 }` (seção 9). |
 | `guardrails` | não | Limites do agente (seção 8). |
 | `extensao` | não | Arquivo com o código da fita (`extensao/index.ts`): ferramentas, painel web, comandos (seção 12). |

@@ -35,6 +35,14 @@ describe('Identidade configurável do agente', () => {
     assert.match(prompt, /Você é o PromoBot, assistente de promoções de Equipe Promo/);
     assert.match(prompt, /# Foco e instruções do projeto\nFoque em ofertas de tecnologia\.\nSeja breve\./);
     assert.ok(!prompt.includes('K7'));
+    assert.ok(!prompt.includes('# Só o que este bot faz'), 'foco livre (padrão): assistente geral');
+  });
+
+  it('foco restrito: outro assunto recebe "este bot não faz", o que ele faz e exemplos', () => {
+    const rebobina = identityFromEnv({ AGENT_NAME: 'Rebobina', AGENT_FOCO: 'restrito', AGENT_DESCRICAO: 'Baixa vídeos e músicas do YouTube' });
+    const prompt = new SystemPromptBuilder(new ToolRegistry(), rebobina).build({ availableSkills: [], activeSkill: null, input: { source: 'text', requiresAudioReply: false } });
+    assert.match(prompt, /# Só o que este bot faz\nEste bot tem um propósito só: Baixa vídeos e músicas do YouTube\./);
+    assert.match(prompt, /NÃO tente resolver, NÃO pesquise e NÃO chame ferramentas/);
   });
 
   it('SKILL.md com marcadores {{AGENT_NAME}} e {{OWNER_NAME}} é preenchido', () => {

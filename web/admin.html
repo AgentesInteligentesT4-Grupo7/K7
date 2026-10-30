@@ -73,6 +73,9 @@ pre.log { background: var(--side); border: 1px solid var(--line); border-radius:
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); max-width: 560px; width: calc(100% - 32px); padding: 18px 20px; }
 dialog::backdrop { background: rgba(0,0,0,.35); }
 .hidden { display: none !important; }
+.bots .bot { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.bots .bot:last-of-type { border-bottom: 0; }
+.bots select { flex: 1; }
 @media (max-width: 820px) {
   main { grid-template-columns: 1fr; }
   #list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
@@ -119,7 +122,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var token = (/[#&]t=([\w-]+)/.exec(location.hash) || [])[1] || '';
-  var state = { fitas: [], sel: null, tab: 'geral', logTimer: null, managedTimer: null };
+  var state = { fitas: [], bots: [], botMsg: null, sel: null, tab: 'geral', logTimer: null, managedTimer: null };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
@@ -143,10 +146,52 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 
   // ── Lista ───────────────────────────────────────────────────────────────
   function load() {
-    return api('/api/fitas').then(function (fitas) { state.fitas = fitas; renderList(); if (state.sel) renderDetail(); });
+    return Promise.all([api('/api/fitas'), api('/api/bots').catch(function () { return []; })]).then(function (r) {
+      state.fitas = r[0]; state.bots = r[1];
+      renderList(); if (state.sel) renderDetail();
+    });
   }
+
+  // ── Bots do Telegram: qual fita toca em cada um, e trocar ─────────────────
+  function renderBots(list) {
+    if (!state.bots.length) return;
+    var box = el('section', 'box bots');
+    box.appendChild(el('h3', '', '📻 Bots do Telegram'));
+    state.bots.forEach(function (b) {
+      var tocando = b.tocando[0];
+      var atual = state.fitas.find(function (x) { return x.nome === tocando; });
+      var linha = el('div', 'bot');
+      linha.appendChild(el('div', '', '<b>' + (b.username ? '@' + esc(b.username) : 'bot ' + esc(b.id)) + '</b> · ' +
+        (atual ? 'tocando <span class="pill on">' + esc(atual.emoji + ' ' + atual.titulo) + '</span>' : '<span class="pill">parado</span>')));
+      var row = el('div', 'row');
+      var sel = el('select');
+      sel.setAttribute('aria-label', 'Fita para tocar neste bot');
+      state.fitas.filter(function (x) { return !x.erro; }).forEach(function (x) {
+        var o = el('option', '', esc(x.emoji + ' ' + x.titulo)); o.value = x.nome;
+        if (x.nome === (tocando || b.fitas[0])) o.selected = true;
+        sel.appendChild(o);
+      });
+      var btn = el('button', 'primary', tocando ? '⇄ Trocar' : '▶ Tocar'); btn.type = 'button';
+      var out = el('div');
+      if (state.botMsg && state.botMsg.id === b.id) msg(out, state.botMsg.kind, state.botMsg.text);
+      btn.addEventListener('click', function () {
+        busy(btn, function () {
+          return api('/api/bots/' + b.id + '/tocar', 'POST', { fita: sel.value }).then(function (r) {
+            state.botMsg = { id: b.id, kind: r.falhas.length ? 'warn' : 'ok', text: '▶ ' + r.tocando + ' tocando no bot. ' + r.feitos.join(' · ') + (r.falhas.length ? ' · Não deu: ' + r.falhas.join('; ') : '') };
+          }).catch(function (e) { state.botMsg = { id: b.id, kind: 'err', text: e.message }; }).then(load);
+        });
+      });
+      row.appendChild(sel); row.appendChild(btn);
+      linha.appendChild(row); linha.appendChild(out);
+      box.appendChild(linha);
+    });
+    box.appendChild(el('p', 'help', 'Uma fita por vez em cada bot. Trocar desliga a que está tocando, passa o nome, a descrição, os comandos e a foto do bot para a escolhida e liga. Quem tem acesso e os dados são de cada fita.'));
+    list.appendChild(box);
+  }
+
   function renderList() {
     var list = $('list'); list.innerHTML = '';
+    renderBots(list);
     if (!state.fitas.length) list.appendChild(el('p', 'empty', 'Nenhuma fita em PERFIS_DIR. Crie ou instale uma.'));
     state.fitas.forEach(function (f) {
       var b = el('button', 'card' + (f.nome === state.sel ? ' sel' : ''));
