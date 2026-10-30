@@ -44,6 +44,12 @@ export interface FitaApi {
     lerYaml(texto: string): unknown;
     /** Desenho SVG para imagem PNG (ex.: um cartão do tempo para mandar como foto), com as fontes do sistema. */
     svgParaPng(svg: string, opcoes?: { largura?: number }): Promise<Buffer>;
+    /**
+     * "Print" de uma página HTML (um layout da fita com os dados já dentro) em PNG, com o Chrome ou o Edge instalados.
+     * A página roda sem rede: estilos, dados e gráficos (SVG) vêm no próprio HTML. Sem navegador, dá erro (a fita
+     * manda o texto no lugar). `largura` em pixels CSS (padrão 720); a altura acompanha o conteúdo.
+     */
+    htmlParaPng(html: string, opcoes?: { largura?: number; escala?: number }): Promise<Buffer>;
   };
   /** `true` só no processo principal (o bot): servidores próprios e tarefas da fita rodam só nele. */
   processoPrincipal: boolean;
@@ -126,6 +132,8 @@ export interface FitaToolCtx {
   limparProgresso(): void;
   /** Entrega um arquivo de áudio ou vídeo junto da resposta (Telegram, terminal ou navegador). */
   anexarMidia(caminho: string, tipo: 'audio' | 'video'): void;
+  /** Entrega uma imagem (ex.: o print de um layout, de util.htmlParaPng) junto da resposta, com legenda opcional. */
+  anexarImagem(png: Buffer, legenda?: string): void;
 }
 
 export interface WebRotaCtx {

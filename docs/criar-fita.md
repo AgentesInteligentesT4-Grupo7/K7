@@ -380,7 +380,7 @@ export default async function ativar(k7: FitaApi): Promise<void> {
 | No `k7` | Para quê |
 |---|---|
 | `fita.dir`, `fita.workspaceDir`, `fita.dadosDir`, `fita.env` | Pasta da fita, pastas de trabalho e de dados dela no tocador, variáveis do `.env` |
-| `ferramenta(tool)` | Ferramenta do agente. `ctx` traz `userId`, `progresso()` (barra de %) e `anexarMidia()` (áudio/vídeo junto da resposta) |
+| `ferramenta(tool)` | Ferramenta do agente. `ctx` traz `userId`, `progresso()` (barra de %), `anexarMidia()` (áudio/vídeo junto da resposta) e `anexarImagem(png, legenda?)` (imagem junto da resposta) |
 | `web.rota(método, /^\/api\/x\/.../, handler, { visitante })` | Rota do chat web. `ctx` traz `userId`, `json`, `midia` (com Range), `zip`, `emFila`, `progresso`, `saiu` (a pessoa fechou a página) |
 | `web.painel({ script, estilo })` | Arquivos da fita incluídos na página do chat |
 | `comando(nome, descrição, fn)` | `npm run fita -- <fita> <nome>` |
@@ -396,6 +396,7 @@ export default async function ativar(k7: FitaApi): Promise<void> {
 | `tarefa(nome, intervaloMs, fn)` | Tarefa periódica (mín. 1 min), só no processo principal (o bot) |
 | `sql.exec / run / get / all / transacao` | Banco SQLite próprio da fita (`dados/<fita>/<fita>.db`) |
 | `util.lerYaml(texto)` · `util.svgParaPng(svg)` | Ler regras em YAML; transformar um desenho SVG em PNG (ex.: cartão para mandar como foto) |
+| `util.htmlParaPng(html, { largura })` | "Print" de uma página HTML em PNG, com o Chrome ou o Edge da máquina (`K7_NAVEGADOR` aponta outro). A página roda sem rede: estilo, dados e gráficos (SVG) vão no próprio HTML. Bom para layouts que viram foto no Telegram (a AgroMinds guarda os dela em `layouts/`) |
 | `processoPrincipal` | `true` só no processo do bot: suba ali servidores próprios da fita |
 
 **Erros para a pessoa:** um erro com a propriedade `userMessage` (texto) aparece como está no chat, no Telegram e na

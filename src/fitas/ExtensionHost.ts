@@ -10,6 +10,7 @@ import { TaskContext } from '../llm/orchestration/TaskContext.js';
 import type { JsonSchema } from '../llm/types.js';
 import { BaseTool, type ToolResult } from '../tools/BaseTool.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
+import { htmlParaPng } from '../utils/HtmlParaPng.js';
 import { KeyedLimiter, mapWithLimit } from '../utils/KeyedLimiter.js';
 import { Logger } from '../utils/Logger.js';
 import type { FitaApi, FitaSql, FitaTool, WebRotaCtx } from './FitaApi.js';
@@ -47,7 +48,11 @@ class ExtensionTool extends BaseTool {
   readonly description: string;
   readonly parameters: JsonSchema;
 
-  constructor(private readonly tool: FitaTool) {
+  constructor(
+    private readonly tool: FitaTool,
+    /** Pasta das imagens que a ferramenta anexa à resposta (workspace/imagens/fitas). */
+    private readonly imagensDir: string,
+  ) {
     super();
     this.name = tool.name;
     this.description = tool.description;
@@ -62,6 +67,7 @@ class ExtensionTool extends BaseTool {
         progresso: (texto, contagem) => userId && ProgressBoard.set(userId, texto, contagem),
         limparProgresso: () => userId && ProgressBoard.clear(userId),
         anexarMidia: (caminho, tipo) => ResponseAttachments.addMedia({ path: caminho, kind: tipo }),
+        anexarImagem: (png, legenda) => ResponseAttachments.addImage({ path: this.salvarImagem(png), ...(legenda?.trim() ? { caption: legenda.trim() } : {}) }),
       });
       return { output };
     } catch (error) {
@@ -69,6 +75,16 @@ class ExtensionTool extends BaseTool {
     } finally {
       if (userId) ProgressBoard.clear(userId);
     }
+  }
+
+  /** Grava o PNG para o canal entregar; guarda só as 50 imagens mais recentes. */
+  private salvarImagem(png: Buffer): string {
+    fs.mkdirSync(this.imagensDir, { recursive: true });
+    const file = path.join(this.imagensDir, `${Date.now()}-${this.name}-${Math.random().toString(36).slice(2, 8)}.png`);
+    fs.writeFileSync(file, png);
+    const antigas = fs.readdirSync(this.imagensDir).filter((f) => f.endsWith('.png')).sort().slice(0, -50);
+    for (const f of antigas) fs.rmSync(path.join(this.imagensDir, f), { force: true });
+    return file;
   }
 }
 
@@ -193,7 +209,7 @@ export class ExtensionHost {
         erro: (msg) => this.logger.error(msg),
       },
       ferramenta: (tool) => {
-        this.registry.register(new ExtensionTool(tool));
+        this.registry.register(new ExtensionTool(tool, path.join(config.workspaceDir, 'imagens', 'fitas')));
         this.toolNames.push(tool.name);
       },
       web: {
@@ -218,6 +234,7 @@ export class ExtensionHost {
         emParalelo: (itens, max, tarefa) => mapWithLimit(itens, max, tarefa),
         lerYaml: (texto) => parseYaml(texto),
         svgParaPng: (svg, opcoes) => svgToPng(svg, opcoes?.largura),
+        htmlParaPng: (html, opcoes) => htmlParaPng.render(html, opcoes),
       },
       processoPrincipal: this.options.principal === true,
       tarefa: (nome, intervaloMs, executar) => {
