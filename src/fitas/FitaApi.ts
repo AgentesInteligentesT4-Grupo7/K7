@@ -41,6 +41,62 @@ export interface FitaApi {
     /** Roda `tarefa` para cada item com até `max` ao mesmo tempo; o resultado sai na ordem. */
     emParalelo<T, R>(itens: T[], max: number, tarefa: (item: T, i: number) => Promise<R>): Promise<R[]>;
   };
+  /** `true` só no processo principal (o bot): servidores próprios e tarefas da fita rodam só nele. */
+  processoPrincipal: boolean;
+  /** Tarefa periódica (ex.: conferir a previsão de hora em hora). Roda só no processo principal; erro vira aviso. */
+  tarefa(nome: string, intervaloMs: number, executar: () => Promise<void> | void): void;
+  /** Banco SQLite próprio da fita (`dados/<fita>/<fita>.db`), sem a fita precisar de pacote de banco. */
+  sql: FitaSql;
+  /** O bot do Telegram desta fita (só funciona com `telegram` em `canais`). */
+  telegram: FitaTelegramApi;
+}
+
+export interface FitaSql {
+  /** Vários comandos de uma vez (CREATE TABLE...). */
+  exec(sql: string): void;
+  run(sql: string, ...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+  get<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T | undefined;
+  all<T = Record<string, unknown>>(sql: string, ...params: unknown[]): T[];
+  /** Tudo ou nada. */
+  transacao<T>(fn: () => T): T;
+}
+
+export interface TelegramBotao {
+  texto: string;
+  /** Até 64 bytes; vai de volta no `botoes(prefixo, ...)` da fita. Use o prefixo da fita: "agro:cultura:soja". */
+  dados: string;
+}
+
+export interface TelegramResposta {
+  texto: string;
+  /** Linhas de botões embaixo da mensagem. */
+  botoes?: TelegramBotao[][];
+  /** Mostra o botão do teclado "📍 Enviar localização" (só em conversa privada). */
+  pedirLocalizacao?: string;
+}
+
+export interface TelegramCtx {
+  userId: string;
+  chatId: number;
+  nome: string;
+  responder(resposta: string | TelegramResposta): Promise<void>;
+}
+
+export interface FitaTelegramApi {
+  /** Comando do bot (`/clima`, `/lavoura`...). Passa pelo controle de acesso; entra no menu do bot. */
+  comando(nome: string, descricao: string, executar: (ctx: TelegramCtx & { args: string }) => Promise<void> | void): void;
+  /** A pessoa mandou a localização (anexo ou botão). */
+  aoLocalizacao(executar: (ctx: TelegramCtx & { lat: number; lon: number }) => Promise<void> | void): void;
+  /** Toque num botão cujo `dados` começa com `prefixo:`. */
+  botoes(prefixo: string, executar: (ctx: TelegramCtx & { dados: string; editar(resposta: string | TelegramResposta): Promise<void> }) => Promise<void> | void): void;
+  /** Mensagem sem ser resposta (boletim, alerta). Devolve se chegou (ex.: a pessoa bloqueou o bot = não). */
+  notificar(userId: string, mensagem: string | TelegramResposta): Promise<{ entregue: boolean; erro?: string }>;
+  /** Quem pode usar o bot desta fita e convites (o mesmo da página de administração). */
+  acessos: {
+    listar(): Array<{ userId: number; nome: string; username: string | null; status: 'pendente' | 'ativo' | 'bloqueado'; origem: string; criadoEm: string; ultimoContato: string | null }>;
+    definir(userId: number, status: 'ativo' | 'bloqueado'): boolean;
+    convite(opcoes?: { nome?: string; dias?: number; usos?: number }): Promise<{ codigo: string; link: string; png: Buffer; expiraEm: string }>;
+  };
 }
 
 export interface FitaTool {

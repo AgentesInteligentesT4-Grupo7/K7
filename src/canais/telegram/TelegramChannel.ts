@@ -85,6 +85,8 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     voiceId: core.tts.voice,
     extraCommands: [
       access,
+      // Comandos, localização e botões da extensão da fita (antes dos do tocador: o /start da fita tem prioridade).
+      core.extensions.telegram,
       ...(core.attachments
         ? [
             new TelegramAttachmentHandler({
@@ -120,5 +122,6 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     `🔒 Acesso "${mode}": ${config.allowedUserIds.size} dono(s)` +
       (mode === 'lista' ? '' : ` + ${access.store.list('ativo').length} liberado(s), ${access.store.list('pendente').length} pedido(s) esperando`),
   );
-  return new TelegramBotApp(bot, botCommands(config), config.allowedUserIds);
+  core.extensions.telegram.attach(bot.api);
+  return new TelegramBotApp(bot, botCommands(config, core.extensions.telegram.menu()), config.allowedUserIds);
 }

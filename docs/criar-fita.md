@@ -387,6 +387,15 @@ export default async function ativar(k7: FitaApi): Promise<void> {
 | `aoIniciar(fn)` | Verificações quando o tocador sobe |
 | `util.limitador(n)`, `util.emParalelo(itens, n, fn)` | Tarefas ao mesmo tempo, com teto |
 | `log.info/aviso/erro` | Log com o nome da fita |
+| `telegram.comando(nome, descrição, fn)` | Comando do bot da fita (`/clima`); passa pelo controle de acesso e entra no menu. Um `start` da fita substitui o do tocador |
+| `telegram.aoLocalizacao(fn)` | A pessoa mandou a localização (`ctx.lat`, `ctx.lon`) |
+| `telegram.botoes(prefixo, fn)` | Toque num botão (`dados` começando com `prefixo:`); `ctx.editar()` troca a mensagem |
+| `ctx.responder({ texto, botoes, pedirLocalizacao })` | Resposta com botões ou com o botão "📍 Enviar localização" |
+| `telegram.notificar(userId, mensagem)` | Mensagem sem ser resposta (boletim, alerta); devolve `{ entregue, erro }` |
+| `telegram.acessos.listar / definir / convite` | Quem pode usar o bot da fita e convites com QR (o mesmo da página de administração) |
+| `tarefa(nome, intervaloMs, fn)` | Tarefa periódica (mín. 1 min), só no processo principal (o bot) |
+| `sql.exec / run / get / all / transacao` | Banco SQLite próprio da fita (`dados/<fita>/<fita>.db`) |
+| `processoPrincipal` | `true` só no processo do bot: suba ali servidores próprios da fita |
 
 **Erros para a pessoa:** um erro com a propriedade `userMessage` (texto) aparece como está no chat, no Telegram e na
 página (status 422). Os demais viram "falha interna" e vão para o log.

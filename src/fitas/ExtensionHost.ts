@@ -11,7 +11,11 @@ import { BaseTool, type ToolResult } from '../tools/BaseTool.js';
 import type { ToolRegistry } from '../tools/ToolRegistry.js';
 import { KeyedLimiter, mapWithLimit } from '../utils/KeyedLimiter.js';
 import { Logger } from '../utils/Logger.js';
-import type { FitaApi, FitaTool, WebRotaCtx } from './FitaApi.js';
+import type { FitaApi, FitaSql, FitaTool, WebRotaCtx } from './FitaApi.js';
+import { ExtensionTelegram } from './ExtensionTelegram.js';
+import { DatabaseConnection, type SqliteDatabase } from '../memory/DatabaseConnection.js';
+import { inviteLink, qrPng } from '../canais/telegram/acesso/convite.js';
+import { TelegramAccessStore } from '../canais/telegram/acesso/TelegramAccessStore.js';
 
 export interface ExtensionRoute {
   method: 'GET' | 'POST' | 'DELETE';
@@ -79,12 +83,20 @@ export class ExtensionHost {
   private readonly startHooks: Array<() => Promise<void> | void> = [];
   private readonly toolNames: string[] = [];
   private readonly logger: Logger;
+  private readonly tasks: Array<{ nome: string; ms: number; run: () => Promise<void> | void }> = [];
+  private readonly timers: NodeJS.Timeout[] = [];
+  private db?: SqliteDatabase;
+  /** O que a fita registra no bot do Telegram; o canal Telegram liga ao bot. */
+  readonly telegram: ExtensionTelegram;
 
   constructor(
     private readonly config: Config,
     private readonly registry: ToolRegistry,
+    /** `principal`: processo do bot, o único que roda as tarefas periódicas da fita. */
+    private readonly options: { principal?: boolean } = {},
   ) {
     this.logger = new Logger(`fita:${config.profileName ?? '?'}`);
+    this.telegram = new ExtensionTelegram(this.logger);
   }
 
   get enabled(): boolean {
@@ -107,7 +119,7 @@ export class ExtensionHost {
     this.logger.info(`🧩 Extensão da fita carregada: ${this.toolNames.join(', ') || 'sem ferramentas'}${this.routes.length ? ` · ${this.routes.length} rota(s) web` : ''}`);
   }
 
-  /** Verificações de início da fita (serviço no ar etc.): falha vira aviso, não derruba o tocador. */
+  /** Verificações de início da fita (serviço no ar etc.) e, no processo principal, as tarefas periódicas. */
   async start(): Promise<void> {
     for (const hook of this.startHooks) {
       try {
@@ -116,6 +128,51 @@ export class ExtensionHost {
         this.logger.warn(`⚠️ ${errorMessage(error)}`);
       }
     }
+    if (!this.options.principal) return;
+    for (const task of this.tasks) {
+      let running = false;
+      const tick = async () => {
+        if (running) return; // a anterior ainda não terminou: pula esta vez
+        running = true;
+        try {
+          await task.run();
+        } catch (error) {
+          this.logger.warn(`⚠️ Tarefa "${task.nome}": ${errorMessage(error)}`);
+        } finally {
+          running = false;
+        }
+      };
+      const timer = setInterval(() => void tick(), task.ms);
+      timer.unref();
+      this.timers.push(timer);
+      void tick();
+    }
+    if (this.tasks.length) this.logger.info(`⏰ Tarefas da fita: ${this.tasks.map((t) => `${t.nome} (${Math.round(t.ms / 60_000)} min)`).join(', ')}`);
+  }
+
+  /** Para as tarefas e fecha o banco da fita. */
+  stop(): void {
+    for (const timer of this.timers.splice(0)) clearInterval(timer);
+    if (this.db?.open) this.db.close();
+    this.db = undefined;
+  }
+
+  private sql(): FitaSql {
+    const open = () => (this.db ??= DatabaseConnection.open(path.join(path.dirname(this.config.dbPath), `${this.config.profileName ?? 'fita'}.db`)));
+    return {
+      exec: (sql) => void open().exec(sql),
+      run: (sql, ...params) => {
+        const r = open().prepare(sql).run(...params);
+        return { changes: r.changes, lastInsertRowid: r.lastInsertRowid };
+      },
+      get: (sql, ...params) => open().prepare(sql).get(...params) as never,
+      all: (sql, ...params) => open().prepare(sql).all(...params) as never,
+      transacao: (fn) => open().transaction(fn)(),
+    };
+  }
+
+  private accessStore(): TelegramAccessStore {
+    return new TelegramAccessStore(DatabaseConnection.getInstance(this.config.dbPath));
   }
 
   private api(): FitaApi {
@@ -158,6 +215,28 @@ export class ExtensionHost {
       util: {
         limitador: (max) => new KeyedLimiter(max),
         emParalelo: (itens, max, tarefa) => mapWithLimit(itens, max, tarefa),
+      },
+      processoPrincipal: this.options.principal === true,
+      tarefa: (nome, intervaloMs, executar) => {
+        if (!(intervaloMs >= 60_000)) throw new Error(`Tarefa "${nome}": intervalo mínimo de 1 minuto`);
+        this.tasks.push({ nome, ms: intervaloMs, run: executar });
+      },
+      sql: this.sql(),
+      telegram: {
+        comando: (nome, descricao, executar) => this.telegram.addCommand(nome, descricao, executar),
+        aoLocalizacao: (executar) => this.telegram.addLocation(executar),
+        botoes: (prefixo, executar) => this.telegram.addButtons(prefixo, executar),
+        notificar: (userId, mensagem) => this.telegram.notify(userId, mensagem),
+        acessos: {
+          listar: () => this.accessStore().list(),
+          definir: (userId, status) => Boolean(this.accessStore().setStatus(userId, status)),
+          convite: async (opcoes = {}) => {
+            const username = await this.telegram.botUsername();
+            const invite = this.accessStore().createInvite(opcoes);
+            const link = inviteLink(username, invite.codigo);
+            return { codigo: invite.codigo, link, png: await qrPng(link), expiraEm: invite.expiraEm };
+          },
+        },
       },
     };
   }

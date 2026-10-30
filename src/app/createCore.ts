@@ -252,7 +252,7 @@ export function createCore(config: Config, options: CoreOptions): Core {
   }
 
   // Extensão da fita: carrega antes de os canais atenderem (ferramentas novas entram no mesmo registro).
-  const extensions = new ExtensionHost(config, registry);
+  const extensions = new ExtensionHost(config, registry, { principal: options.databaseMaintenance });
   const ready = extensions.load().then(() => (options.healthChecks ? extensions.start() : undefined));
 
   return {
