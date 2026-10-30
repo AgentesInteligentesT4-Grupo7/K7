@@ -23,7 +23,8 @@ import type { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
 import { isAudioDocument } from './VoiceCloneCommands.js';
 
 export interface InputHandlerDeps {
-  allowedUserIds: ReadonlySet<number>;
+  /** Porteiro: quem pode usar o bot (donos, convidados, pedidos aprovados). */
+  access: { check(ctx: Context, next: NextFunction): Promise<void> };
   controller: AgentController;
   output: TelegramOutputHandler;
   downloader: TelegramFileDownloader;
@@ -67,8 +68,8 @@ export class TelegramInputHandler {
   constructor(private readonly deps: InputHandlerDeps) {}
 
   register(bot: Bot): void {
-    // EC-01 (PRD): corta usuários fora da whitelist antes de qualquer acesso a DB/LLM.
-    bot.use((ctx, next) => this.whitelist(ctx, next));
+    // EC-01 (PRD): corta quem não tem acesso antes de qualquer acesso a DB/LLM.
+    bot.use((ctx, next) => this.deps.access.check(ctx, next));
     for (const commands of this.deps.extraCommands ?? []) commands.register(bot);
 
     bot.command('start', (ctx) => this.handleStart(ctx));
@@ -84,15 +85,6 @@ export class TelegramInputHandler {
     bot.on('message:document', (ctx) => this.handleDocument(ctx));
     bot.on(['message:voice', 'message:audio'], (ctx) => this.handleAudio(ctx));
     bot.on('message', (ctx) => this.handleUnsupported(ctx));
-  }
-
-  private async whitelist(ctx: Context, next: NextFunction): Promise<void> {
-    const userId = ctx.from?.id;
-    if (userId === undefined || !this.deps.allowedUserIds.has(userId)) {
-      this.logger.debug(`Update ignorado de usuário fora da whitelist (${userId ?? 'desconhecido'})`);
-      return;
-    }
-    await next();
   }
 
   private async handleStart(ctx: Context): Promise<void> {

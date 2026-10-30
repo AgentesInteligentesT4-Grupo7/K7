@@ -109,6 +109,7 @@ variaveis: {}
 | `estilo_padrao` | não | Estilo de escrita padrão (um dos de `estilos/` ou do tocador, ex.: `informal`). |
 | `modo_padrao` | não | Raciocínio: `normal`, `reformular` (reescreve a pergunta antes) ou `verificado` (confere a resposta). |
 | `vitrine` | não | `true` para aparecer no site do K7 (`npm run site`), para qualquer visitante escolher. |
+| `telegram` | não | Quem pode usar o bot da fita: `{ acesso: lista \| convite \| aberto, pedidos: true, limite_hora: 30 }` (seção 9). |
 | `guardrails` | não | Limites do agente (seção 8). |
 | `extensao` | não | Arquivo com o código da fita (`extensao/index.ts`): ferramentas, painel web, comandos (seção 12). |
 | `variaveis` | não | Segredos que o `.env` da fita precisa ter, com a descrição: `{ CLIMA_API_KEY: "chave da API de clima" }`. O tocador avisa os que faltam. |
@@ -262,6 +263,34 @@ Detalhes em [specs/guardrails.md](../specs/guardrails.md).
   @BotFather), quem pode usar (`TELEGRAM_ALLOWED_USER_IDS`) e as chaves das APIs da fita.
 - No chat público (site ou `npm run web` com `WEB_PUBLIC=on`), use `WEB_PUBLIC_LIMIT` e `WEB_PUBLIC_LIMIT_TOTAL`
   para limitar mensagens por hora e proteger as chaves dos modelos.
+
+### Telegram: o bot da fita e quem pode usar
+
+Cada fita tem o **seu bot** e a **sua lista de acesso**: liberar alguém numa fita não libera nas outras.
+
+```bash
+npm run perfil -- bot minha-fita --gerente   # cria o bot pelo bot gerente do K7 (você confirma no celular)
+npm run perfil -- bot minha-fita --token     # ou cola o token de um bot criado no @BotFather
+npm run perfil -- bot minha-fita             # reaplica nome, descrição, comandos e foto (bot/foto.jpg)
+```
+
+O nome, as descrições e o menu de comandos do bot saem do `perfil.yaml` (identidade, `descricao`, módulos). Para ter
+foto, coloque um JPG quadrado em `bot/foto.jpg`.
+
+Quem pode usar:
+
+```yaml
+telegram:
+  acesso: convite    # lista (padrão: só os donos do .env) | convite | aberto (qualquer um, com limite por hora)
+  pedidos: true      # quem chega sem convite vira pedido; os donos recebem Aprovar/Recusar no Telegram
+  limite_hora: 30    # mensagens por hora por pessoa (modo aberto)
+```
+
+- **Donos** (`TELEGRAM_ALLOWED_USER_IDS`) sempre entram e cuidam do acesso: no Telegram, `/convite <nome>` devolve o QR
+  code do convite e `/acessos` lista quem entrou e os pedidos.
+- **Convite:** a pessoa escaneia o QR (ou abre `t.me/<bot>?start=<código>`), toca em **Iniciar** e já entra; o Telegram
+  entrega o ID dela, ninguém precisa descobrir. Uso único e válido por 7 dias, por padrão.
+- No terminal: `npm run perfil -- convite minha-fita --nome Maria` e `npm run perfil -- acessos minha-fita`.
 
 ## 10. Testar
 

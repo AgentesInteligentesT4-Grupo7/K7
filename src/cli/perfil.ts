@@ -6,6 +6,7 @@ import { type CodeConfirmation, ProfileInstaller } from '../profiles/ProfileInst
 import { listProfiles, playerVersion, profileDirs, readManifest } from '../profiles/ProfileLoader.js';
 import type { ProfileManifest } from '../profiles/ProfileManifest.js';
 import { createProfile } from '../profiles/ProfileTemplate.js';
+import { accessCommand, botCommand, inviteCommand } from './telegramFita.js';
 
 const USAGE = `Uso: npm run perfil -- <comando>
 
@@ -19,6 +20,12 @@ const USAGE = `Uso: npm run perfil -- <comando>
   info <nome>                     manifesto e variáveis pendentes
   atualizar <nome>                busca a versão nova na origem (mantém .env e dados)
   remover <nome> [--apagar-dados] remove o perfil (pede confirmação)
+
+Telegram da fita (cada fita tem o seu bot e a sua lista de acesso):
+  bot <nome> [--gerente | --token] conecta o bot (criado pelo bot gerente do K7 ou colando o token do @BotFather);
+                                  sem opção, reaplica nome, descrição, comandos e foto (bot/foto.jpg)
+  convite <nome> [--nome Maria] [--dias 7] [--usos 1]   link + QR code de convite (modo telegram.acesso: convite)
+  acessos <nome> [liberar|bloquear|remover <id>] [cancelar-convite <código>]
 
 Rodar um perfil: npm run dev -- --perfil <nome>  |  npm run chat -- --perfil <nome>`;
 
@@ -117,6 +124,14 @@ async function main(): Promise<void> {
       installer.remove(target, { dataDir: eraseData ? dataDir : undefined });
       console.log(`🗑️ Perfil "${target}" removido.`);
       return;
+    }
+    case 'bot':
+    case 'convite':
+    case 'acessos': {
+      if (!target) return fail(`Informe a fita: npm run perfil -- ${command} <nome>`);
+      if (command === 'bot') return botCommand(target, args, option);
+      if (command === 'convite') return inviteCommand(target, option);
+      return accessCommand(target, args);
     }
     default:
       console.log(USAGE);

@@ -15,8 +15,11 @@ import { TelegramOutputHandler } from './output/TelegramOutputHandler.js';
 import { TelegramSender } from './output/TelegramSender.js';
 import { TelegramAttachmentHandler } from './TelegramAttachmentHandler.js';
 import { TelegramBotApp } from './TelegramBotApp.js';
+import { botCommands } from './botCommands.js';
 import { TelegramInputHandler } from './TelegramInputHandler.js';
 import { VoiceCloneCommands } from './VoiceCloneCommands.js';
+import { TelegramAccessGate } from './acesso/TelegramAccessGate.js';
+import { TelegramAccessStore } from './acesso/TelegramAccessStore.js';
 import { EnrollmentVerifier } from '../../voice/EnrollmentVerifier.js';
 
 const logger = new Logger('Telegram');
@@ -58,8 +61,17 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     // Sem o módulo voz, a transcrição está desligada e o cadastro verificado avisa isso ao usuário.
     ...(config.voiceClone.verifyText ? { verification: { verifier: new EnrollmentVerifier(core.llm, config.voiceClone.verifyMin), stt: core.stt } } : {}),
   });
+  // Quem pode usar o bot desta fita: donos (.env) e, conforme telegram.acesso, convidados e pedidos aprovados.
+  const access = new TelegramAccessGate({
+    store: new TelegramAccessStore(core.db),
+    owners: config.allowedUserIds,
+    mode: config.telegramAccess.mode,
+    requests: config.telegramAccess.requests,
+    hourlyLimit: config.telegramAccess.hourlyLimit,
+    agentName: config.identity.name,
+  }).attach(bot);
   new TelegramInputHandler({
-    allowedUserIds: config.allowedUserIds,
+    access,
     controller,
     output,
     downloader,
@@ -72,6 +84,7 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     maxDocumentChars: config.maxDocumentChars,
     voiceId: core.tts.voice,
     extraCommands: [
+      access,
       ...(core.attachments
         ? [
             new TelegramAttachmentHandler({
@@ -102,6 +115,10 @@ export function createTelegramChannel(core: Core): TelegramBotApp {
     identity: config.identity,
   }).register(bot);
 
-  logger.info(`🔒 Whitelist: ${config.allowedUserIds.size} usuário(s) autorizado(s)`);
-  return new TelegramBotApp(bot);
+  const { mode } = config.telegramAccess;
+  logger.info(
+    `🔒 Acesso "${mode}": ${config.allowedUserIds.size} dono(s)` +
+      (mode === 'lista' ? '' : ` + ${access.store.list('ativo').length} liberado(s), ${access.store.list('pendente').length} pedido(s) esperando`),
+  );
+  return new TelegramBotApp(bot, botCommands(config), config.allowedUserIds);
 }

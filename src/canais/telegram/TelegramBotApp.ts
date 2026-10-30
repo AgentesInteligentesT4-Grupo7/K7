@@ -1,11 +1,18 @@
 import { Bot, GrammyError, HttpError } from 'grammy';
 import { Logger } from '../../utils/Logger.js';
+import { type BotCommand, OWNER_COMMANDS } from './botCommands.js';
 
 /** Ciclo de vida do bot grammy (long polling local). */
 export class TelegramBotApp {
   private readonly logger = new Logger('Bot');
 
-  constructor(readonly bot: Bot) {
+  constructor(
+    readonly bot: Bot,
+    /** Menu de comandos do bot (o que os módulos e a extensão da fita oferecem). */
+    private readonly commands: BotCommand[] = [],
+    /** Donos: recebem no menu também os comandos de acesso (/convite, /acessos). */
+    private readonly owners: ReadonlySet<number> = new Set(),
+  ) {
     bot.catch((err) => {
       const { error } = err;
       if (error instanceof GrammyError) this.logger.error(`Erro da Bot API: ${error.description}`);
@@ -16,27 +23,16 @@ export class TelegramBotApp {
 
   /** Inicia o long polling. A Promise só resolve quando o bot é parado. */
   async start(): Promise<void> {
-    await this.bot.api.setMyCommands([
-      { command: 'nova', description: 'Iniciar nova conversa' },
-      { command: 'falar', description: 'Áudio com sua voz clonada: /falar <texto>, com (animado) (pausa) (tosse) (contexto: ...)' },
-      { command: 'entonacao', description: 'Marcações de jeito de falar: tons, pausas, efeitos, contexto' },
-      { command: 'minhavoz', description: 'Cadastrar sua voz (envie um áudio em seguida)' },
-      { command: 'vozes', description: 'Listar vozes cadastradas' },
-      { command: 'apagarvoz', description: 'Apagar uma voz: /apagarvoz <nome>' },
-      { command: 'testarvoz', description: 'Testar a voz clonada com um áudio: /testarvoz [@voz]' },
-      { command: 'ajustar', description: 'Refazer o último áudio: mais emoção, mais lento, igualar...' },
-      { command: 'salvarvoz', description: 'Guardar o áudio ajustado: /salvarvoz [nome]' },
-      { command: 'skills', description: 'Listar skills instaladas' },
-      { command: 'modelos', description: 'Ranking dos modelos gratuitos (orquestrador)' },
-      { command: 'modelo', description: 'Qual modelo respondeu a última mensagem' },
-      { command: 'bom', description: 'A última resposta foi boa (feedback)' },
-      { command: 'ruim', description: 'A última resposta foi ruim (feedback)' },
-      { command: 'start', description: 'Ajuda' },
-    ]).catch(() => undefined);
+    await this.bot.api.setMyCommands(this.commands).catch(() => undefined);
+    // Donos veem também os comandos de acesso (só no chat deles).
+    for (const owner of this.owners) {
+      await this.bot.api.setMyCommands([...OWNER_COMMANDS, ...this.commands], { scope: { type: 'chat', chat_id: owner } }).catch(() => undefined);
+    }
 
     await this.bot.start({
       drop_pending_updates: false,
-      allowed_updates: ['message'],
+      // callback_query: botões (Aprovar/Recusar e os das fitas).
+      allowed_updates: ['message', 'callback_query'],
       onStart: (info) => this.logger.info(`🤖 Bot @${info.username} ouvindo via long polling`),
     });
   }

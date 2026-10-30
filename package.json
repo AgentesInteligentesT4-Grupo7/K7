@@ -30,11 +30,13 @@
     "grammy": "^1.46.0",
     "js-yaml": "^5.5.0",
     "ogg-opus-decoder": "^1.7.5",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
+    "@types/qrcode": "^1.5.6",
     "nodemon": "^3.1.14",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"

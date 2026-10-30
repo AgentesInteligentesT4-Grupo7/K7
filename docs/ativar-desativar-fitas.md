@@ -118,23 +118,42 @@ os endereços da rede.
 
 ## Cena 5 — Ligar e desligar o Telegram (4 min)
 
-Cada fita usa **um bot próprio** (dois processos com o mesmo bot brigam: erro 409).
+Cada fita usa **um bot próprio** e **uma lista de acesso própria** (liberar alguém numa fita não libera nas outras;
+dois processos com o mesmo bot brigam: erro 409).
 
-1. No Telegram, fale com o **@BotFather** → `/newbot` → escolha nome e usuário → copie o token. **Não mostre o
-   token no vídeo** (corte ou desfoque).
-2. Na pasta da fita: copie `.env.example` para `.env` e preencha `TELEGRAM_BOT_TOKEN` e
-   `TELEGRAM_ALLOWED_USER_IDS` (seu ID do Telegram, por exemplo pelo @userinfobot).
-3. No `perfil.yaml`: `canais: [telegram, terminal, web]`.
-4. Ligue:
+**5.1 Criar o bot da fita (sem digitar token):**
+
+```bash
+npm run perfil -- bot demonstracao --gerente
+```
+
+O terminal mostra um QR code. Escaneie com o celular: o Telegram abre já com o nome e o @ sugeridos; toque para
+criar. O K7 recebe o token sozinho, grava no `.env` da fita e aplica nome, descrição, menu de comandos e foto
+(`bot/foto.jpg`). Precisa do bot gerente uma vez (seção "Ajustes manuais" do fim). Sem gerente: crie no @BotFather e
+rode `npm run perfil -- bot demonstracao --token` (cole o token; **não mostre no vídeo**).
+
+**5.2 Ligar:** no `perfil.yaml`, `canais: [telegram, terminal, web]` e, para convidar outras pessoas:
+
+```yaml
+telegram:
+  acesso: convite
+```
 
 ```bash
 npm run dev -- --perfil demonstracao
 ```
 
-**Aparece:** no log, a fita carregada e o bot conectado. Mande "oi" para o bot: responde com a identidade da fita.
+**Aparece:** no log, `🔒 Acesso "convite": 1 dono(s) + 0 liberado(s)` e o bot conectado. Mande "oi": responde com a
+identidade da fita.
 
-**Desligar:** Ctrl+C (o bot para de responder). Para desativar de vez, tire `telegram` de `canais`. Se faltar
-alguma variável, o K7 não sobe e diz exatamente o que preencher e em qual `.env`.
+**5.3 Convidar alguém:** no Telegram, mande `/convite Maria` para o bot. Ele devolve o **QR code**. A outra pessoa
+escaneia, toca em **Iniciar** e já conversa; você recebe "Maria entrou pelo convite". Quem chega sem convite vira
+**pedido**: você recebe os botões **Aprovar** e **Recusar**. `/acessos` mostra todo mundo. (No terminal:
+`npm run perfil -- convite demonstracao --nome Maria` e `npm run perfil -- acessos demonstracao`.)
+
+**Desligar:** Ctrl+C (o bot para de responder). Para desativar de vez, tire `telegram` de `canais`. Para tirar alguém:
+`npm run perfil -- acessos demonstracao bloquear <id>`. Se faltar alguma variável, o K7 não sobe e diz exatamente o
+que preencher e em qual `.env`.
 
 ## Cena 6 — Uma fita com código: a Rebobina (6 min)
 
@@ -221,7 +240,10 @@ npm run perfil -- remover cozinha-demo --apagar-dados   # também apaga dados/co
 | Conversar no terminal | `npm run chat -- --perfil <nome>` |
 | Abrir no navegador | `npm run web -- --perfil <nome> --abrir` |
 | Mostrar no site | `vitrine: true` + `canais` com `web` → `npm run site` |
-| Ligar no Telegram | token no `.env` da fita + `telegram` em `canais` → `npm run dev -- --perfil <nome>` |
+| Criar o bot da fita | `npm run perfil -- bot <nome> --gerente` (ou `--token`) |
+| Ligar no Telegram | `telegram` em `canais` → `npm run dev -- --perfil <nome>` |
+| Convidar alguém | `/convite <nome>` no bot (QR) ou `npm run perfil -- convite <nome>` |
+| Ver e tirar acessos | `/acessos` no bot ou `npm run perfil -- acessos <nome> [bloquear <id>]` |
 | Ligar o serviço da fita | `docker compose -f servicos/<serviço>/docker-compose.yml up -d` (na pasta da fita) |
 | Comandos e testes da fita | `npm run fita -- <nome> [comando \| testes]` |
 | Desligar o código da fita | comentar `extensao:` no `perfil.yaml` |
@@ -246,20 +268,5 @@ npm run perfil -- remover cozinha-demo --apagar-dados   # também apaga dados/co
 - **Página de administração** (só em `127.0.0.1`): lista das fitas com botões para instalar (com a mesma confirmação
   de código), ligar e desligar canais, vitrine e extensão, e remover, sem editar arquivo nem usar o terminal. As cenas
   2, 4, 5, 7 e 8 passam a ter a versão "clicando".
-- **Convite por QR code, por fita** (no lugar de copiar o ID para `TELEGRAM_ALLOWED_USER_IDS`):
-  - Cada fita continua com o **seu próprio bot** e a **sua própria lista de acesso** (em `dados/<fita>`). Liberar
-    alguém na AgroMinds não libera a Cozinha.
-  - `npm run perfil -- convite <fita>` gera o link `https://t.me/<bot da fita>?start=<código>` e o QR dele. A pessoa
-    escaneia, toca em **Iniciar**, e o bot recebe o ID dela sozinho. O código é de uso único e expira.
-  - Quem chega sem código vira "pedido de acesso": o dono recebe no Telegram os botões **Aprovar** e **Recusar**.
-  - Liga por fita no `perfil.yaml` (`telegram: { acesso: convite }`). Sem isso, a fita segue com a lista do `.env`.
-  - Na cena 5, o passo 2 passa a ser "gere o convite e mostre o QR para a pessoa escanear".
-- **Bot da fita criado pelo sistema** (bots gerenciados, Bot API 9.6):
-  - **Uma vez só:** um bot "gerente" do K7, criado no @BotFather com o modo de gerenciar bots ligado.
-  - **Para cada fita:** `npm run perfil -- bot <fita>` gera o link `https://t.me/newbot/<gerente>/<sugestão>?name=<Nome>`.
-    O dono confirma no Telegram com um toque, o K7 recebe o token e grava no `.env` da fita.
-  - **Configuração automática:** nome, descrição, menu de comandos e foto, a partir do `perfil.yaml`.
-  - **Sem o gerente:** colar o token do BotFather e o K7 configura o resto.
-  - Na cena 5, os passos 1 e 2 viram "gerar o bot da fita e confirmar no celular".
 - **Painel próprio de cada fita** (ex.: o painel da AgroMinds em Angular, para usuários e gráficos do tempo),
   descrito na spec da fita.

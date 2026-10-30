@@ -31,6 +31,8 @@ export interface KnowledgeConfig {
 export const SUPPORTED_TTS_ENGINES: readonly TtsEngine[] = ['kokoro', 'edge'];
 
 export const SUPPORTED_PROVIDERS: readonly ProviderName[] = ['gemini', 'deepseek', 'groq', 'ollama'];
+export type TelegramAccessMode = 'lista' | 'convite' | 'aberto';
+export const TELEGRAM_ACCESS_MODES: readonly TelegramAccessMode[] = ['lista', 'convite', 'aberto'];
 
 export interface ProviderCredentials {
   /** `undefined` = provider não configurado. Providers locais usam um valor fixo. */
@@ -81,7 +83,14 @@ export class Config {
   /** Nome, dono e foco do agente (AGENT_NAME, OWNER_NAME, AGENT_PURPOSE...). */
   readonly identity: AgentIdentity;
   readonly telegramBotToken: string;
+  /** Donos do bot (TELEGRAM_ALLOWED_USER_IDS): sempre têm acesso e aprovam os pedidos. */
   readonly allowedUserIds: ReadonlySet<number>;
+  /**
+   * Quem mais pode usar o bot desta fita (TELEGRAM_ACESSO, ou `telegram.acesso` no perfil.yaml):
+   * `lista` só os donos (padrão, como sempre foi); `convite` quem entrou por convite ou teve o pedido aprovado;
+   * `aberto` qualquer pessoa, com limite de mensagens por hora.
+   */
+  readonly telegramAccess: { mode: TelegramAccessMode; requests: boolean; hourlyLimit: number };
 
   readonly llmProvider: ProviderName;
   readonly llmFallbackProviders: ProviderName[];
@@ -233,6 +242,14 @@ export class Config {
     this.allowedUserIds = requireTelegram || env.TELEGRAM_ALLOWED_USER_IDS?.trim()
       ? Config.parseUserIds(Config.required(env, 'TELEGRAM_ALLOWED_USER_IDS'))
       : new Set<number>();
+    const accessMode = (env.TELEGRAM_ACESSO?.trim().toLowerCase() || 'lista') as TelegramAccessMode;
+    if (!TELEGRAM_ACCESS_MODES.includes(accessMode)) throw new ConfigError(`TELEGRAM_ACESSO deve ser ${TELEGRAM_ACCESS_MODES.join(', ')}`);
+    this.telegramAccess = {
+      mode: accessMode,
+      // Pedidos de acesso: ligados por padrão no modo convite.
+      requests: Config.bool(env.TELEGRAM_PEDIDOS, accessMode === 'convite'),
+      hourlyLimit: Config.positiveInt(env.TELEGRAM_LIMITE_HORA, 30),
+    };
 
     this.llmProvider = Config.parseProvider(env.LLM_PROVIDER ?? 'gemini', 'LLM_PROVIDER');
     this.llmFallbackProviders = Config.list(env.LLM_FALLBACK_PROVIDERS)

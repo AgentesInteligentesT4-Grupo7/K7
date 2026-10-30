@@ -11,7 +11,7 @@ import { type Orchestrator, createOrchestrator } from '../llm/orchestration/crea
 import type { ILlmProvider } from '../llm/types.js';
 import { Guardrails } from '../guardrails/Guardrails.js';
 import { ProviderFactory } from '../llm/ProviderFactory.js';
-import { DatabaseConnection } from '../memory/DatabaseConnection.js';
+import { DatabaseConnection, type SqliteDatabase } from '../memory/DatabaseConnection.js';
 import { DatabaseMaintenance } from '../memory/DatabaseMaintenance.js';
 import { ConversationSummarizer } from '../memory/ConversationSummarizer.js';
 import { MemoryManager } from '../memory/MemoryManager.js';
@@ -81,6 +81,10 @@ export type LlmChain = ILlmProvider & {
 
 export interface Core {
   config: Config;
+  /** Banco SQLite do perfil (conversas, memória e o que os canais e as fitas guardam). */
+  db: SqliteDatabase;
+  /** Processo principal (o bot): só ele roda tarefas agendadas e servidores próprios das fitas. */
+  principal: boolean;
   tmp: TempFileManager;
   memory: MemoryManager;
   llm: LlmChain;
@@ -253,6 +257,8 @@ export function createCore(config: Config, options: CoreOptions): Core {
 
   return {
     config,
+    db,
+    principal: options.databaseMaintenance,
     extensions,
     ready,
     tmp,

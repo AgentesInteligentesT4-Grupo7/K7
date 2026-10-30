@@ -1,7 +1,7 @@
 import { load as parseYaml } from 'js-yaml';
-import { ConfigError } from '../config/Config.js';
 import { REASONING_MODES, parseMode } from '../agent/Reasoning.js';
 import { type GuardrailsConfig, parseGuardrails } from '../guardrails/GuardrailsConfig.js';
+import { ConfigError, TELEGRAM_ACCESS_MODES, type TelegramAccessMode } from '../config/Config.js';
 import type { PrivacyLevel } from '../llm/orchestration/types.js';
 import { CHANNELS, type ChannelId, MODULE_IDS } from '../modules/registry.js';
 
@@ -48,6 +48,8 @@ export interface ProfileManifest {
   vitrine?: boolean;
   /** `extensao: extensao/index.ts`: o código da fita (ferramentas, painel web, comandos), carregado com o tocador. */
   extensao?: string;
+  /** Bloco `telegram:` do bot desta fita: quem pode usar (lista, convite, aberto), pedidos e limite por hora. */
+  telegram?: { acesso?: TelegramAccessMode; pedidos?: boolean; limiteHora?: number };
 }
 
 /** Módulos previstos na spec que ainda não existem neste tocador. */
@@ -124,6 +126,7 @@ export function parseManifest(text: string, source = 'perfil.yaml'): ProfileMani
     ...(raw.guardrails !== undefined ? { guardrails: parseGuardrails(raw.guardrails, fail) } : {}),
     ...(raw.vitrine !== undefined ? { vitrine: typeof raw.vitrine === 'boolean' ? raw.vitrine : fail('vitrine', 'deve ser true ou false') } : {}),
     ...(raw.extensao !== undefined ? { extensao: parseExtension(raw.extensao, fail) } : {}),
+    ...(raw.telegram !== undefined ? { telegram: parseTelegram(raw.telegram, fail) } : {}),
   };
 }
 
@@ -201,4 +204,25 @@ function parseExtension(value: unknown, fail: (field: string, problem: string) =
     return fail('extensao', 'deve ser o caminho de um arquivo .ts ou .js dentro da fita (ex.: "extensao/index.ts")');
   }
   return rel;
+}
+
+/** `telegram: { acesso: convite, pedidos: true, limite_hora: 30 }` */
+function parseTelegram(value: unknown, fail: (field: string, problem: string) => never): NonNullable<ProfileManifest['telegram']> {
+  if (!isRecord(value)) return fail('telegram', 'deve ser um objeto (ex.: telegram: { acesso: convite })');
+  const result: NonNullable<ProfileManifest['telegram']> = {};
+  if (value.acesso !== undefined) {
+    const mode = String(value.acesso).trim().toLowerCase() as TelegramAccessMode;
+    if (!TELEGRAM_ACCESS_MODES.includes(mode)) fail('telegram.acesso', `deve ser ${TELEGRAM_ACCESS_MODES.join(', ')}`);
+    result.acesso = mode;
+  }
+  if (value.pedidos !== undefined) {
+    if (typeof value.pedidos !== 'boolean') fail('telegram.pedidos', 'deve ser true ou false');
+    result.pedidos = value.pedidos as boolean;
+  }
+  if (value.limite_hora !== undefined) {
+    const limit = Number(value.limite_hora);
+    if (!Number.isInteger(limit) || limit < 1) fail('telegram.limite_hora', 'deve ser um número inteiro maior que zero');
+    result.limiteHora = limit;
+  }
+  return result;
 }
