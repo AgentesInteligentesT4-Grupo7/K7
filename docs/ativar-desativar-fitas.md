@@ -246,11 +246,13 @@ npm run perfil -- remover cozinha-demo --apagar-dados   # também apaga dados/co
 - **Página de administração** (só em `127.0.0.1`): lista das fitas com botões para instalar (com a mesma confirmação
   de código), ligar e desligar canais, vitrine e extensão, e remover, sem editar arquivo nem usar o terminal. As cenas
   2, 4, 5, 7 e 8 passam a ter a versão "clicando".
-- **Um bot só no Telegram com `/fitas`:** escolher a fita da conversa por botões, em vez de um bot por fita (a cena 5
-  fica com um único token, no `.env` do K7).
-- **Convite por QR code** (no lugar de copiar o ID para `TELEGRAM_ALLOWED_USER_IDS`): o K7 gera um link
-  `https://t.me/<bot>?start=<código>` e o QR dele. A pessoa escaneia, toca em **Iniciar**, e o bot recebe o ID dela
-  sozinho e a libera. O código é de uso único e expira. Quem chega sem código vira "pedido de acesso" para aprovar.
-  Na cena 5, o passo 2 passa a ser "mostre o QR para a pessoa escanear".
+- **Convite por QR code, por fita** (no lugar de copiar o ID para `TELEGRAM_ALLOWED_USER_IDS`):
+  - Cada fita continua com o **seu próprio bot** e a **sua própria lista de acesso** (em `dados/<fita>`). Liberar
+    alguém na AgroMinds não libera a Cozinha.
+  - `npm run perfil -- convite <fita>` gera o link `https://t.me/<bot da fita>?start=<código>` e o QR dele. A pessoa
+    escaneia, toca em **Iniciar**, e o bot recebe o ID dela sozinho. O código é de uso único e expira.
+  - Quem chega sem código vira "pedido de acesso": o dono recebe no Telegram os botões **Aprovar** e **Recusar**.
+  - Liga por fita no `perfil.yaml` (`telegram: { acesso: convite }`). Sem isso, a fita segue com a lista do `.env`.
+  - Na cena 5, o passo 2 passa a ser "gere o convite e mostre o QR para a pessoa escanear".
 - **Painel próprio de cada fita** (ex.: o painel da AgroMinds em Angular, para usuários e gráficos do tempo),
   descrito na spec da fita.
