@@ -42,6 +42,8 @@ export interface FitaApi {
     emParalelo<T, R>(itens: T[], max: number, tarefa: (item: T, i: number) => Promise<R>): Promise<R[]>;
     /** Lê um texto YAML (ex.: regras da fita escritas para gente revisar); erro de sintaxe vira exceção. */
     lerYaml(texto: string): unknown;
+    /** Desenho SVG para imagem PNG (ex.: um cartão do tempo para mandar como foto), com as fontes do sistema. */
+    svgParaPng(svg: string, opcoes?: { largura?: number }): Promise<Buffer>;
   };
   /** `true` só no processo principal (o bot): servidores próprios e tarefas da fita rodam só nele. */
   processoPrincipal: boolean;
@@ -75,6 +77,8 @@ export interface TelegramResposta {
   botoes?: TelegramBotao[][];
   /** Mostra o botão do teclado "📍 Enviar localização" (só em conversa privada). */
   pedirLocalizacao?: string;
+  /** Foto (PNG/JPG) com o `texto` de legenda; legenda longa (> 1024) vai numa mensagem logo depois da foto. */
+  imagem?: Buffer;
 }
 
 export interface TelegramCtx {

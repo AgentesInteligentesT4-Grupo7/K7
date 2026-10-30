@@ -25,6 +25,7 @@
     "imagens:modelo": "tsx src/cli/imagens.ts"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.8",
     "edge-tts-universal": "^1.4.0",

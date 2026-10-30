@@ -110,4 +110,23 @@ describe('Extensão de fita: tarefas, banco próprio e Telegram', () => {
     extension.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('imagem: SVG vira PNG; foto com legenda, e legenda longa vai numa mensagem depois da foto', async () => {
+    const { extension, dir } = host(false);
+    await extension.load();
+    const k7 = (globalThis as unknown as { __k7: { util: { svgParaPng(svg: string): Promise<Buffer> } } }).__k7;
+    const png = await k7.util.svgParaPng('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" fill="#2e7d32"/><text x="8" y="28" font-size="20" fill="#fff">24°C</text></svg>');
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+
+    const { bot, calls } = fakeBot();
+    extension.telegram.attach(bot.api);
+    assert.deepEqual(await extension.telegram.notify('50', { texto: 'Boletim', imagem: png }), { entregue: true });
+    assert.deepEqual(calls.map((c) => c.method), ['sendPhoto']);
+    assert.equal(calls[0]!.payload.caption, 'Boletim');
+    calls.length = 0;
+    await extension.telegram.notify('50', { texto: 'x'.repeat(1500), imagem: png });
+    assert.deepEqual(calls.map((c) => c.method), ['sendPhoto', 'sendMessage']);
+    extension.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

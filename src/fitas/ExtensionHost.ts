@@ -217,6 +217,7 @@ export class ExtensionHost {
         limitador: (max) => new KeyedLimiter(max),
         emParalelo: (itens, max, tarefa) => mapWithLimit(itens, max, tarefa),
         lerYaml: (texto) => parseYaml(texto),
+        svgParaPng: (svg, opcoes) => svgToPng(svg, opcoes?.largura),
       },
       processoPrincipal: this.options.principal === true,
       tarefa: (nome, intervaloMs, executar) => {
@@ -242,4 +243,16 @@ export class ExtensionHost {
       },
     };
   }
+}
+
+let resvg: Promise<typeof import('@resvg/resvg-js')> | undefined;
+
+/** SVG → PNG com o resvg (sem navegador), usando as fontes instaladas no sistema. */
+async function svgToPng(svg: string, largura?: number): Promise<Buffer> {
+  const { Resvg } = await (resvg ??= import('@resvg/resvg-js'));
+  const render = new Resvg(svg, {
+    font: { loadSystemFonts: true, defaultFontFamily: 'Arial' },
+    ...(largura ? { fitTo: { mode: 'width' as const, value: largura } } : {}),
+  }).render();
+  return Buffer.from(render.asPng());
 }

@@ -1,4 +1,4 @@
-import { type Api, type Bot, type Context, InlineKeyboard, Keyboard } from 'grammy';
+import { type Api, type Bot, type Context, InlineKeyboard, InputFile, Keyboard } from 'grammy';
 import { errorMessage } from '../errors/AppErrors.js';
 import type { Logger } from '../utils/Logger.js';
 import type { BotCommand } from '../canais/telegram/botCommands.js';
@@ -62,8 +62,7 @@ export class ExtensionTelegram {
     const chatId = Number(userId);
     if (!Number.isSafeInteger(chatId)) return { entregue: false, erro: `usuário inválido: ${userId}` };
     try {
-      const { text, extra } = toTelegram(message);
-      await this.api.sendMessage(chatId, text, extra);
+      await send(this.api, chatId, message);
       return { entregue: true };
     } catch (error) {
       return { entregue: false, erro: (error as { description?: string }).description ?? errorMessage(error) };
@@ -91,6 +90,8 @@ export class ExtensionTelegram {
             ...this.ctx(ctx),
             dados: ctx.callbackQuery.data,
             editar: async (resposta) => {
+              // Foto não troca o texto de uma mensagem: vai como nova.
+              if (typeof resposta !== 'string' && resposta.imagem) return send(ctx.api, ctx.chat?.id ?? ctx.from.id, resposta);
               const { text, extra } = toTelegram(resposta);
               await ctx.editMessageText(text, extra.reply_markup instanceof InlineKeyboard ? { reply_markup: extra.reply_markup } : {}).catch(() => ctx.reply(text, extra));
             },
@@ -106,10 +107,7 @@ export class ExtensionTelegram {
       userId: String(from.id),
       chatId: ctx.chat?.id ?? from.id,
       nome: [from.first_name, from.last_name].filter(Boolean).join(' '),
-      responder: async (resposta) => {
-        const { text, extra } = toTelegram(resposta);
-        await ctx.reply(text, extra);
-      },
+      responder: async (resposta) => send(ctx.api, ctx.chat?.id ?? from.id, resposta),
     };
   }
 
@@ -137,4 +135,15 @@ function toTelegram(message: string | TelegramResposta): { text: string; extra: 
     return { text: r.texto, extra: { reply_markup: keyboard } };
   }
   return { text: r.texto, extra: {} };
+}
+
+/** Texto, ou foto com legenda (legenda acima do limite do Telegram vai numa mensagem logo depois). */
+async function send(api: Api, chatId: number, message: string | TelegramResposta): Promise<void> {
+  const { text, extra } = toTelegram(message);
+  const image = typeof message === 'string' ? undefined : message.imagem;
+  if (!image) return void (await api.sendMessage(chatId, text, extra));
+  const photo = new InputFile(image, 'imagem.png');
+  if (text.length <= 1024) return void (await api.sendPhoto(chatId, photo, { caption: text, ...extra }));
+  await api.sendPhoto(chatId, photo);
+  await api.sendMessage(chatId, text, extra);
 }

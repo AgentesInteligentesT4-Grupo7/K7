@@ -390,11 +390,12 @@ export default async function ativar(k7: FitaApi): Promise<void> {
 | `telegram.comando(nome, descrição, fn)` | Comando do bot da fita (`/clima`); passa pelo controle de acesso e entra no menu. Um `start` da fita substitui o do tocador |
 | `telegram.aoLocalizacao(fn)` | A pessoa mandou a localização (`ctx.lat`, `ctx.lon`) |
 | `telegram.botoes(prefixo, fn)` | Toque num botão (`dados` começando com `prefixo:`); `ctx.editar()` troca a mensagem |
-| `ctx.responder({ texto, botoes, pedirLocalizacao })` | Resposta com botões ou com o botão "📍 Enviar localização" |
+| `ctx.responder({ texto, botoes, pedirLocalizacao, imagem })` | Resposta com botões, com o botão "📍 Enviar localização" ou como foto (o texto vira legenda) |
 | `telegram.notificar(userId, mensagem)` | Mensagem sem ser resposta (boletim, alerta); devolve `{ entregue, erro }` |
 | `telegram.acessos.listar / definir / convite` | Quem pode usar o bot da fita e convites com QR (o mesmo da página de administração) |
 | `tarefa(nome, intervaloMs, fn)` | Tarefa periódica (mín. 1 min), só no processo principal (o bot) |
 | `sql.exec / run / get / all / transacao` | Banco SQLite próprio da fita (`dados/<fita>/<fita>.db`) |
+| `util.lerYaml(texto)` · `util.svgParaPng(svg)` | Ler regras em YAML; transformar um desenho SVG em PNG (ex.: cartão para mandar como foto) |
 | `processoPrincipal` | `true` só no processo do bot: suba ali servidores próprios da fita |
 
 **Erros para a pessoa:** um erro com a propriedade `userMessage` (texto) aparece como está no chat, no Telegram e na
