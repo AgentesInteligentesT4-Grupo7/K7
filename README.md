@@ -124,6 +124,7 @@ com `perfil.yaml` (identidade, módulos, canais, privacidade), `skills/` e `.env
 Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw-perfis`).
 
 **Passo a passo para criar uma fita:** [docs/criar-fita.md](docs/criar-fita.md).
+**Ativar, desativar e remover cada parte de uma fita (roteiro para vídeo):** [docs/ativar-desativar-fitas.md](docs/ativar-desativar-fitas.md).
 
 ```bash
 npm run dev -- --perfil pessoal       # bot do Telegram do perfil (cada perfil tem o seu bot)

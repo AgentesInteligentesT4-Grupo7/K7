@@ -11,7 +11,8 @@ canais, voz, módulos); a fita **descreve** o agente e, se precisar, traz o **pr
 > avisa que a fita traz código e só instala com a sua confirmação, porque ele roda com o mesmo acesso do tocador.
 
 Para o desenho completo (por que é assim, segurança, instalação), veja a spec
-[specs/profiles-modules.md](../specs/profiles-modules.md). Este guia é o passo a passo.
+[specs/profiles-modules.md](../specs/profiles-modules.md). Este guia é o passo a passo. Para ligar, desligar e remover cada parte (canais, vitrine, extensão, serviços), veja
+[ativar-desativar-fitas.md](ativar-desativar-fitas.md).
 
 ---
 
