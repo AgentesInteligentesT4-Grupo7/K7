@@ -254,5 +254,12 @@ npm run perfil -- remover cozinha-demo --apagar-dados   # também apaga dados/co
   - Quem chega sem código vira "pedido de acesso": o dono recebe no Telegram os botões **Aprovar** e **Recusar**.
   - Liga por fita no `perfil.yaml` (`telegram: { acesso: convite }`). Sem isso, a fita segue com a lista do `.env`.
   - Na cena 5, o passo 2 passa a ser "gere o convite e mostre o QR para a pessoa escanear".
+- **Bot da fita criado pelo sistema** (bots gerenciados, Bot API 9.6):
+  - **Uma vez só:** um bot "gerente" do K7, criado no @BotFather com o modo de gerenciar bots ligado.
+  - **Para cada fita:** `npm run perfil -- bot <fita>` gera o link `https://t.me/newbot/<gerente>/<sugestão>?name=<Nome>`.
+    O dono confirma no Telegram com um toque, o K7 recebe o token e grava no `.env` da fita.
+  - **Configuração automática:** nome, descrição, menu de comandos e foto, a partir do `perfil.yaml`.
+  - **Sem o gerente:** colar o token do BotFather e o K7 configura o resto.
+  - Na cena 5, os passos 1 e 2 viram "gerar o bot da fita e confirmar no celular".
 - **Painel próprio de cada fita** (ex.: o painel da AgroMinds em Angular, para usuários e gráficos do tempo),
   descrito na spec da fita.
