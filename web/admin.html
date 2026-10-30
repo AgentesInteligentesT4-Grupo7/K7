@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K7 · Fitas</title>
+<style nonce="__NONCE__">
+:root {
+  --bg: #faf9f5; --side: #f0eee6; --panel: #ffffff; --text: #1f1e1d; --muted: #6b6a66; --line: #e3e0d5;
+  --soft: #ece9df; --accent: #c96442; --accent-text: #ffffff; --ok: #2e7d4f; --warn: #9a5b00; --error: #b3261e;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #262624; --side: #1f1e1d; --panel: #30302e; --text: #ece9e1; --muted: #a3a19a; --line: #3d3d3a;
+    --soft: #3a3936; --accent: #d97757; --ok: #6cc08f; --warn: #e3a54a; --error: #f2847b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #262624; --side: #1f1e1d; --panel: #30302e; --text: #ece9e1; --muted: #a3a19a; --line: #3d3d3a;
+  --soft: #3a3936; --accent: #d97757; --ok: #6cc08f; --warn: #e3a54a; --error: #f2847b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.danger { border-color: var(--error); color: var(--error); }
+button:disabled { opacity: .55; cursor: default; }
+input, select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--side); flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0; }
+header .grow { flex: 1; }
+main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 0; min-height: calc(100vh - 60px); }
+#list { border-right: 1px solid var(--line); padding: 12px; overflow: auto; }
+.card { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.card.sel { border-color: var(--accent); box-shadow: var(--shadow); }
+.card .top { display: flex; align-items: center; gap: 8px; }
+.card .emoji { font-size: 22px; }
+.card .t { font-weight: 600; }
+.card .n { color: var(--muted); font-size: 12px; }
+.card .d { color: var(--muted); font-size: 13px; margin: 4px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pill { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin: 2px 4px 0 0; color: var(--muted); white-space: nowrap; }
+.pill.on { color: var(--ok); border-color: var(--ok); }
+.pill.err { color: var(--error); border-color: var(--error); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.status { margin-left: auto; }
+#detail { padding: 20px 28px; overflow: auto; }
+#detail h2 { margin: 0 0 2px; font-size: 22px; }
+.sub { color: var(--muted); margin: 0 0 14px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 10px 0 16px; flex-wrap: wrap; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
+.tabs button.sel { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+section.box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+section.box h3 { margin: 0 0 8px; font-size: 15px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.row label { display: inline-flex; align-items: center; gap: 6px; }
+.help { color: var(--muted); font-size: 13px; margin: 4px 0; }
+.msg { border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+.msg.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.msg.err { background: color-mix(in srgb, var(--error) 14%, transparent); }
+.msg.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+pre.log { background: var(--side); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.qr { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.qr img { width: 200px; height: 200px; background: #fff; border-radius: 10px; padding: 6px; border: 1px solid var(--line); }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; word-break: break-all; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); max-width: 560px; width: calc(100% - 32px); padding: 18px 20px; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.hidden { display: none !important; }
+@media (max-width: 820px) {
+  main { grid-template-columns: 1fr; }
+  #list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+  #detail { padding: 16px; }
+  header { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>📼 K7 · Fitas</h1>
+  <span class="help">só neste computador</span>
+  <span class="grow"></span>
+  <button id="btn-new" type="button">+ Nova fita</button>
+  <button id="btn-install" type="button">⬇ Instalar fita</button>
+  <button id="btn-refresh" type="button" title="Atualizar">↻</button>
+  <button id="theme" type="button" title="Tema claro/escuro">◐</button>
+</header>
+<div id="locked" class="msg err hidden" style="margin:16px 24px">Token ausente ou inválido. Abra o endereço completo mostrado no terminal pelo <code>npm run admin</code>.</div>
+<main>
+  <nav id="list" aria-label="Fitas"></nav>
+  <div id="detail"><p class="empty">Escolha uma fita à esquerda.</p></div>
+</main>
+
+<dialog id="dlg-new">
+  <h3>Nova fita</h3>
+  <p class="help">Cria a pasta com perfil.yaml, uma skill de exemplo, .env.example e README. Depois edite a identidade no perfil.yaml.</p>
+  <div class="row"><input id="new-name" placeholder="nome-da-fita" maxlength="40" autocomplete="off"></div>
+  <div id="new-msg"></div>
+  <div class="row"><button id="new-ok" class="primary" type="button">Criar</button><button data-close type="button">Cancelar</button></div>
+</dialog>
+
+<dialog id="dlg-install">
+  <h3>Instalar fita</h3>
+  <p class="help">Origem: pasta local, URL Git (https://…), <span class="mono">usuario/nome</span> do GitHub ou <span class="mono">@escopo/nome</span> do npm. Instalar nunca executa nada da fita.</p>
+  <div class="row"><input id="inst-origin" placeholder="AgentesInteligentesT4-Grupo7/agrominds" style="flex:1" autocomplete="off"></div>
+  <div class="row"><input id="inst-name" placeholder="nome (opcional)" maxlength="40" autocomplete="off"></div>
+  <div id="inst-msg"></div>
+  <div class="row"><button id="inst-ok" class="primary" type="button">Instalar</button><button id="inst-trust" class="danger hidden" type="button">Confio nesta fita, instalar com o código</button><button data-close type="button">Fechar</button></div>
+</dialog>
+
+<script nonce="__NONCE__">
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var token = (/[#&]t=([\w-]+)/.exec(location.hash) || [])[1] || '';
+  var state = { fitas: [], sel: null, tab: 'geral', logTimer: null, managedTimer: null };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function api(path, method, body) {
+    var opts = { method: method || 'GET', headers: { 'X-Token': token } };
+    if (method && method !== 'GET') { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body || {}); }
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (r.status === 401) $('locked').classList.remove('hidden');
+        if (!r.ok) { var e = new Error(data.erro || ('HTTP ' + r.status)); e.status = r.status; e.data = data; throw e; }
+        return data;
+      });
+    });
+  }
+  function msg(target, kind, text) { target.innerHTML = ''; if (text) target.appendChild(el('div', 'msg ' + kind, esc(text))); }
+  function busy(button, run) {
+    var label = button.textContent; button.disabled = true; button.textContent = '⏳ ' + label;
+    return Promise.resolve().then(run).finally(function () { button.disabled = false; button.textContent = label; });
+  }
+  function current() { return state.fitas.find(function (f) { return f.nome === state.sel; }); }
+
+  // ── Lista ───────────────────────────────────────────────────────────────
+  function load() {
+    return api('/api/fitas').then(function (fitas) { state.fitas = fitas; renderList(); if (state.sel) renderDetail(); });
+  }
+  function renderList() {
+    var list = $('list'); list.innerHTML = '';
+    if (!state.fitas.length) list.appendChild(el('p', 'empty', 'Nenhuma fita em PERFIS_DIR. Crie ou instale uma.'));
+    state.fitas.forEach(function (f) {
+      var b = el('button', 'card' + (f.nome === state.sel ? ' sel' : ''));
+      b.type = 'button';
+      var on = f.processo && f.processo.rodando;
+      b.innerHTML = '<div class="top"><span class="emoji">' + esc(f.emoji) + '</span><div><div class="t">' + esc(f.titulo) + '</div><div class="n">' + esc(f.nome) + (f.versao ? ' · v' + esc(f.versao) : '') + '</div></div>' +
+        '<span class="status pill ' + (f.erro ? 'err' : on ? 'on' : '') + '">' + (f.erro ? 'com erro' : on ? '● ligada' : 'desligada') + '</span></div>' +
+        '<div class="d">' + esc(f.erro || f.descricao) + '</div>' +
+        f.canais.map(function (c) { return '<span class="pill">' + esc(c) + '</span>'; }).join('') +
+        (f.vitrine ? '<span class="pill on">vitrine</span>' : '') +
+        (f.extensao ? '<span class="pill ' + (f.extensao.ligada ? 'on' : 'warn') + '">código ' + (f.extensao.ligada ? 'ligado' : 'desligado') + '</span>' : '') +
+        (f.canais.indexOf('telegram') >= 0 ? '<span class="pill ' + (f.telegram.temToken ? '' : 'warn') + '">bot ' + (f.telegram.temToken ? esc(f.telegram.modo) : 'sem token') + '</span>' : '');
+      b.addEventListener('click', function () { select(f.nome); });
+      list.appendChild(b);
+    });
+  }
+  function select(nome) {
+    state.sel = nome; state.tab = 'geral'; stopTimers();
+    renderList(); renderDetail();
+  }
+  function stopTimers() { clearInterval(state.logTimer); clearInterval(state.managedTimer); state.logTimer = state.managedTimer = null; }
+
+  // ── Detalhe ─────────────────────────────────────────────────────────────
+  function renderDetail() {
+    var f = current(); var d = $('detail'); d.innerHTML = '';
+    if (!f) { d.appendChild(el('p', 'empty', 'Escolha uma fita à esquerda.')); return; }
+    d.appendChild(el('h2', '', esc(f.emoji + ' ' + f.titulo)));
+    d.appendChild(el('p', 'sub', esc(f.nome) + ' · ' + esc(f.dir) + (f.origem ? ' · origem: ' + esc(f.origem) : '')));
+    if (f.erro) d.appendChild(el('div', 'msg err', 'O perfil.yaml tem erro: ' + esc(f.erro)));
+    var tabs = el('div', 'tabs');
+    [['geral', 'Geral'], ['telegram', 'Telegram'], ['servicos', 'Serviços'], ['log', 'Log'], ['remover', 'Remover']].forEach(function (t) {
+      if (t[0] === 'servicos' && !f.servicos.length) return;
+      var b = el('button', state.tab === t[0] ? 'sel' : '', t[1]); b.type = 'button';
+      b.addEventListener('click', function () { state.tab = t[0]; stopTimers(); renderDetail(); });
+      tabs.appendChild(b);
+    });
+    d.appendChild(tabs);
+    var body = el('div'); d.appendChild(body);
+    ({ geral: tabGeneral, telegram: tabTelegram, servicos: tabServices, log: tabLog, remover: tabRemove })[state.tab](f, body);
+  }
+
+  function tabGeneral(f, body) {
+    var on = f.processo && f.processo.rodando;
+    var run = el('section', 'box');
+    run.innerHTML = '<h3>' + (on ? '● Ligada' : 'Desligada') + '</h3>' +
+      '<p class="help">Ligar roda a fita com os canais dela (' + esc(f.canais.join(', ')) + '), como o <span class="mono">npm run dev -- --perfil ' + esc(f.nome) + '</span>.' +
+      (f.canais.indexOf('telegram') >= 0 && !f.telegram.temToken ? ' <b>Falta o bot do Telegram</b> (aba Telegram).' : '') + '</p>';
+    var row = el('div', 'row');
+    var toggle = el('button', on ? 'danger' : 'primary', on ? 'Desligar' : 'Ligar'); toggle.type = 'button';
+    toggle.addEventListener('click', function () {
+      busy(toggle, function () { return api('/api/fitas/' + f.nome + (on ? '/desligar' : '/ligar'), 'POST').then(function () { return wait(1200); }).then(load); });
+    });
+    row.appendChild(toggle);
+    if (on && f.processo.web) { var a = el('a', '', 'Abrir o chat web ↗'); a.href = f.processo.web; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a); }
+    if (!on && f.processo && f.processo.saida !== null && f.processo.desde) row.appendChild(el('span', 'pill err', 'parou (código ' + esc(f.processo.saida) + ') — veja o Log'));
+    run.appendChild(row);
+    body.appendChild(run);
+
+    var cfg = el('section', 'box');
+    cfg.innerHTML = '<h3>Canais e vitrine</h3>';
+    var note = el('div');
+    var canais = el('div', 'row');
+    ['telegram', 'terminal', 'web'].forEach(function (c) {
+      var l = el('label'); var i = el('input'); i.type = 'checkbox'; i.value = c; i.checked = f.canais.indexOf(c) >= 0;
+      l.appendChild(i); l.appendChild(document.createTextNode(' ' + c)); canais.appendChild(l);
+    });
+    var save = el('button', '', 'Salvar canais'); save.type = 'button';
+    save.addEventListener('click', function () {
+      var chosen = Array.prototype.slice.call(canais.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+      busy(save, function () { return edit(f, { canais: chosen }, note); });
+    });
+    canais.appendChild(save);
+    cfg.appendChild(canais);
+    var vit = el('div', 'row');
+    var vl = el('label'); var vi = el('input'); vi.type = 'checkbox'; vi.checked = f.vitrine;
+    vl.appendChild(vi); vl.appendChild(document.createTextNode(' Mostrar na vitrine do site (npm run site)'));
+    vi.addEventListener('change', function () { edit(f, { vitrine: vi.checked }, note); });
+    vit.appendChild(vl); cfg.appendChild(vit);
+    if (f.vitrine && f.canais.indexOf('web') < 0) cfg.appendChild(el('p', 'help', '⚠️ Para abrir pelo site, a fita precisa do canal web.'));
+    cfg.appendChild(note);
+    body.appendChild(cfg);
+
+    var ext = el('section', 'box');
+    ext.innerHTML = '<h3>Código da fita (extensão)</h3>';
+    if (!f.extensao) ext.appendChild(el('p', 'help', 'Esta fita não tem código próprio: só identidade, módulos e skills.' + (f.codigo ? ' (' + f.codigo + ' arquivo(s) de código na pasta.)' : '')));
+    else {
+      ext.appendChild(el('p', 'help', '<span class="mono">' + esc(f.extensao.caminho) + '</span> — ' + (f.extensao.ligada ? 'ligado: o K7 carrega ferramentas, painel e comandos da fita.' : 'desligado: o K7 não carrega nenhum código da fita.')));
+      var en = el('div'); var b = el('button', f.extensao.ligada ? 'danger' : 'primary', f.extensao.ligada ? 'Desligar o código' : 'Ligar o código'); b.type = 'button';
+      b.addEventListener('click', function () { busy(b, function () { return edit(f, { extensaoLigada: !f.extensao.ligada }, en); }); });
+      ext.appendChild(b); ext.appendChild(en);
+    }
+    body.appendChild(ext);
+
+    var upd = el('section', 'box');
+    upd.innerHTML = '<h3>Atualizar</h3><p class="help">' + (f.origem ? 'Busca a versão nova em ' + esc(f.origem) + ' (mantém .env e dados).' : 'Fita sem origem registrada: se a pasta for um clone Git, faz <span class="mono">git pull</span>.') + '</p>';
+    var um = el('div'); var ub = el('button', '', 'Atualizar agora'); ub.type = 'button';
+    ub.addEventListener('click', function () { busy(ub, function () { return codeFlow('/api/fitas/' + f.nome + '/atualizar', {}, um, ub); }); });
+    upd.appendChild(ub); upd.appendChild(um);
+    body.appendChild(upd);
+  }
+
+  function edit(f, changes, target) {
+    return api('/api/fitas/' + f.nome + '/manifesto', 'POST', changes)
+      .then(function (r) { msg(target, 'ok', 'Salvo no perfil.yaml. ' + (f.processo && f.processo.rodando ? r.reiniciar : '')); return load(); })
+      .catch(function (e) { msg(target, 'err', e.message); });
+  }
+
+  function tabTelegram(f, body) {
+    var box = el('section', 'box'); box.innerHTML = '<h3>Bot do Telegram</h3><p class="help">Carregando…</p>'; body.appendChild(box);
+    if (f.canais.indexOf('telegram') < 0) box.appendChild(el('div', 'msg warn', 'O canal telegram está desligado nesta fita (aba Geral → Canais).'));
+    api('/api/fitas/' + f.nome + '/telegram').then(function (t) { renderTelegram(f, body, t); }).catch(function (e) { msg(box, 'err', e.message); });
+  }
+
+  function renderTelegram(f, body, t) {
+    body.innerHTML = '';
+    var bot = el('section', 'box');
+    bot.innerHTML = '<h3>Bot do Telegram</h3>';
+    if (t.bot) bot.appendChild(el('p', '', 'Conectado: <b>@' + esc(t.bot.username) + '</b> (' + esc(t.bot.nome) + ')'));
+    else if (t.botErro) bot.appendChild(el('div', 'msg err', 'O token gravado não funciona: ' + esc(t.botErro)));
+    else bot.appendChild(el('p', 'help', 'Esta fita ainda não tem bot. Cada fita tem o seu bot e a sua lista de quem pode usar.'));
+    var out = el('div');
+    var row = el('div', 'row');
+    var mg = el('button', t.bot ? '' : 'primary', t.bot ? 'Criar outro pelo bot gerente' : 'Criar pelo bot gerente'); mg.type = 'button';
+    if (!t.gerenteConfigurado) { mg.disabled = true; mg.title = 'Defina TELEGRAM_GERENTE_TOKEN no .env do K7'; }
+    mg.addEventListener('click', function () {
+      busy(mg, function () { return api('/api/fitas/' + f.nome + '/telegram/bot/gerente', 'POST').then(function (r) { showManaged(f, out, r); }).catch(function (e) { msg(out, 'err', e.message); }); });
+    });
+    row.appendChild(mg);
+    var tok = el('input'); tok.type = 'password'; tok.placeholder = 'ou cole o token do @BotFather'; tok.autocomplete = 'off'; tok.style.flex = '1';
+    var tb = el('button', '', 'Conectar token'); tb.type = 'button';
+    tb.addEventListener('click', function () {
+      busy(tb, function () {
+        return api('/api/fitas/' + f.nome + '/telegram/bot/token', 'POST', { token: tok.value }).then(function (r) {
+          tok.value = ''; msg(out, r.falhas.length ? 'warn' : 'ok', 'Conectado: @' + r.bot.username + '. Aplicado: ' + r.feitos.join(', ') + (r.falhas.length ? '. Falhou: ' + r.falhas.join('; ') : ''));
+          return load();
+        }).catch(function (e) { msg(out, 'err', e.message); });
+      });
+    });
+    row.appendChild(tok); row.appendChild(tb);
+    bot.appendChild(row);
+    if (!t.gerenteConfigurado) bot.appendChild(el('p', 'help', 'Para criar sem o BotFather: crie uma vez um bot "gerente", ligue nele o modo de gerenciar bots (Mini App do @BotFather) e ponha o token em TELEGRAM_GERENTE_TOKEN no .env do K7.'));
+    if (t.bot) {
+      var sy = el('button', '', 'Reaplicar nome, descrição, comandos e foto'); sy.type = 'button';
+      sy.addEventListener('click', function () {
+        busy(sy, function () { return api('/api/fitas/' + f.nome + '/telegram/bot/sincronizar', 'POST').then(function (r) { msg(out, r.falhas.length ? 'warn' : 'ok', 'Aplicado: ' + r.feitos.join(', ') + (r.falhas.length ? '. Falhou: ' + r.falhas.join('; ') : '')); }).catch(function (e) { msg(out, 'err', e.message); }); });
+      });
+      bot.appendChild(el('div', 'row')).appendChild(sy);
+      bot.appendChild(el('p', 'help', 'Nome e descrições vêm do perfil.yaml; a foto, de <span class="mono">bot/foto.jpg</span> na pasta da fita.'));
+    }
+    bot.appendChild(out);
+    if (t.criacao) showManaged(f, out, t.criacao);
+    body.appendChild(bot);
+
+    var acc = el('section', 'box');
+    acc.innerHTML = '<h3>Quem pode usar</h3>';
+    var mode = el('select');
+    [['lista', 'Só os donos (lista do .env)'], ['convite', 'Por convite (QR) e pedidos aprovados'], ['aberto', 'Qualquer pessoa (com limite por hora)']].forEach(function (o) {
+      var op = el('option', '', esc(o[1])); op.value = o[0]; op.selected = t.modo === o[0]; mode.appendChild(op);
+    });
+    var am = el('div');
+    mode.addEventListener('change', function () { edit(f, { telegramAcesso: mode.value }, am).then(function () { tabTelegram(current(), body); }); });
+    var r1 = el('div', 'row'); r1.appendChild(mode); acc.appendChild(r1);
+    acc.appendChild(el('p', 'help', 'Donos (sempre entram, recebem os pedidos e geram convites com /convite no bot): ' + esc(t.donos.join(', ') || 'nenhum')));
+    acc.appendChild(am);
+    body.appendChild(acc);
+
+    var inv = el('section', 'box');
+    inv.innerHTML = '<h3>Convidar</h3><p class="help">A pessoa escaneia o QR (ou abre o link) e toca em Iniciar: o Telegram entrega o ID dela, ninguém precisa descobrir.</p>';
+    var r2 = el('div', 'row');
+    var nm = el('input'); nm.placeholder = 'nome (opcional)'; nm.maxLength = 60;
+    var dias = el('input'); dias.type = 'number'; dias.min = 1; dias.max = 90; dias.value = 7; dias.style.width = '80px'; dias.title = 'dias de validade';
+    var usos = el('input'); usos.type = 'number'; usos.min = 1; usos.max = 1000; usos.value = 1; usos.style.width = '80px'; usos.title = 'quantas pessoas podem usar';
+    var gb = el('button', 'primary', 'Gerar convite'); gb.type = 'button';
+    if (!t.bot) { gb.disabled = true; gb.title = 'Conecte o bot primeiro'; }
+    var res = el('div');
+    gb.addEventListener('click', function () {
+      busy(gb, function () {
+        return api('/api/fitas/' + f.nome + '/telegram/convites', 'POST', { nome: nm.value, dias: Number(dias.value), usos: Number(usos.value) }).then(function (r) {
+          res.innerHTML = '';
+          if (r.aviso) res.appendChild(el('div', 'msg warn', esc(r.aviso)));
+          var q = el('div', 'qr'); var img = el('img'); img.src = r.qr; img.alt = 'QR code do convite'; q.appendChild(img);
+          var info = el('div', '', '<div><b>Convite' + (r.invite.nome ? ' para ' + esc(r.invite.nome) : '') + '</b></div><div class="mono">' + esc(r.link) + '</div><div class="help">' +
+            (r.invite.usosMax === 1 ? 'uso único' : r.invite.usosMax + ' usos') + ' · vale até ' + esc(r.invite.expiraEm) + '</div>');
+          var cp = el('button', '', 'Copiar link'); cp.type = 'button';
+          cp.addEventListener('click', function () { navigator.clipboard.writeText(r.link).then(function () { cp.textContent = 'Copiado ✓'; }); });
+          info.appendChild(cp); q.appendChild(info); res.appendChild(q);
+          return refreshPeople(f, peopleBox);
+        }).catch(function (e) { msg(res, 'err', e.message); });
+      });
+    });
+    r2.appendChild(nm); r2.appendChild(el('span', 'help', 'dias')); r2.appendChild(dias); r2.appendChild(el('span', 'help', 'usos')); r2.appendChild(usos); r2.appendChild(gb);
+    inv.appendChild(r2); inv.appendChild(res);
+    body.appendChild(inv);
+
+    var peopleBox = el('section', 'box');
+    body.appendChild(peopleBox);
+    renderPeople(f, peopleBox, t);
+  }
+
+  function refreshPeople(f, box) { return api('/api/fitas/' + f.nome + '/telegram').then(function (t) { renderPeople(f, box, t); }); }
+  function renderPeople(f, box, t) {
+    box.innerHTML = '<h3>Pessoas (' + t.pessoas.length + ')</h3>';
+    if (!t.pessoas.length) box.appendChild(el('p', 'help', 'Ninguém além dos donos ainda.'));
+    else {
+      var tb = el('table'); tb.innerHTML = '<tr><th>Pessoa</th><th>Situação</th><th>Entrou por</th><th>Último contato</th><th></th></tr>';
+      t.pessoas.forEach(function (p) {
+        var tr = el('tr');
+        tr.innerHTML = '<td>' + esc(p.nome) + (p.username ? ' <span class="help">@' + esc(p.username) + '</span>' : '') + '<div class="help mono">' + p.userId + '</div></td>' +
+          '<td><span class="pill ' + (p.status === 'ativo' ? 'on' : p.status === 'pendente' ? 'warn' : 'err') + '">' + esc(p.status) + '</span></td><td>' + esc(p.origem) + '</td><td>' + esc(p.ultimoContato || '—') + '</td>';
+        var td = el('td');
+        var act = function (label, status, cls) {
+          var b = el('button', cls || '', label); b.type = 'button';
+          b.addEventListener('click', function () { busy(b, function () { return api('/api/fitas/' + f.nome + '/telegram/pessoas/' + p.userId, 'POST', { status: status }).then(function () { return refreshPeople(f, box); }); }); });
+          td.appendChild(b);
+        };
+        if (p.status !== 'ativo') act(p.status === 'pendente' ? 'Aprovar' : 'Liberar', 'ativo', 'primary');
+        if (p.status !== 'bloqueado') act(p.status === 'pendente' ? 'Recusar' : 'Bloquear', 'bloqueado', 'danger');
+        tr.appendChild(td); tb.appendChild(tr);
+      });
+      box.appendChild(tb);
+    }
+    var open = t.convites.filter(function (c) { return !c.revogado && c.usos < c.usosMax; });
+    if (open.length) {
+      box.appendChild(el('h3', '', 'Convites em aberto (' + open.length + ')'));
+      var ct = el('table'); ct.innerHTML = '<tr><th>Para</th><th>Usos</th><th>Vale até</th><th></th></tr>';
+      open.forEach(function (c) {
+        var tr = el('tr'); tr.innerHTML = '<td>' + esc(c.nome || '—') + ' <span class="help mono">' + esc(c.codigo.slice(0, 6)) + '…</span></td><td>' + c.usos + '/' + c.usosMax + '</td><td>' + esc(c.expiraEm) + '</td>';
+        var td = el('td'); var b = el('button', 'danger', 'Cancelar'); b.type = 'button';
+        b.addEventListener('click', function () { busy(b, function () { return api('/api/fitas/' + f.nome + '/telegram/convites/' + c.codigo + '/cancelar', 'POST').then(function () { return refreshPeople(f, box); }); }); });
+        td.appendChild(b); tr.appendChild(td); ct.appendChild(tr);
+      });
+      box.appendChild(ct);
+    }
+  }
+
+  function showManaged(f, out, job) {
+    out.innerHTML = '';
+    if (job.estado === 'pronto') { msg(out, 'ok', 'Bot @' + job.bot + ' criado e conectado à fita.'); load(); return; }
+    if (job.estado === 'erro') { msg(out, 'err', job.erro); return; }
+    var q = el('div', 'qr'); var img = el('img'); img.src = job.qr; img.alt = 'QR code para criar o bot'; q.appendChild(img);
+    q.appendChild(el('div', '', '<b>Escaneie com o celular</b> (ou abra o link) e confirme no Telegram. Pode trocar o nome e o @ antes.<div class="mono">' + esc(job.link) + '</div><div class="help">⏳ Esperando a confirmação…</div>'));
+    out.appendChild(q);
+    clearInterval(state.managedTimer);
+    state.managedTimer = setInterval(function () {
+      api('/api/fitas/' + f.nome + '/telegram').then(function (t) {
+        if (t.criacao && t.criacao.estado !== 'esperando') { clearInterval(state.managedTimer); showManaged(f, out, t.criacao); }
+      }).catch(function () {});
+    }, 3000);
+  }
+
+  function tabServices(f, body) {
+    var box = el('section', 'box'); box.innerHTML = '<h3>Serviços da fita (Docker)</h3><p class="help">Consultando o Docker…</p>'; body.appendChild(box);
+    api('/api/fitas/' + f.nome + '/servicos').then(function (list) {
+      box.innerHTML = '<h3>Serviços da fita (Docker)</h3><p class="help">Containers que a fita traz em <span class="mono">servicos/</span>. Subir pela primeira vez constrói a imagem (pode levar minutos).</p>';
+      list.forEach(function (s) {
+        var row = el('div', 'row');
+        row.appendChild(el('b', '', esc(s.nome)));
+        row.appendChild(el('span', 'pill ' + (s.rodando ? 'on' : s.erro ? 'err' : ''), s.rodando ? '● no ar' : s.erro ? 'erro' : 'parado'));
+        if (s.containers.length) row.appendChild(el('span', 'help', s.containers.map(function (c) { return esc(c.nome) + ': ' + esc(c.estado); }).join(' · ')));
+        var out = el('div');
+        var b = el('button', s.rodando ? 'danger' : 'primary', s.rodando ? 'Parar' : 'Subir'); b.type = 'button';
+        b.addEventListener('click', function () {
+          busy(b, function () { return api('/api/fitas/' + f.nome + '/servicos/' + s.nome + (s.rodando ? '/desligar' : '/ligar'), 'POST').then(function (r) { msg(out, r.ok ? 'ok' : 'err', r.saida || (r.ok ? 'Pronto.' : 'Falhou.')); return wait(800); }).then(function () { tabServices(f, body); }).catch(function (e) { msg(out, 'err', e.message); }); });
+        });
+        row.appendChild(b); box.appendChild(row);
+        if (s.erro) box.appendChild(el('div', 'msg err', esc(s.erro)));
+        box.appendChild(out);
+      });
+    }).catch(function (e) { msg(box, 'err', e.message); });
+  }
+
+  function tabLog(f, body) {
+    var pre = el('pre', 'log', 'Carregando…'); body.appendChild(pre);
+    var tick = function () {
+      api('/api/fitas/' + f.nome + '/log').then(function (r) {
+        var atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+        pre.textContent = r.linhas.length ? r.linhas.join('\n') : (r.rodando ? 'Sem saída ainda.' : 'A fita não foi ligada por esta página.');
+        if (atBottom) pre.scrollTop = pre.scrollHeight;
+      }).catch(function () {});
+    };
+    tick(); state.logTimer = setInterval(tick, 3000);
+  }
+
+  function tabRemove(f, body) {
+    var box = el('section', 'box');
+    box.innerHTML = '<h3>Remover a fita</h3>';
+    if (!f.removivel) { box.appendChild(el('p', 'help', 'Esta fita está fora da primeira pasta de PERFIS_DIR; remova pela pasta.')); body.appendChild(box); return; }
+    box.appendChild(el('div', 'msg warn', '⚠️ Apaga a pasta <span class="mono">' + esc(f.dir) + '</span>. Se ela é o repositório onde você edita a fita, o que não foi enviado ao Git se perde. O bot do Telegram continua existindo (apague com /deletebot no @BotFather se quiser).'));
+    var row = el('div', 'row');
+    var conf = el('input'); conf.placeholder = 'digite ' + f.nome + ' para confirmar'; conf.autocomplete = 'off';
+    var dl = el('label'); var di = el('input'); di.type = 'checkbox'; dl.appendChild(di); dl.appendChild(document.createTextNode(' apagar também os dados (dados/' + f.nome + ')'));
+    var b = el('button', 'danger', 'Remover'); b.type = 'button';
+    var out = el('div');
+    b.addEventListener('click', function () {
+      busy(b, function () {
+        return api('/api/fitas/' + f.nome, 'DELETE', { confirmacao: conf.value.trim(), apagarDados: di.checked }).then(function () { state.sel = null; return load().then(function () { renderDetail(); }); }).catch(function (e) { msg(out, 'err', e.message); });
+      });
+    });
+    row.appendChild(conf); row.appendChild(dl); row.appendChild(b);
+    box.appendChild(row); box.appendChild(out); body.appendChild(box);
+  }
+
+  // Instalar/atualizar fita com código: o servidor devolve 409 com os arquivos; a pessoa decide.
+  function codeFlow(path, body, out, trustButton) {
+    return api(path, 'POST', body).then(function (r) {
+      msg(out, 'ok', 'Pronto: ' + r.nome + (r.codigo.length ? ' (com ' + r.codigo.length + ' arquivo(s) de código, confirmados)' : '') + '.');
+      return load();
+    }).catch(function (e) {
+      if (e.status !== 409 || !e.data.precisaConfirmar) return msg(out, 'err', e.message);
+      out.innerHTML = '';
+      out.appendChild(el('div', 'msg warn', '⚠️ A fita traz <b>código</b>, que roda com o mesmo acesso do K7 (arquivos, rede, chaves do .env). Só confirme se você confia em quem fez a fita.<br><span class="mono">' + e.data.arquivos.map(esc).join('<br>') + '</span>'));
+      var t = el('button', 'danger', 'Confio, continuar'); t.type = 'button';
+      t.addEventListener('click', function () { busy(t, function () { body.confiar = true; return codeFlow(path, body, out, trustButton); }); });
+      out.appendChild(t);
+    });
+  }
+
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // ── Diálogos ─────────────────────────────────────────────────────────────
+  document.querySelectorAll('dialog [data-close]').forEach(function (b) { b.addEventListener('click', function () { b.closest('dialog').close(); }); });
+  $('btn-new').addEventListener('click', function () { $('new-name').value = ''; $('new-msg').innerHTML = ''; $('dlg-new').showModal(); });
+  $('new-ok').addEventListener('click', function () {
+    var name = $('new-name').value.trim();
+    busy($('new-ok'), function () { return api('/api/fitas', 'POST', { nome: name }).then(function () { $('dlg-new').close(); return load().then(function () { select(name); }); }).catch(function (e) { msg($('new-msg'), 'err', e.message); }); });
+  });
+  $('btn-install').addEventListener('click', function () { $('inst-msg').innerHTML = ''; $('dlg-install').showModal(); });
+  $('inst-ok').addEventListener('click', function () {
+    var body = { origem: $('inst-origin').value.trim() }; if ($('inst-name').value.trim()) body.nome = $('inst-name').value.trim();
+    busy($('inst-ok'), function () { return codeFlow('/api/instalar', body, $('inst-msg')); });
+  });
+  $('btn-refresh').addEventListener('click', function () { load(); });
+  $('theme').addEventListener('click', function () {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+    try { localStorage.setItem('k7-admin-theme', dark ? 'light' : 'dark'); } catch (e) {}
+  });
+  try { var th = localStorage.getItem('k7-admin-theme'); if (th) document.documentElement.setAttribute('data-theme', th); } catch (e) {}
+
+  if (!token) $('locked').classList.remove('hidden');
+  load().catch(function () {});
+  // A lista acompanha fitas ligadas/desligadas por fora (ex.: processo que caiu).
+  setInterval(function () { if (!document.hidden) api('/api/fitas').then(function (f) { state.fitas = f; renderList(); }).catch(function () {}); }, 10000);
+})();
+</script>
+</body>
+</html>

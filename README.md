@@ -125,6 +125,7 @@ Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw
 
 **Passo a passo para criar uma fita:** [docs/criar-fita.md](docs/criar-fita.md).
 **Ativar, desativar e remover cada parte de uma fita (roteiro para vídeo):** [docs/ativar-desativar-fitas.md](docs/ativar-desativar-fitas.md).
+**Administração das fitas pelo navegador** (só neste computador): `npm run admin -- --abrir`: ligar e desligar fitas, canais, vitrine, código e serviços, criar o bot do Telegram, convites com QR e acessos, instalar e remover.
 
 ```bash
 npm run dev -- --perfil pessoal       # bot do Telegram do perfil (cada perfil tem o seu bot)

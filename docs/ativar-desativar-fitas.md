@@ -4,11 +4,34 @@ Este guia mostra, passo a passo, como cada parte de uma fita liga e desliga no K
 **Rebobina** (a fita do YouTube, que tem código próprio, painel web e um serviço em Docker) e uma fita simples.
 Cada cena tem: **o que mostrar**, **o comando**, **o que aparece** e **como desfazer**.
 
-> **Situação hoje (v1):** instalar, ativar, desativar e remover fitas é feito **pelo terminal**
-> (`npm run perfil`, `npm run fita`, `npm run site`) e editando o `perfil.yaml`. No navegador já existem o
-> **site do K7** (vitrine com as fitas liberadas) e o **chat web** de cada fita. A **página de administração** (instalar,
-> ligar e desligar fitas clicando, só em `127.0.0.1`) e o **`/fitas` no Telegram** (um bot só, trocando de fita) estão
-> planejados, mas ainda não existem: a seção 11 diz o que muda quando chegarem. Grave o vídeo com o fluxo de hoje.
+> **Dois jeitos de fazer tudo:** pela **página de administração** (`npm run admin`, só no próprio computador),
+> clicando, ou pelo **terminal** (`npm run perfil`, `npm run fita`, `npm run site`). Cada cena mostra os dois; para o
+> vídeo, a página é o caminho mais visual. Cada fita tem o **seu bot do Telegram** e a **sua lista de acesso**.
+
+## 0. A página de administração
+
+```bash
+npm run admin -- --abrir
+```
+
+Abre `http://127.0.0.1:8770/#t=<token>` (o token muda a cada início; o endereço completo aparece no terminal). A página
+só aceita o próprio computador e só funciona com o token: ninguém da rede consegue usar.
+
+| Na página | Faz o mesmo que |
+|---|---|
+| **+ Nova fita** | `npm run perfil -- novo <nome>` |
+| **⬇ Instalar fita** (mostra os arquivos de código e pede confirmação) | `npm run perfil -- instalar <origem>` |
+| Fita → **Geral → Ligar / Desligar** (roda a fita com os canais dela; link do chat web) | `npm run dev -- --perfil <nome>` |
+| Fita → **Geral → Canais e vitrine** | editar `canais` e `vitrine` no `perfil.yaml` |
+| Fita → **Geral → Ligar / Desligar o código** | comentar ou descomentar `extensao:` |
+| Fita → **Geral → Atualizar** | `npm run perfil -- atualizar <nome>` |
+| Fita → **Telegram**: criar o bot (gerente ou token), quem pode usar, convites com QR, pessoas | `npm run perfil -- bot / convite / acessos` |
+| Fita → **Serviços → Subir / Parar** (containers da fita) | `docker compose -f servicos/<s>/docker-compose.yml up -d` / `stop` |
+| Fita → **Log** (atualiza sozinho) | a saída do terminal da fita |
+| Fita → **Remover** (digitar o nome; opção de apagar os dados) | `npm run perfil -- remover <nome> [--apagar-dados]` |
+
+Mudou canais, vitrine, código ou acesso com a fita ligada? A página avisa: desligue e ligue de novo para valer.
+Fechar a página de administração (Ctrl+C no terminal) desliga as fitas que ela ligou.
 
 Para criar o conteúdo de uma fita (identidade, skills, guardrails, extensão), veja [criar-fita.md](criar-fita.md).
 
@@ -263,10 +286,7 @@ npm run perfil -- remover cozinha-demo --apagar-dados   # também apaga dados/co
 | Extensão não carregou | O log diz o motivo (arquivo não encontrado, falta `export default function ativar`). |
 | "Serviço de downloads fora do ar" | Suba o container da fita (cena 6.1). |
 
-## 11. O que vem depois (e muda o vídeo)
+## 11. O que vem depois
 
-- **Página de administração** (só em `127.0.0.1`): lista das fitas com botões para instalar (com a mesma confirmação
-  de código), ligar e desligar canais, vitrine e extensão, e remover, sem editar arquivo nem usar o terminal. As cenas
-  2, 4, 5, 7 e 8 passam a ter a versão "clicando".
 - **Painel próprio de cada fita** (ex.: o painel da AgroMinds em Angular, para usuários e gráficos do tempo),
   descrito na spec da fita.

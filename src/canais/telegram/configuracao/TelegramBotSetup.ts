@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { Api, InputFile } from 'grammy';
+import { UserFacingError } from '../../../errors/AppErrors.js';
 import type { BotCommand } from '../botCommands.js';
 
 export interface BotInfo {
@@ -110,7 +111,7 @@ export class TelegramBotSetup {
         };
       }
     }
-    throw new Error('O bot não foi criado a tempo: abra o link no Telegram e confirme a criação.');
+    throw new UserFacingError('O bot não foi criado a tempo: abra o link no Telegram e confirme a criação.');
   }
 
   /** Troca o token de um bot criado pelo gerente (ex.: vazou). O antigo para de funcionar na hora. */

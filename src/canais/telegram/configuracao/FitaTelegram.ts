@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Config } from '../../../config/Config.js';
+import { UserFacingError } from '../../../errors/AppErrors.js';
 import { DatabaseConnection } from '../../../memory/DatabaseConnection.js';
 import { loadConfig, readManifest } from '../../../profiles/ProfileLoader.js';
 import { inviteLink, qrPng } from '../acesso/convite.js';
@@ -77,7 +78,7 @@ export class FitaTelegram {
   /** Novo convite com link e QR (PNG). Avisa se a fita ainda não está no modo convite. */
   async invite(options: { nome?: string; dias?: number; usos?: number } = {}): Promise<{ invite: Invite; link: string; png: Buffer; aviso?: string }> {
     const bot = await this.bot();
-    if (!bot) throw new Error(`a fita ${this.fita} ainda não tem bot: conecte um antes (npm run perfil -- bot ${this.fita})`);
+    if (!bot) throw new UserFacingError(`a fita ${this.fita} ainda não tem bot: conecte um antes (npm run perfil -- bot ${this.fita})`);
     const invite = this.withStore((store) => store.createInvite(options));
     const link = inviteLink(bot.username, invite.codigo);
     const mode = this.config().telegramAccess.mode;
@@ -100,7 +101,7 @@ export class FitaTelegram {
   /** Reaplica nome, descrições, comandos e foto a partir do perfil (depois de mudar o perfil.yaml ou a foto). */
   async sync(): Promise<{ feitos: string[]; falhas: string[] }> {
     const config = this.config();
-    if (!config.telegramBotToken) throw new Error(`a fita ${this.fita} não tem TELEGRAM_BOT_TOKEN`);
+    if (!config.telegramBotToken) throw new UserFacingError(`a fita ${this.fita} não tem TELEGRAM_BOT_TOKEN`);
     const descricao = config.profileDir ? readManifest(config.profileDir).descricao : '';
     return this.setup.configure(config.telegramBotToken, botProfileFor(config, descricao));
   }
@@ -109,7 +110,7 @@ export class FitaTelegram {
   async managedLink(managerToken: string): Promise<{ link: string; png: Buffer; gerente: BotInfo; sugestao: string }> {
     const gerente = await this.setup.info(managerToken);
     if (!gerente.podeGerenciar) {
-      throw new Error(`o bot @${gerente.username} ainda não pode criar bots: ligue o modo de gerenciar bots dele no @BotFather (Mini App)`);
+      throw new UserFacingError(`o bot @${gerente.username} ainda não pode criar bots: ligue o modo de gerenciar bots dele no @BotFather (Mini App)`);
     }
     const config = this.config();
     const sugestao = suggestUsername(this.fita);
