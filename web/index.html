@@ -344,8 +344,10 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     if (reply.texto) body.appendChild(el('div', 'md', markdown(reply.texto)));
     var extras = el('div', 'extras');
     (reply.imagens || []).forEach(function (img) {
-      var link = el('a', 'shot'); link.href = fileUrl(img.url); link.target = '_blank'; link.rel = 'noopener';
-      var pic = el('img'); pic.src = fileUrl(img.url); pic.alt = img.legenda || 'Imagem gerada'; pic.loading = 'lazy';
+      // Imagem em data: (ex.: o print que uma fita devolve pela rota dela) vai como está, sem o token.
+      var src = img.url.indexOf('data:') === 0 ? img.url : fileUrl(img.url);
+      var link = el('a', 'shot'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
+      var pic = el('img'); pic.src = src; pic.alt = img.legenda || 'Imagem gerada'; pic.loading = 'lazy';
       link.appendChild(pic); extras.appendChild(link);
       if (img.legenda) extras.appendChild(el('div', 'caption', esc(img.legenda)));
     });
@@ -589,6 +591,24 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     onReply: function (cb) { hooks.reply.push(cb); },
     /** true quando o chat começa a esperar uma resposta; false quando termina. */
     onBusy: function (cb) { hooks.busy.push(cb); },
+    /** Botão da fita na caixa de mensagem, ao lado do 📎 (ex.: 📍 enviar localização). Devolve o botão. */
+    botao: function (icone, titulo, aoClicar) {
+      var b = el('button', 'tool'); b.type = 'button'; b.textContent = icone; b.title = titulo;
+      b.onclick = function () { aoClicar(b); };
+      $('tools').insertBefore(b, $('send'));
+      return b;
+    },
+    /**
+     * Mostra no chat uma resposta da fita (sem passar pelo agente): { texto, erro, imagens: [{ url, legenda }] }.
+     * `voce`: o que aparece como mensagem da pessoa antes (ex.: "📍 Minha localização"). Devolve o balão da resposta,
+     * para trocar o conteúdo depois (K7.mostrar(resposta, null, balao)).
+     */
+    mostrar: function (resposta, voce, balao) {
+      if (voce) addUser(voce);
+      var body = balao || addAssistant();
+      renderReply(body, resposta || {});
+      return body;
+    },
   };
 
   // ── Início ────────────────────────────────────────────────────────────────

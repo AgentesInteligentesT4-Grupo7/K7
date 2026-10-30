@@ -404,7 +404,9 @@ página (status 422). Os demais viram "falha interna" e vão para o log.
 
 **Painel web:** o script roda depois do da página e usa `window.K7`: `api(caminho)`, `fileUrl(caminho)`,
 `authHeaders()`, `el()`, `esc()`, `saveToFolder()`, `state` e os avisos `onReady(info)`, `onReply(resposta)` e
-`onBusy(true/false)`. Rotas com `{ visitante: false }` (ex.: arquivo aberto por `<audio>`) não recebem quem é o
+`onBusy(true/false)`. Para pôr um botão na caixa de mensagem (ao lado do 📎): `botao(icone, titulo, aoClicar)`; para
+mostrar uma resposta da fita no chat sem passar pelo agente: `mostrar({ texto, erro, imagens: [{ url, legenda }] },
+"o que a pessoa fez")` (aceita imagem em `data:`; a AgroMinds usa os dois no botão 📍 dos lugares). Rotas com `{ visitante: false }` (ex.: arquivo aberto por `<audio>`) não recebem quem é o
 visitante: use ids imprevisíveis nelas.
 
 **Testes:** `testes/*.test.ts` com `node:test`, rodados por `npm run fita -- <fita> testes`. Para não depender do
