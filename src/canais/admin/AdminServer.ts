@@ -46,6 +46,11 @@ interface ManagedJob {
   estado: 'esperando' | 'pronto' | 'erro';
   link: string;
   qr: string;
+  /** Nome do bot e o @ sugerido; os @ já tentados (para "tentar outro") e os que estavam ocupados. */
+  nome: string;
+  sugestao: string;
+  tentados: string[];
+  ocupados: string[];
   bot?: string;
   erro?: string;
   abort: AbortController;
@@ -109,8 +114,8 @@ export class AdminServer {
   private readonly botNames = new Map<string, string>();
 
   private get setup(): TelegramBotSetup {
-    const apiRoot = this.options.env.TELEGRAM_API_ROOT;
-    return new TelegramBotSetup(apiRoot ? { apiRoot } : {});
+    const { TELEGRAM_API_ROOT: apiRoot, TELEGRAM_PAGINA_ROOT: paginaRoot } = this.options.env;
+    return new TelegramBotSetup({ ...(apiRoot ? { apiRoot } : {}), ...(paginaRoot ? { paginaRoot } : {}) });
   }
 
   private telegram(fita: string): FitaTelegram {
@@ -204,7 +209,7 @@ export class AdminServer {
         bot,
         botErro,
         gerenteConfigurado: Boolean(this.options.env.TELEGRAM_GERENTE_TOKEN?.trim()),
-        criacao: job ? { estado: job.estado, link: job.link, qr: job.qr, bot: job.bot ?? null, erro: job.erro ?? null } : null,
+        criacao: job ? { estado: job.estado, link: job.link, qr: job.qr, nome: job.nome, sugestao: job.sugestao, ocupados: job.ocupados, bot: job.bot ?? null, erro: job.erro ?? null } : null,
         ...telegram.overview(),
       });
     }
@@ -236,16 +241,23 @@ export class AdminServer {
     if (req.method === 'POST' && rest === '/bot/gerente') {
       const managerToken = this.options.env.TELEGRAM_GERENTE_TOKEN?.trim();
       if (!managerToken) throw new HttpError(400, 'Defina TELEGRAM_GERENTE_TOKEN no .env do K7 (o bot gerente) e reinicie a administração');
-      this.managed.get(nome)?.abort.abort();
-      const { link } = await telegram.managedLink(managerToken);
-      const job: ManagedJob = { estado: 'esperando', link, qr: await qrDataUrl(link), abort: new AbortController() };
+      // `nome`: o nome do bot (padrão: o da fita). `outro`: o Telegram recusou o @ sugerido; tenta o próximo livre.
+      const body = (await this.readJson(req)) as { nome?: string; outro?: boolean };
+      const anterior = this.managed.get(nome);
+      anterior?.abort.abort();
+      const tentados = body.outro && anterior ? anterior.tentados : [];
+      const escolhido = typeof body.nome === 'string' && body.nome.trim() ? body.nome.trim().slice(0, 64) : body.outro && anterior ? anterior.nome : undefined;
+      const r = await telegram.managedLink(managerToken, { ...(escolhido ? { nome: escolhido } : {}), excluir: tentados });
+      const job: ManagedJob = { estado: 'esperando', link: r.link, qr: await qrDataUrl(r.link), nome: r.nome, sugestao: r.sugestao, tentados: [...tentados, r.sugestao], ocupados: r.ocupados, abort: new AbortController() };
       this.managed.set(nome, job);
       // Espera a confirmação no Telegram em segundo plano; a página consulta o estado.
       void telegram
-        .completeManaged(managerToken, 15 * 60_000, job.abort.signal)
+        .completeManaged(managerToken, 15 * 60_000, job.abort.signal, r.nome)
         .then((created) => Object.assign(job, { estado: 'pronto', bot: created.bot.username }))
-        .catch((error: unknown) => Object.assign(job, { estado: 'erro', erro: error instanceof Error ? error.message : String(error) }));
-      return this.json(res, { estado: job.estado, link: job.link, qr: job.qr });
+        .catch((error: unknown) => {
+          if (!job.abort.signal.aborted) Object.assign(job, { estado: 'erro', erro: error instanceof Error ? error.message : String(error) });
+        });
+      return this.json(res, { estado: job.estado, link: job.link, qr: job.qr, nome: job.nome, sugestao: job.sugestao, ocupados: job.ocupados });
     }
     throw new HttpError(404, 'Não encontrado');
   }

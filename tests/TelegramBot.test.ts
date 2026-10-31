@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { FitaTelegram } from '../src/canais/telegram/configuracao/FitaTelegram.js';
-import { TelegramBotSetup, managedBotLink, setEnvVariable, suggestUsername } from '../src/canais/telegram/configuracao/TelegramBotSetup.js';
+import { TelegramBotSetup, candidatosDeUsername, managedBotLink, setEnvVariable } from '../src/canais/telegram/configuracao/TelegramBotSetup.js';
 
 const FITA_TOKEN = '111:fita';
 const MANAGER_TOKEN = '999:gerente';
@@ -59,14 +59,35 @@ describe('Bot do Telegram da fita: criar e configurar', () => {
     fs.writeFileSync(path.join(fitaDir, 'perfil.yaml'), 'nome: demo\ndescricao: Fita de demonstração.\nidentidade: { nome: Demo, emoji: "🧪", proposito: testar o K7 }\ncanais: [telegram, terminal]\nmodulos: []\n');
     fs.writeFileSync(path.join(fitaDir, '.env.example'), '# Token do bot\nTELEGRAM_BOT_TOKEN=\nOUTRA=1\n');
     fs.writeFileSync(path.join(fitaDir, 'bot', 'foto.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0]));
-    env = { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k', TELEGRAM_ALLOWED_USER_IDS: '1', TELEGRAM_API_ROOT: apiRoot };
+    env = { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k', TELEGRAM_ALLOWED_USER_IDS: '1', TELEGRAM_API_ROOT: apiRoot, TELEGRAM_PAGINA_ROOT: apiRoot };
   });
   after(() => server.close());
 
-  it('username sugerido e link do gerente', () => {
-    assert.equal(suggestUsername('agrominds'), 'agrominds_bot');
-    assert.equal(suggestUsername('Minha Fita!'), 'minha_fita_bot');
+  it('usernames a tentar a partir do nome do bot e link do gerente', () => {
+    assert.deepEqual(candidatosDeUsername('Receitas da Vó').slice(0, 4), ['receitas_da_vo_bot', 'receitasdavobot', 'receitas_da_vo_k7_bot', 'receitas_da_vo_br_bot']);
+    assert.equal(candidatosDeUsername('agrominds')[0], 'agrominds_bot');
+    assert.equal(candidatosDeUsername('Minha Fita!')[0], 'minha_fita_bot');
+    assert.equal(candidatosDeUsername('AgroBot')[0], 'agro_bot', 'não fica agrobot_bot');
+    assert.equal(candidatosDeUsername('2026 Safra')[0], 'k7_2026_safra_bot', 'começa com letra');
+    assert.ok(candidatosDeUsername('Um nome de bot comprido demais para o Telegram aceitar').every((u) => u.length <= 32 && /^[a-z][a-z0-9_]*bot$/.test(u)));
     assert.equal(managedBotLink('@k7_gerente_bot', 'agrominds_bot', 'AgroMinds 🌱'), 'https://t.me/newbot/k7_gerente_bot/agrominds_bot?name=AgroMinds%20%F0%9F%8C%B1');
+  });
+
+  it('escolhe o primeiro @ livre pela página t.me (ocupado tem título); pula os já tentados', async () => {
+    const ocupados = new Set(['receitas_da_vo_bot', 'receitasdavobot']);
+    const pagina = http.createServer((req, res) => {
+      const u = String(req.url).slice(1);
+      res.writeHead(200, { 'content-type': 'text/html' }).end(ocupados.has(u) ? `<div class="tgme_page_title">${u}</div>` : '<div class="tgme_page_description">If you have Telegram</div>');
+    });
+    await new Promise<void>((r) => pagina.listen(0, '127.0.0.1', r));
+    try {
+      const setup = new TelegramBotSetup({ paginaRoot: `http://127.0.0.1:${(pagina.address() as AddressInfo).port}` });
+      assert.deepEqual(await setup.escolherUsername('Receitas da Vó'), { username: 'receitas_da_vo_k7_bot', ocupados: ['receitas_da_vo_bot', 'receitasdavobot'] });
+      assert.equal((await setup.escolherUsername('Receitas da Vó', new Set(['receitas_da_vo_k7_bot']))).username, 'receitas_da_vo_br_bot', 'o Telegram recusou: tenta o próximo');
+    } finally {
+      pagina.close();
+    }
+    assert.equal(await new TelegramBotSetup({ paginaRoot: 'http://127.0.0.1:9' }).usernameLivre('qualquer_bot'), undefined, 'sem rede: não sabe');
   });
 
   it('.env da fita: grava o token sem mexer no resto (começa pelo .env.example)', () => {

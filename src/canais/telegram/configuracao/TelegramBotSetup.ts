@@ -32,10 +32,17 @@ export interface ManagedBot {
   criadoPor: { id: number; nome: string };
 }
 
-/** Username de bot: 5 a 32 caracteres, letras, números e _, terminando em "bot". */
-export function suggestUsername(fita: string): string {
-  const base = fita.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24) || 'fita';
-  return /bot$/.test(base) ? base : `${base}_bot`;
+/**
+ * Usernames para tentar, em ordem, a partir do nome do bot ("Receitas da Vó" → receitas_da_vo_bot, receitasdavobot,
+ * receitas_da_vo_k7_bot, ..., receitas_da_vo2_bot ...): 5 a 32 caracteres, começa com letra, termina em "bot".
+ */
+export function candidatosDeUsername(nome: string): string[] {
+  let base = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_?bot$/, '');
+  if (!/^[a-z]/.test(base)) base = `k7_${base}`.replace(/_+$/, '');
+  base = base.slice(0, 22).replace(/_+$/, '');
+  const junto = base.replace(/_/g, '');
+  const lista = [`${base}_bot`, `${junto}bot`, `${base}_k7_bot`, `${base}_br_bot`, `${base}_oficial_bot`, ...Array.from({ length: 19 }, (_, i) => `${base}${i + 2}_bot`)];
+  return [...new Set(lista)].filter((u) => u.length >= 5 && u.length <= 32);
 }
 
 /** Link que abre o Telegram já com o pedido de criar o bot (nome e @ preenchidos) pelo bot gerente. */
@@ -49,7 +56,32 @@ export function managedBotLink(managerUsername: string, suggestedUsername: strin
  * pelo @BotFather a cada fita. Nunca registra tokens no log.
  */
 export class TelegramBotSetup {
-  constructor(private readonly options: { apiRoot?: string } = {}) {}
+  constructor(private readonly options: { apiRoot?: string; paginaRoot?: string } = {}) {}
+
+  /**
+   * O username está livre? Pela página pública `t.me/<username>`: quem existe (pessoa, bot, canal) tem título com o
+   * nome; livre não tem. `undefined` = não deu para saber (sem rede): o Telegram decide na hora de criar.
+   */
+  async usernameLivre(username: string): Promise<boolean | undefined> {
+    try {
+      const r = await fetch(`${this.options.paginaRoot ?? 'https://t.me'}/${username}`, { headers: { 'user-agent': 'K7/1.0 (projeto academico UFG)' }, signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) return undefined;
+      return !(await r.text()).includes('tgme_page_title');
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** O primeiro username livre para o nome (pulando `excluir`); devolve também os que estavam ocupados. */
+  async escolherUsername(nome: string, excluir: ReadonlySet<string> = new Set()): Promise<{ username: string; ocupados: string[] }> {
+    const ocupados: string[] = [];
+    for (const candidato of candidatosDeUsername(nome)) {
+      if (excluir.has(candidato)) continue;
+      if ((await this.usernameLivre(candidato)) === false) ocupados.push(candidato);
+      else return { username: candidato, ocupados };
+    }
+    throw new UserFacingError(`Todos os nomes de usuário tentados para "${nome}" estão ocupados (${ocupados.length}). Escolha outro nome para o bot.`);
+  }
 
   private api(token: string): Api {
     return new Api(token, this.options.apiRoot ? { apiRoot: this.options.apiRoot } : undefined);

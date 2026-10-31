@@ -7,7 +7,7 @@ import { loadConfig, readManifest } from '../../../profiles/ProfileLoader.js';
 import { inviteLink, qrPng } from '../acesso/convite.js';
 import { type AccessEntry, type AccessStatus, type Invite, TelegramAccessStore } from '../acesso/TelegramAccessStore.js';
 import { botProfileFor } from './perfilDoBot.js';
-import { type BotInfo, type ManagedBot, TelegramBotSetup, managedBotLink, setEnvVariable, suggestUsername } from './TelegramBotSetup.js';
+import { type BotInfo, type ManagedBot, TelegramBotSetup, managedBotLink, setEnvVariable } from './TelegramBotSetup.js';
 
 export interface AccessOverview {
   modo: Config['telegramAccess']['mode'];
@@ -29,7 +29,9 @@ export class FitaTelegram {
     readonly fita: string,
     private readonly options: { rootDir?: string; env?: NodeJS.ProcessEnv; setup?: TelegramBotSetup } = {},
   ) {
-    this.setup = options.setup ?? new TelegramBotSetup(options.env?.TELEGRAM_API_ROOT ? { apiRoot: options.env.TELEGRAM_API_ROOT } : {});
+    // TELEGRAM_API_ROOT e TELEGRAM_PAGINA_ROOT: outro endereço para a API e para as páginas t.me (testes).
+    const env = options.env ?? {};
+    this.setup = options.setup ?? new TelegramBotSetup({ ...(env.TELEGRAM_API_ROOT ? { apiRoot: env.TELEGRAM_API_ROOT } : {}), ...(env.TELEGRAM_PAGINA_ROOT ? { paginaRoot: env.TELEGRAM_PAGINA_ROOT } : {}) });
   }
 
   /** Config da fita, relida a cada uso (o .env pode ter acabado de mudar). */
@@ -103,32 +105,39 @@ export class FitaTelegram {
     const config = this.config();
     if (!config.telegramBotToken) throw new UserFacingError(`a fita ${this.fita} não tem TELEGRAM_BOT_TOKEN`);
     const descricao = config.profileDir ? readManifest(config.profileDir).descricao : '';
-    return this.setup.configure(config.telegramBotToken, botProfileFor(config, descricao));
+    const nome = config.env.TELEGRAM_BOT_NOME?.trim();
+    return this.setup.configure(config.telegramBotToken, { ...botProfileFor(config, descricao), ...(nome ? { nome } : {}) });
   }
 
   /** Link (e QR) para criar o bot da fita pelo gerente; o dono abre no Telegram e confirma. */
-  async managedLink(managerToken: string): Promise<{ link: string; png: Buffer; gerente: BotInfo; sugestao: string }> {
+  /**
+   * `nome` = o nome do bot (padrão: o da fita); o @ é o primeiro livre entre as variações dele, pulando `excluir`
+   * (os que o Telegram já recusou).
+   */
+  async managedLink(managerToken: string, opcoes: { nome?: string; excluir?: string[] } = {}): Promise<{ link: string; png: Buffer; gerente: BotInfo; sugestao: string; ocupados: string[]; nome: string }> {
     const gerente = await this.setup.info(managerToken);
     if (!gerente.podeGerenciar) {
       throw new UserFacingError(`o bot @${gerente.username} ainda não pode criar bots: ligue o modo de gerenciar bots dele no @BotFather (Mini App)`);
     }
-    const config = this.config();
-    const sugestao = suggestUsername(this.fita);
-    const link = managedBotLink(gerente.username, sugestao, config.identity.name);
-    return { link, png: await qrPng(link), gerente, sugestao };
+    const nome = opcoes.nome?.trim().slice(0, 64) || this.config().identity.name;
+    const { username: sugestao, ocupados } = await this.setup.escolherUsername(nome, new Set(opcoes.excluir ?? []));
+    const link = managedBotLink(gerente.username, sugestao, nome);
+    return { link, png: await qrPng(link), gerente, sugestao, ocupados, nome };
   }
 
   /**
    * Espera o dono confirmar a criação, grava o token (e, se a fita não tiver donos, quem confirmou) e aplica o perfil.
    * `owners` vazio aceita o primeiro bot criado pelo gerente nesse intervalo.
    */
-  async completeManaged(managerToken: string, timeoutMs: number, signal?: AbortSignal): Promise<ManagedBot & { feitos: string[]; falhas: string[] }> {
+  async completeManaged(managerToken: string, timeoutMs: number, signal?: AbortSignal, nome?: string): Promise<ManagedBot & { feitos: string[]; falhas: string[] }> {
     const config = this.config();
     const created = await this.setup.waitManagedBot(managerToken, { owners: config.allowedUserIds, timeoutMs, ...(signal ? { signal } : {}) });
     const dir = config.profileDir!;
     const envFile = path.join(dir, '.env');
     setEnvVariable(envFile, 'TELEGRAM_BOT_TOKEN', created.token, path.join(dir, '.env.example'));
     if (!config.allowedUserIds.size) setEnvVariable(envFile, 'TELEGRAM_ALLOWED_USER_IDS', String(created.criadoPor.id));
+    // O nome escolhido na criação continua valendo quando o perfil é reaplicado.
+    if (nome?.trim() && nome.trim() !== config.identity.name) setEnvVariable(envFile, 'TELEGRAM_BOT_NOME', nome.trim().slice(0, 64));
     return { ...created, ...(await this.sync()) };
   }
 

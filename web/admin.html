@@ -315,13 +315,20 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     else if (t.botErro) bot.appendChild(el('div', 'msg err', 'O token gravado não funciona: ' + esc(t.botErro)));
     else bot.appendChild(el('p', 'help', 'Esta fita ainda não tem bot. Cada fita tem o seu bot e a sua lista de quem pode usar.'));
     var out = el('div');
-    var row = el('div', 'row');
+    // Criar pelo gerente: só o nome do bot; o @ livre o K7 escolhe (tenta variações até achar um).
+    var criar = el('div', 'row');
+    var nomeBot = el('input'); nomeBot.placeholder = 'Nome do bot (ex.: ' + f.titulo + ')'; nomeBot.maxLength = 64; nomeBot.style.flex = '1';
+    nomeBot.setAttribute('aria-label', 'Nome do bot');
     var mg = el('button', t.bot ? '' : 'primary', t.bot ? 'Criar outro pelo bot gerente' : 'Criar pelo bot gerente'); mg.type = 'button';
-    if (!t.gerenteConfigurado) { mg.disabled = true; mg.title = 'Defina TELEGRAM_GERENTE_TOKEN no .env do K7'; }
-    mg.addEventListener('click', function () {
-      busy(mg, function () { return api('/api/fitas/' + f.nome + '/telegram/bot/gerente', 'POST').then(function (r) { showManaged(f, out, r); }).catch(function (e) { msg(out, 'err', e.message); }); });
-    });
-    row.appendChild(mg);
+    if (!t.gerenteConfigurado) { mg.disabled = true; nomeBot.disabled = true; mg.title = 'Defina TELEGRAM_GERENTE_TOKEN no .env do K7'; }
+    var pedir = function (corpo, botao) {
+      return busy(botao, function () { return api('/api/fitas/' + f.nome + '/telegram/bot/gerente', 'POST', corpo).then(function (r) { showManaged(f, out, r, pedir); }).catch(function (e) { msg(out, 'err', e.message); }); });
+    };
+    mg.addEventListener('click', function () { pedir(nomeBot.value.trim() ? { nome: nomeBot.value.trim() } : {}, mg); });
+    nomeBot.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); mg.click(); } });
+    criar.appendChild(nomeBot); criar.appendChild(mg);
+    bot.appendChild(criar);
+    var row = el('div', 'row');
     var tok = el('input'); tok.type = 'password'; tok.placeholder = 'ou cole o token do @BotFather'; tok.autocomplete = 'off'; tok.style.flex = '1';
     var tb = el('button', '', 'Conectar token'); tb.type = 'button';
     tb.addEventListener('click', function () {
@@ -333,8 +340,14 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
       });
     });
     row.appendChild(tok); row.appendChild(tb);
-    bot.appendChild(row);
-    if (!t.gerenteConfigurado) bot.appendChild(el('p', 'help', 'Para criar sem o BotFather: crie uma vez um bot "gerente", ligue nele o modo de gerenciar bots (Mini App do @BotFather) e ponha o token em TELEGRAM_GERENTE_TOKEN no .env do K7.'));
+    if (t.gerenteConfigurado) {
+      // Com o gerente, só o nome basta; colar token fica para quem já tem um bot do @BotFather.
+      var jaTenho = el('details'); jaTenho.appendChild(el('summary', 'help', 'Já tenho um bot criado no @BotFather (colar o token)'));
+      jaTenho.appendChild(row); bot.appendChild(jaTenho);
+    } else {
+      bot.appendChild(row);
+      bot.appendChild(el('p', 'help', 'Para criar só com o nome, sem pegar token: crie uma vez um bot "gerente" no @BotFather, ligue nele o modo de gerenciar bots (Mini App) e ponha o token dele em TELEGRAM_GERENTE_TOKEN no .env do K7. Depois disso, todo bot de fita sai só com o nome.'));
+    }
     if (t.bot) {
       var sy = el('button', '', 'Reaplicar nome, descrição, comandos e foto'); sy.type = 'button';
       sy.addEventListener('click', function () {
@@ -429,17 +442,27 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     }
   }
 
-  function showManaged(f, out, job) {
+  function showManaged(f, out, job, pedir) {
     out.innerHTML = '';
     if (job.estado === 'pronto') { msg(out, 'ok', 'Bot @' + job.bot + ' criado e conectado à fita.'); load(); return; }
     if (job.estado === 'erro') { msg(out, 'err', job.erro); return; }
+    if (job.sugestao) {
+      out.appendChild(el('div', 'msg ok', '<b>' + esc(job.nome) + '</b> · @' + esc(job.sugestao) + ' está livre' +
+        (job.ocupados && job.ocupados.length ? ' (ocupados: ' + job.ocupados.map(function (u) { return '@' + esc(u); }).join(', ') + ')' : '') + '.'));
+    }
     var q = el('div', 'qr'); var img = el('img'); img.src = job.qr; img.alt = 'QR code para criar o bot'; q.appendChild(img);
-    q.appendChild(el('div', '', '<b>Escaneie com o celular</b> (ou abra o link) e confirme no Telegram. Pode trocar o nome e o @ antes.<div class="mono">' + esc(job.link) + '</div><div class="help">⏳ Esperando a confirmação…</div>'));
+    var lado = el('div', '', '<b>Escaneie com o celular</b> (ou abra o link) e confirme no Telegram.<div class="mono">' + esc(job.link) + '</div><div class="help">⏳ Esperando a confirmação…</div>');
+    if (pedir) {
+      var outro = el('button', '', 'O Telegram disse que esse @ já existe? Tentar outro'); outro.type = 'button';
+      outro.addEventListener('click', function () { pedir({ outro: true }, outro); });
+      lado.appendChild(outro);
+    }
+    q.appendChild(lado);
     out.appendChild(q);
     clearInterval(state.managedTimer);
     state.managedTimer = setInterval(function () {
       api('/api/fitas/' + f.nome + '/telegram').then(function (t) {
-        if (t.criacao && t.criacao.estado !== 'esperando') { clearInterval(state.managedTimer); showManaged(f, out, t.criacao); }
+        if (t.criacao && t.criacao.estado !== 'esperando') { clearInterval(state.managedTimer); showManaged(f, out, t.criacao, pedir); }
       }).catch(function () {});
     }, 3000);
   }

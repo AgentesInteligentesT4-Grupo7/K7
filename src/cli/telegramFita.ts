@@ -9,7 +9,7 @@ type Option = (name: string) => string | undefined;
 const ICON: Record<AccessStatus, string> = { ativo: '✅', pendente: '🙋', bloqueado: '⛔' };
 
 /**
- * `npm run perfil -- bot <fita> [--token | --gerente]`: conecta e configura o bot do Telegram da fita.
+ * `npm run perfil -- bot <fita> [--token | --gerente [--nome "Nome do bot"]]`: conecta e configura o bot do Telegram da fita.
  * Sem opção: se a fita já tem token, reaplica nome/descrição/comandos/foto; se não, explica os dois caminhos.
  */
 export async function botCommand(fita: string, args: string[], option: Option): Promise<void> {
@@ -17,12 +17,14 @@ export async function botCommand(fita: string, args: string[], option: Option): 
   if (args.includes('--gerente')) {
     const managerToken = process.env.TELEGRAM_GERENTE_TOKEN?.trim();
     if (!managerToken) throw new Error('defina TELEGRAM_GERENTE_TOKEN no .env do K7 (o token do bot gerente, criado no @BotFather com o modo de gerenciar bots ligado)');
-    const { link, gerente, sugestao } = await telegram.managedLink(managerToken);
-    console.log(`\n🤖 Criar o bot da fita "${fita}" pelo gerente @${gerente.username} (sugestão: @${sugestao}).`);
-    console.log('   Abra no celular (ou escaneie) e confirme no Telegram; pode trocar o nome e o @ antes de confirmar:\n');
+    // --nome "Receitas da Vó": o nome do bot; o @ é o primeiro livre entre as variações dele.
+    const nomeBot = option('nome');
+    const { link, gerente, sugestao, ocupados, nome } = await telegram.managedLink(managerToken, nomeBot ? { nome: nomeBot } : {});
+    console.log(`\n🤖 Criar o bot "${nome}" da fita "${fita}" pelo gerente @${gerente.username}: @${sugestao} está livre${ocupados.length ? ` (ocupados: ${ocupados.map((u) => `@${u}`).join(', ')})` : ''}.`);
+    console.log('   Abra no celular (ou escaneie) e confirme no Telegram:\n');
     console.log(await qrTerminal(link));
     console.log(`   ${link}\n\n⏳ Esperando a confirmação (até 10 min)…`);
-    const created = await telegram.completeManaged(managerToken, 10 * 60_000);
+    const created = await telegram.completeManaged(managerToken, 10 * 60_000, undefined, nome);
     console.log(`✅ Bot @${created.bot.username} criado por ${created.criadoPor.nome} e conectado à fita (token gravado no .env da fita).`);
     return printSync(created);
   }
