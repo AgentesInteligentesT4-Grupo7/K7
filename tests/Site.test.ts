@@ -71,6 +71,36 @@ describe('Site do K7', () => {
     assert.equal(launches.length, 1, 'um processo por fita');
   });
 
+  it('com domínio: <fita>.dominio abre o chat na raiz; www volta ao domínio; fora da vitrine, 404', async () => {
+    // Reaproveita o "chat de mentira" da rebobina ligado no teste anterior.
+    const port = launches[0]!.port;
+    const comDominio = new SiteServer({
+      host: '127.0.0.1', port: 0, tapeBasePort: port, listTapes: () => TAPES, dominio: 'exemplo.com.br',
+      launch: (_nome, p) => ({ port: p, stop: () => undefined, onExit: () => undefined }),
+    });
+    await comDominio.start();
+    const origem = new URL(comDominio.url).origin;
+    const pedir = (host: string, caminho: string) =>
+      new Promise<{ status: number; corpo: string; location?: string }>((resolve) =>
+        http.get(`${origem}${caminho}`, { headers: { host } }, (res) => {
+          let corpo = '';
+          res.on('data', (c) => (corpo += c));
+          res.on('end', () => resolve({ status: res.statusCode!, corpo, ...(res.headers.location ? { location: res.headers.location } : {}) }));
+        }),
+      );
+    try {
+      assert.deepEqual(JSON.parse((await pedir('rebobina.exemplo.com.br', '/api/info')).corpo), { fita: 'rebobina', caminho: '/api/info' });
+      assert.equal((await pedir('pessoal.exemplo.com.br', '/')).status, 404);
+      assert.equal((await pedir('a.b.exemplo.com.br', '/')).status, 404);
+      assert.equal((await pedir('www.exemplo.com.br', '/x?y=1')).location, 'https://exemplo.com.br/x?y=1');
+      assert.equal((await pedir('exemplo.com.br', '/')).status, 200);
+      const tocar = await fetch(`${origem}/api/fitas/rebobina/tocar`, { method: 'POST' });
+      assert.equal(((await tocar.json()) as { url: string }).url, 'https://rebobina.exemplo.com.br/');
+    } finally {
+      await comDominio.stop();
+    }
+  });
+
   it('desligar o site desliga as fitas', async () => {
     const other = new SiteServer({ host: '127.0.0.1', port: 0, tapeBasePort: 19400 + Math.floor(Math.random() * 300), listTapes: () => TAPES, launch: (nome, port) => {
       const child = http.createServer((_req, res) => res.writeHead(200).end('ok')).listen(port, '127.0.0.1');
@@ -96,5 +126,33 @@ describe('Vitrine das fitas', () => {
     write('fechada', 'vitrine: false\n');
     assert.deepEqual(showcaseTapes({ PERFIS_DIR: dir }, dir), [{ nome: 'aberta', titulo: 'ABERTA', emoji: '🎵', descricao: 'Fita aberta' }]);
     assert.throws(() => parseManifest('nome: x\nmodulos: [arquivos]\nvitrine: sim\n'), /vitrine/);
+  });
+});
+
+describe('Site do K7: fita liberada depois', () => {
+  it('fita nova na vitrine não cai na porta de uma fita já ligada', async () => {
+    const vitrine: ShowcaseTape[] = [{ nome: 'rebobina', titulo: 'Rebobina', emoji: '🎧', descricao: '' }];
+    const portas = new Map<string, number>();
+    const site = new SiteServer({
+      host: '127.0.0.1', port: 0, tapeBasePort: 19800 + Math.floor(Math.random() * 100), listTapes: () => vitrine, startTimeoutMs: 5_000,
+      launch: (nome, port) => {
+        portas.set(nome, port);
+        const child = http.createServer((_req, res) => res.end(JSON.stringify({ fita: nome })));
+        child.listen(port, '127.0.0.1');
+        return { port, stop: () => child.close(), onExit: () => undefined };
+      },
+    });
+    await site.start();
+    const origem = new URL(site.url).origin;
+    try {
+      assert.equal((await fetch(`${origem}/api/fitas/rebobina/tocar`, { method: 'POST' })).status, 200);
+      // A nova entra na frente da lista (ordem alfabética), como a agrominds.
+      vitrine.unshift({ nome: 'agrominds', titulo: 'AgroMinds', emoji: '🌱', descricao: '' });
+      assert.deepEqual(await (await fetch(`${origem}/fita/agrominds/`)).json(), { fita: 'agrominds' });
+      assert.deepEqual(await (await fetch(`${origem}/fita/rebobina/`)).json(), { fita: 'rebobina' });
+      assert.notEqual(portas.get('agrominds'), portas.get('rebobina'));
+    } finally {
+      await site.stop();
+    }
   });
 });

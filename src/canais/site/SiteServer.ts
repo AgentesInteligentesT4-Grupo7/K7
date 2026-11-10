@@ -34,11 +34,17 @@ export interface SiteOptions {
   launch?: (nome: string, port: number) => RunningTape;
   /** Espera máxima até o chat da fita responder. */
   startTimeoutMs?: number;
+  /**
+   * Domínio do site (ex.: exemplo.com.br, com um curinga *.exemplo.com.br no túnel): cada fita da vitrine abre também
+   * em <fita>.exemplo.com.br, sem configurar nada por fita; www volta para o domínio.
+   */
+  dominio?: string;
 }
 
 const PAGE = fileURLToPath(new URL('../../../web/site.html', import.meta.url));
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const TAPE_PATH = /^\/fita\/([a-z0-9][a-z0-9-]{0,39})(\/.*)?$/;
+const TAPE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 /**
  * Site do K7: escolhe a fita (só as liberadas) e repassa o chat dela pelo mesmo endereço (`/fita/<nome>/`).
@@ -49,6 +55,7 @@ export class SiteServer {
   private readonly logger = new Logger('Site');
   private server?: http.Server;
   private readonly running = new Map<string, { tape: RunningTape; ready: Promise<void> }>();
+  private readonly ports = new Map<string, number>();
 
   constructor(private readonly options: SiteOptions) {}
 
@@ -83,13 +90,17 @@ export class SiteServer {
   private async route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       const url = new URL(req.url ?? '/', 'http://local');
+      const sub = this.subdominio(req);
+      if (sub === 'www') return void res.writeHead(301, { location: `https://${this.options.dominio}${url.pathname}${url.search}` }).end();
+      // <fita>.dominio: o chat da fita na raiz do endereço (fora da vitrine: 404).
+      if (sub) return this.proxy(req, res, await this.ensure(sub), `${url.pathname}${url.search}`);
       if (req.method === 'GET' && url.pathname === '/') return this.sendPage(res);
       if (req.method === 'GET' && url.pathname === '/favicon.ico') return void res.writeHead(204).end();
       if (req.method === 'GET' && url.pathname === '/api/fitas') return this.json(res, this.options.listTapes());
       const play = /^\/api\/fitas\/([a-z0-9][a-z0-9-]{0,39})\/tocar$/.exec(url.pathname);
       if (req.method === 'POST' && play) {
         await this.ensure(play[1]!);
-        return this.json(res, { ok: true, url: `/fita/${play[1]}/` });
+        return this.json(res, { ok: true, url: this.options.dominio ? `https://${play[1]}.${this.options.dominio}/` : `/fita/${play[1]}/` });
       }
       const tape = TAPE_PATH.exec(url.pathname);
       if (tape) {
@@ -107,14 +118,31 @@ export class SiteServer {
     }
   }
 
+  /** "agrominds" em agrominds.<dominio> (Host do pedido); undefined no próprio domínio ou sem SITE_DOMINIO. */
+  private subdominio(req: http.IncomingMessage): string | undefined {
+    const dominio = this.options.dominio;
+    const host = String(req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '');
+    if (!dominio || !host.endsWith(`.${dominio}`)) return undefined;
+    const sub = host.slice(0, -dominio.length - 1);
+    if (!TAPE_NAME.test(sub)) throw new SiteError(404, 'Endereço não encontrado.');
+    return sub;
+  }
+
+  /**
+   * Porta fixa por fita enquanto o site roda. Não pela posição na vitrine: liberar uma fita nova mudaria a posição das
+   * outras, e a nova cairia na porta de uma fita já ligada (abrindo o chat errado).
+   */
+  private portFor(nome: string): number {
+    if (!this.ports.has(nome)) this.ports.set(nome, this.options.tapeBasePort + this.ports.size);
+    return this.ports.get(nome)!;
+  }
+
   /** Liga o chat da fita (uma vez) e espera ele responder; devolve a porta. */
   private async ensure(nome: string): Promise<number> {
-    const tapes = this.options.listTapes();
-    const index = tapes.findIndex((t) => t.nome === nome);
-    if (index < 0) throw new SiteError(404, 'Essa fita não está disponível no site.');
+    if (!this.options.listTapes().some((t) => t.nome === nome)) throw new SiteError(404, 'Essa fita não está disponível no site.');
     let entry = this.running.get(nome);
     if (!entry) {
-      const port = this.options.tapeBasePort + index;
+      const port = this.portFor(nome);
       const tape = (this.options.launch ?? launchTape)(nome, port);
       tape.onExit(() => {
         if (this.running.get(nome)?.tape === tape) this.running.delete(nome);

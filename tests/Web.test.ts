@@ -34,7 +34,21 @@ function fakeCore(): Core {
     tts: { name: 'tts', voice: 'v', synthesize: async () => ({ audio: Buffer.from('ogg'), format: 'ogg' }) },
     stt: { transcribe: async () => 'transcrito' },
     documents: new DocumentExtractor(),
-    extensions: { routes: [] },
+    extensions: {
+      routes: [
+        {
+          method: 'POST',
+          path: /^\/api\/x\/demorado$/,
+          visitor: true,
+          handler: async (ctx: { lerJson(): Promise<unknown>; json(d: unknown, s?: number): void; falhar(s: number, m: string): never }) => {
+            const body = (await ctx.lerJson()) as { n?: number };
+            if (!body.n) ctx.falhar(400, 'Informe n');
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            ctx.json({ dobro: body.n! * 2 });
+          },
+        },
+      ],
+    },
     createController: (output: IOutputHandler) => ({
       async handle(input: AgentInput) {
         inputs.push(input);
@@ -202,6 +216,32 @@ describe('Canal web', () => {
     assert.ok(!left.some((c) => c.id === first));
     assert.equal(memory.countMessages(first), 0, 'as mensagens foram apagadas');
     assert.equal((await api(`/api/conversas/${first}`, { method: 'DELETE' })).status, 404);
+  });
+
+  it('pedido longo (X-Pedido): 202 na hora, repetir não duplica e a resposta vem por /api/pedidos', async () => {
+    const id = 'pedido-de-teste-0001';
+    const before = inputs.length;
+    const send = () => api('/api/mensagens', { method: 'POST', body: JSON.stringify({ texto: 'demora' }), headers: { 'x-pedido': id } });
+    const first = await send();
+    assert.equal(first.status, 202);
+    assert.deepEqual(await first.json(), { pedido: id });
+    assert.equal((await send()).status, 202, 'a página repetiu o envio depois de uma falha de rede');
+    const reply = (await (await api(`/api/pedidos/${id}`)).json()) as Record<string, unknown>;
+    assert.equal(reply.texto, 'eco: demora');
+    assert.equal(inputs.length, before + 1, 'o agente recebeu a mensagem uma vez só');
+    const gone = await api(`/api/pedidos/${id}`);
+    assert.equal(gone.status, 404, 'entregue uma vez; depois some');
+    assert.match(((await gone.json()) as { erro: string }).erro, /Mande de novo/);
+  });
+
+  it('rota da fita como pedido longo: o corpo é lido antes do 202 e o JSON (ou o erro) vem por /api/pedidos', async () => {
+    const send = (id: string, body: unknown) => api('/api/x/demorado', { method: 'POST', body: JSON.stringify(body), headers: { 'x-pedido': id } });
+    assert.equal((await send('rota-longa-000000001', { n: 21 })).status, 202);
+    assert.deepEqual(await (await api('/api/pedidos/rota-longa-000000001')).json(), { dobro: 42 });
+    assert.equal((await send('rota-longa-000000002', {})).status, 202);
+    const failed = await api('/api/pedidos/rota-longa-000000002');
+    assert.equal(failed.status, 400);
+    assert.deepEqual(await failed.json(), { erro: 'Informe n' });
   });
 
   it('informações do agente para a página', async () => {

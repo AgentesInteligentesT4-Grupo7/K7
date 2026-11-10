@@ -17,6 +17,7 @@ import { TELEGRAM_ACCESS_MODES, type TelegramAccessMode } from '../../config/Con
 import { UserFacingError } from '../../errors/AppErrors.js';
 import { GrammyError } from 'grammy';
 import { Logger } from '../../utils/Logger.js';
+import type { AcessoCloudflare, Papel, PessoasDaAdmin } from './AdminPessoas.js';
 import { FitaRunner } from './FitaRunner.js';
 import { FitaServices } from './FitaServices.js';
 
@@ -28,6 +29,16 @@ export interface AdminServerOptions {
   env: NodeJS.ProcessEnv;
   /** Fixo (ADMIN_TOKEN) ou gerado a cada início. */
   token?: string;
+  /** Onde escuta (padrão 127.0.0.1). No Docker, 0.0.0.0 dentro do container; a porta só sai para o 127.0.0.1 do PC e o túnel. */
+  host?: string;
+  /**
+   * Domínios públicos aceitos além do 127.0.0.1 (ex.: admin.exemplo.com.br), sempre atrás do Cloudflare Access: o
+   * pedido que chega por eles sem o cabeçalho do Access é recusado (Access desligado não abre a página para todos).
+   */
+  dominios?: string[];
+  /** Pelo domínio público: confere o login do Access e dá o papel de cada e-mail (aba Pessoas). */
+  acesso?: AcessoCloudflare;
+  pessoas?: PessoasDaAdmin;
   runner?: FitaRunner;
   services?: FitaServices;
 }
@@ -86,9 +97,17 @@ export class AdminServer {
     this.server = http.createServer((req, res) => void this.route(req, res));
     await new Promise<void>((resolve, reject) => {
       this.server!.once('error', reject);
-      // Sempre só no próprio computador: a página liga processos e grava arquivos.
-      this.server!.listen(this.options.port, '127.0.0.1', () => resolve());
+      // Por padrão só no próprio computador: a página liga processos e grava arquivos.
+      this.server!.listen(this.options.port, this.options.host ?? '127.0.0.1', () => resolve());
     });
+  }
+
+  /** Liga uma fita como o botão Ligar da página (ADMIN_LIGAR: as que sobem junto com a administração). */
+  ligar(nome: string): void {
+    const fita = listProfiles(this.dirs).find((p) => p.name === nome);
+    if (!fita) throw new Error(`fita "${nome}" não encontrada`);
+    this.checkOwnBot(nome, fita.dir);
+    this.runner.start(nome);
   }
 
   async stop(): Promise<void> {
@@ -129,11 +148,14 @@ export class AdminServer {
       if (req.method === 'GET' && url.pathname === '/') return this.sendPage(res);
       if (req.method === 'GET' && url.pathname === '/favicon.ico') return void res.writeHead(204).end();
       if (!url.pathname.startsWith('/api/')) throw new HttpError(404, 'Não encontrado');
-      this.checkToken(req.headers['x-token']);
+      const quem = await this.quem(req);
       // Pedido que muda algo precisa vir da própria página (JSON): formulários de outros sites não conseguem.
       if (req.method !== 'GET' && !String(req.headers['content-type'] ?? '').includes('application/json')) throw new HttpError(415, 'Envie JSON');
 
       const p = url.pathname;
+      if (req.method === 'GET' && p === '/api/eu') return this.json(res, quem);
+      this.autorizar(quem.papel, req.method ?? 'GET', p);
+      if (p === '/api/pessoas') return await this.pessoasRoute(req, res);
       if (req.method === 'GET' && p === '/api/fitas') return this.json(res, await this.listFitas());
       if (req.method === 'GET' && p === '/api/bots') return this.json(res, await this.bots());
       if (req.method === 'POST' && p === '/api/fitas') {
@@ -399,7 +421,53 @@ export class AdminServer {
   private checkHost(req: http.IncomingMessage): void {
     const address = this.server?.address();
     const port = address && typeof address === 'object' ? address.port : this.options.port;
-    if (!new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(String(req.headers.host ?? '').toLowerCase())) throw new HttpError(421, 'Host não permitido');
+    const host = String(req.headers.host ?? '').toLowerCase();
+    if (new Set([`127.0.0.1:${port}`, `localhost:${port}`]).has(host)) return;
+    if (!(this.options.dominios ?? []).includes(host)) throw new HttpError(421, 'Host não permitido');
+    if (!req.headers['cf-access-jwt-assertion']) throw new HttpError(403, 'Este endereço só abre pelo Cloudflare Access');
+  }
+
+  /** No próprio computador: o token (dono). Pelo domínio: o e-mail do login do Access e o papel dele. */
+  private async quem(req: http.IncomingMessage): Promise<{ email: string | null; papel: Papel; local: boolean }> {
+    const jwt = req.headers['cf-access-jwt-assertion'];
+    if (!jwt) {
+      this.checkToken(req.headers['x-token']);
+      return { email: null, papel: 'dono', local: true };
+    }
+    if (!this.options.acesso || !this.options.pessoas) throw new HttpError(503, 'Login pelo domínio não configurado (CF_ACCESS_EQUIPE e CF_ACCESS_AUD no .env do K7)');
+    let email: string;
+    try {
+      email = await this.options.acesso.email(String(jwt));
+    } catch (error) {
+      throw new HttpError(401, error instanceof Error ? error.message : String(error));
+    }
+    const papel = this.options.pessoas.papel(email);
+    if (!papel) throw new HttpError(403, `${email} ainda não tem acesso. Peça a um dono para incluir seu e-mail na aba Pessoas.`, { email });
+    return { email, papel, local: false };
+  }
+
+  /** Leitor só vê; instalar/atualizar/remover fitas (código) e a aba Pessoas são do dono. */
+  private autorizar(papel: Papel, method: string, p: string): void {
+    if (papel === 'dono') return;
+    const soDono = p === '/api/pessoas' || p === '/api/instalar' || (method === 'DELETE' && /^\/api\/fitas\/[^/]+$/.test(p)) || p.endsWith('/atualizar');
+    if (soDono) throw new HttpError(403, 'Só um dono pode fazer isso');
+    if (papel === 'leitor' && method !== 'GET') throw new HttpError(403, 'Seu acesso é só para ver');
+  }
+
+  private async pessoasRoute(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const pessoas = this.options.pessoas;
+    if (!pessoas) throw new HttpError(400, 'Login pelo domínio não configurado (CF_ACCESS_EQUIPE e CF_ACCESS_AUD no .env do K7)');
+    if (req.method === 'POST' || req.method === 'DELETE') {
+      const body = (await this.readJson(req)) as { email?: string; papel?: string };
+      try {
+        // definir() recusa papel fora de PAPEIS.
+        if (req.method === 'POST') pessoas.definir(String(body.email ?? ''), String(body.papel) as Papel);
+        else pessoas.remover(String(body.email ?? ''));
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+    } else if (req.method !== 'GET') throw new HttpError(405, 'Método não permitido');
+    return this.json(res, { pessoas: pessoas.listar() });
   }
 
   private checkToken(received: string | string[] | undefined): void {

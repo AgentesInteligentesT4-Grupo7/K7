@@ -9,3 +9,6 @@ workspace
 tests
 specs
 *.log
+dados
+perfis
+.claude

@@ -87,8 +87,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 <body>
 <header>
   <h1>📼 K7 · Fitas</h1>
-  <span class="help">só neste computador</span>
+  <span id="quem" class="help">só neste computador</span>
   <span class="grow"></span>
+  <button id="btn-people" class="hidden" type="button" title="Quem entra pelo domínio e o que pode fazer">👥 Pessoas</button>
   <button id="btn-new" type="button">+ Nova fita</button>
   <button id="btn-install" type="button">⬇ Instalar fita</button>
   <button id="btn-refresh" type="button" title="Atualizar">↻</button>
@@ -99,6 +100,19 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   <nav id="list" aria-label="Fitas"></nav>
   <div id="detail"><p class="empty">Escolha uma fita à esquerda.</p></div>
 </main>
+
+<dialog id="dlg-people">
+  <h3>Pessoas</h3>
+  <p class="help">Quem entra pelo domínio (login com a conta Google ou código no e-mail, pelo Cloudflare Access) e o que pode fazer.
+    <b>Dono</b>: tudo, inclusive esta lista e instalar fitas com código. <b>Editor</b>: liga e desliga fitas, canais, bots e convites. <b>Leitor</b>: só vê.
+    Neste computador, com o token, você é sempre dono.</p>
+  <div id="people-list"></div>
+  <div class="row"><input id="people-email" type="email" placeholder="pessoa@gmail.com" autocomplete="off" style="flex:1">
+    <select id="people-role" aria-label="Papel"><option value="editor">editor</option><option value="leitor">leitor</option><option value="dono">dono</option></select>
+    <button id="people-add" class="primary" type="button">Incluir</button></div>
+  <div id="people-msg"></div>
+  <div class="row"><button data-close type="button">Fechar</button></div>
+</dialog>
 
 <dialog id="dlg-new">
   <h3>Nova fita</h3>
@@ -131,7 +145,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
     if (method && method !== 'GET') { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body || {}); }
     return fetch(path, opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (data) {
-        if (r.status === 401) $('locked').classList.remove('hidden');
+        if (r.status === 401) { if (data.erro) $('locked').textContent = data.erro; $('locked').classList.remove('hidden'); }
         if (!r.ok) { var e = new Error(data.erro || ('HTTP ' + r.status)); e.status = r.status; e.data = data; throw e; }
         return data;
       });
@@ -556,8 +570,39 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   });
   try { var th = localStorage.getItem('k7-admin-theme'); if (th) document.documentElement.setAttribute('data-theme', th); } catch (e) {}
 
-  if (!token) $('locked').classList.remove('hidden');
-  load().catch(function () {});
+  // ── Pessoas (quem entra pelo domínio) ─────────────────────────────────────
+  function renderPeople(lista) {
+    var box = $('people-list'); box.innerHTML = '';
+    if (!lista.length) { box.appendChild(el('p', 'help', 'Ninguém além de você ainda.')); return; }
+    lista.forEach(function (p) {
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'grow', esc(p.email) + ' · <b>' + esc(p.papel) + '</b>' + (p.fixo ? ' <span class="help">(ADMIN_DONOS no .env)</span>' : '')));
+      if (!p.fixo) {
+        var rm = el('button', 'danger', 'Tirar'); rm.type = 'button';
+        rm.addEventListener('click', function () { busy(rm, function () { return api('/api/pessoas', 'DELETE', { email: p.email }).then(function (r) { renderPeople(r.pessoas); }).catch(function (e) { msg($('people-msg'), 'err', e.message); }); }); });
+        row.appendChild(rm);
+      }
+      box.appendChild(row);
+    });
+  }
+  $('btn-people').addEventListener('click', function () {
+    $('people-msg').innerHTML = '';
+    api('/api/pessoas').then(function (r) { renderPeople(r.pessoas); $('dlg-people').showModal(); }).catch(function (e) { msg($('people-msg'), 'err', e.message); $('dlg-people').showModal(); });
+  });
+  $('people-add').addEventListener('click', function () {
+    var email = $('people-email').value.trim();
+    busy($('people-add'), function () { return api('/api/pessoas', 'POST', { email: email, papel: $('people-role').value }).then(function (r) { $('people-email').value = ''; msg($('people-msg'), 'ok', email + ' incluído.'); renderPeople(r.pessoas); }).catch(function (e) { msg($('people-msg'), 'err', e.message); }); });
+  });
+
+  // Quem está usando: no próprio computador (token) é dono; pelo domínio, o e-mail do login e o papel dele.
+  api('/api/eu').then(function (eu) {
+    if (!eu.local) $('quem').textContent = eu.email + ' · ' + eu.papel;
+    if (eu.papel === 'dono') $('btn-people').classList.remove('hidden');
+    else { $('btn-install').classList.add('hidden'); if (eu.papel === 'leitor') $('btn-new').classList.add('hidden'); }
+    return load();
+  }).catch(function (e) {
+    if (e.status === 403) { $('locked').textContent = e.message; $('locked').classList.remove('hidden'); }
+  });
   // A lista acompanha fitas ligadas/desligadas por fora (ex.: processo que caiu).
   setInterval(function () { if (!document.hidden) api('/api/fitas').then(function (f) { state.fitas = f; renderList(); }).catch(function () {}); }, 10000);
 })();

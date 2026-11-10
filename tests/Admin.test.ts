@@ -36,7 +36,7 @@ describe('Página de administração das fitas', () => {
     fs.mkdirSync(path.join(source, 'extensao'), { recursive: true });
     fs.writeFileSync(path.join(source, 'perfil.yaml'), 'nome: comcodigo\nextensao: extensao/index.ts\nmodulos: []\n');
     fs.writeFileSync(path.join(source, 'extensao', 'index.ts'), 'export default () => {};');
-    server = new AdminServer({ port: 0, rootDir: root, env: { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k' }, token: TOKEN, runner });
+    server = new AdminServer({ port: 0, rootDir: root, env: { PERFIS_DIR: perfis, GEMINI_API_KEY: 'k' }, token: TOKEN, runner, dominios: ['admin.exemplo.com.br'] });
     await server.start();
     base = new URL(server.url).origin;
   });
@@ -46,10 +46,13 @@ describe('Página de administração das fitas', () => {
     assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+\/#t=/);
     assert.equal((await fetch(`${base}/api/fitas`)).status, 401);
     // Outro Host (DNS rebinding): recusado. (O fetch não deixa trocar o Host; vai pelo http.)
-    const status = await new Promise<number>((resolve) =>
-      http.get(`${base}/api/fitas`, { headers: { host: 'evil.example', 'x-token': TOKEN } }, (res) => resolve(res.statusCode!)),
-    );
-    assert.equal(status, 421);
+    const comHost = (headers: Record<string, string>) =>
+      new Promise<number>((resolve) => http.get(`${base}/api/fitas`, { headers: { 'x-token': TOKEN, ...headers } }, (res) => resolve(res.statusCode!)));
+    assert.equal(await comHost({ host: 'evil.example' }), 421);
+    // Domínio público: só com o cabeçalho do Cloudflare Access (Access desligado não abre a página).
+    assert.equal(await comHost({ host: 'admin.exemplo.com.br' }), 403);
+    // Com o cabeçalho, mas sem o login do Access configurado na administração: recusado também.
+    assert.equal(await comHost({ host: 'admin.exemplo.com.br', 'cf-access-jwt-assertion': 'x' }), 503);
     const page = await fetch(`${base}/`);
     assert.match(page.headers.get('content-security-policy')!, /script-src 'nonce-/);
     // Pedido que muda algo sem JSON (formulário de outro site) é recusado.

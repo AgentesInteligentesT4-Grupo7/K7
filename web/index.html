@@ -140,6 +140,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
   #model { display: none; }
   #messages, #composer-wrap { padding-left: 12px; padding-right: 12px; }
 }
+#tg-dlg { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); padding: 20px; max-width: min(340px, calc(100vw - 32px)); text-align: center; }
+#tg-dlg::backdrop { background: rgba(0, 0, 0, .45); }
+#tg-dlg img { width: 220px; max-width: 100%; height: auto; background: #fff; border-radius: 8px; padding: 8px; }
+#tg-dlg p { color: var(--muted); font-size: 14px; margin: 10px 0; }
+#tg-dlg .acoes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+#tg-dlg a, #tg-dlg button { font: inherit; border-radius: 8px; padding: 6px 14px; border: 1px solid var(--line); background: transparent; color: var(--text); text-decoration: none; cursor: pointer; }
+#tg-dlg a.principal { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 </style>
 </head>
 <body>
@@ -157,8 +164,15 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     <div id="title">Nova conversa</div>
     <div id="model"></div>
     <button id="close-conv" type="button" title="Excluir esta conversa e o histórico dela">🗑</button>
+    <button id="tg" class="hidden" type="button" title="Abrir esta conversa no Telegram">✈️</button>
     <button id="theme" type="button" title="Tema claro/escuro">◐</button>
   </header>
+  <dialog id="tg-dlg" aria-labelledby="tg-titulo">
+    <h3 id="tg-titulo">Usar pelo Telegram</h3>
+    <img id="tg-qr" alt="QR code do bot no Telegram">
+    <p id="tg-texto">Aponte a câmera do celular para o QR, ou abra o link: no computador ele oferece o Telegram Web.</p>
+    <div class="acoes"><a id="tg-link" class="principal" target="_blank" rel="noopener noreferrer">Abrir no Telegram</a><button id="tg-fechar" type="button">Fechar</button></div>
+  </dialog>
   <div id="scroll">
     <div id="messages">
       <div id="empty">
@@ -224,19 +238,62 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     try { localStorage.setItem('theme', document.documentElement.dataset.theme); } catch (e) {}
   };
 
-  function api(path, options) {
-    options = options || {};
+  // Erro de rede ou do caminho até o servidor (Cloudflare 52x, 502, 503, 504): passa sozinho, vale tentar de novo.
+  function transient(err) { return !err.status || err.status === 408 || err.status === 429 || err.status >= 500 && !err.doServidor; }
+  function request(path, options, extra) {
     var headers = { 'X-Visitante': state.visitor };
     if (state.token) headers['X-Token'] = state.token;
     if (options.body) headers['Content-Type'] = 'application/json';
+    for (var k in extra || {}) headers[k] = extra[k];
     return fetch(base + path, { method: options.method || 'GET', headers: headers, body: options.body ? JSON.stringify(options.body) : undefined })
+      .catch(function () { throw new Error('Sem conexão com o servidor. Confira a internet e tente de novo.'); })
       .then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (data) {
-          if (res.status === 401) { lock(); throw new Error(data.erro || 'Token inválido'); }
-          if (!res.ok) throw new Error(data.erro || ('HTTP ' + res.status));
-          return data;
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (res.status === 401) { lock(); throw new Error((data && data.erro) || 'Token inválido'); }
+          if (!res.ok) {
+            // Sem a mensagem do K7 (ex.: página de erro do Cloudflare): texto simples, sem número de erro.
+            var err = new Error((data && data.erro) || 'O servidor não respondeu agora. Tente de novo em instantes.');
+            err.status = res.status; err.doServidor = !!(data && data.erro);
+            throw err;
+          }
+          return data || {};
         });
       });
+  }
+  function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+  function newId() {
+    var bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  /** Busca a resposta de um pedido longo; queda de conexão no meio é repetida em silêncio (o trabalho segue no servidor). */
+  function awaitPending(id, failures) {
+    failures = failures || 0;
+    return request('/api/pedidos/' + id, {}).then(function (r) {
+      return r && r.pendente ? awaitPending(id, 0) : r;
+    }, function (err) {
+      if (!transient(err) || failures >= 60) throw err;
+      return wait(Math.min(15000, 1000 * (failures + 1))).then(function () { return awaitPending(id, failures + 1); });
+    });
+  }
+  /**
+   * Chamada à API. POST de mensagem e das rotas da fita (/api/x/) vira pedido longo: o servidor responde na hora com
+   * o número do pedido e a página vai buscando a resposta, sem deixar uma conexão aberta por minutos (o Cloudflare
+   * corta em 100 s). options.aoCriar(id) recebe o número (para retomar depois de recarregar a página).
+   */
+  function api(path, options) {
+    options = options || {};
+    var long = options.longo != null ? options.longo : options.method === 'POST' && (path === '/api/mensagens' || path.indexOf('/api/x/') === 0);
+    if (!long) return request(path, options);
+    var id = newId();
+    if (options.aoCriar) options.aoCriar(id);
+    function submit(tries) {
+      return request(path, options, { 'X-Pedido': id }).catch(function (err) {
+        // Repetir é seguro: o mesmo número de pedido não começa um segundo trabalho.
+        if (!transient(err) || tries >= 5) throw err;
+        return wait(2000 * (tries + 1)).then(function () { return submit(tries + 1); });
+      });
+    }
+    return submit(0).then(function (data) { return data && data.pedido === id ? awaitPending(id) : data; });
   }
   function fileUrl(url) {
     url = url.charAt(0) === '/' ? base + url : url;
@@ -429,8 +486,13 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       }
     }, 1000);
     scrollDown();
-    payload.responderEmAudio = state.audioReply;
-    api('/api/mensagens', { method: 'POST', body: payload })
+    var call;
+    if (payload.retomar) call = awaitPending(payload.retomar);
+    else {
+      payload.responderEmAudio = state.audioReply;
+      call = api('/api/mensagens', { method: 'POST', body: payload, aoCriar: function (id) { remember({ id: id, conversa: state.conversationId }); } });
+    }
+    call
       .then(function (reply) {
         if (reply.transcricao && shownText == null) addUserBefore(body.parentNode, '🎤 ' + reply.transcricao);
         renderReply(body, reply, Math.round((Date.now() - started) / 1000));
@@ -439,12 +501,20 @@ audio { width: 100%; max-width: 420px; height: 40px; }
       })
       .catch(function (err) { renderReply(body, { erro: '⚠️ ' + err.message }); })
       .then(function () {
+        remember(null);
         clearInterval(timer); clearInterval(poll); emit('busy', false);
         state.busy = false;
         var next = pending.shift();
         if (next) { if (next.mark) next.mark.remove(); dispatch(next.payload, next.shownText, null, true); }
         else $('input').focus();
       });
+  }
+  // Resposta que ainda não chegou: fica guardada para continuar esperando se a página for recarregada.
+  function remember(value) {
+    try { value ? localStorage.setItem('pedido', JSON.stringify(value)) : localStorage.removeItem('pedido'); } catch (e) {}
+  }
+  function remembered() {
+    try { return JSON.parse(localStorage.getItem('pedido') || 'null'); } catch (e) { return null; }
   }
   function addUserBefore(node, text) {
     var row = el('div', 'msg user'), bubble = el('div', 'bubble'); bubble.textContent = text; row.appendChild(bubble);
@@ -611,6 +681,29 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     },
   };
 
+  // No celular, o QR não serve (é o próprio aparelho): o botão abre direto o app do Telegram (tg://) e, se o app
+  // não estiver instalado (a página continua visível), vai para o t.me, que oferece instalar ou usar no navegador.
+  var MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  $('tg').addEventListener('click', function () {
+    api('/api/telegram').then(function (t) {
+      var link = $('tg-link');
+      $('tg-qr').src = t.qr; link.textContent = 'Abrir @' + t.bot; link.dataset.web = t.link;
+      if (MOBILE) {
+        link.href = 'tg://resolve?domain=' + encodeURIComponent(t.bot); link.removeAttribute('target');
+        $('tg-qr').classList.add('hidden');
+        $('tg-texto').textContent = 'Toque para abrir a conversa no app do Telegram. Sem o app, abre a página do Telegram.';
+      } else link.href = t.link;
+      $('tg-dlg').showModal();
+    }).catch(function (err) { renderReply(addAssistant(), { erro: '⚠️ ' + err.message }); });
+  });
+  $('tg-link').addEventListener('click', function () {
+    if (!MOBILE) return;
+    var web = $('tg-link').dataset.web;
+    var timer = setTimeout(function () { if (!document.hidden) location.href = web; }, 1500);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) clearTimeout(timer); }, { once: true });
+  });
+  $('tg-fechar').addEventListener('click', function () { $('tg-dlg').close(); });
+
   // ── Início ────────────────────────────────────────────────────────────────
   // Sem token, a API responde 401 (e a página trava com a explicação), a não ser no canal público.
   api('/api/info').then(function (info) {
@@ -624,10 +717,15 @@ audio { width: 100%; max-width: 420px; height: 40px; }
     info.modulos.forEach(function (m) { $('modules').appendChild(el('span', 'chip', esc(m))); });
     info.skills.forEach(function (s) { var c = el('span', 'chip', esc(s.nome)); c.title = s.descricao; $('skills').appendChild(c); });
     if (info.voz) { $('mic').classList.remove('hidden'); $('speak').classList.remove('hidden'); }
+    // Bot do Telegram aberto: QR e link (o link de t.me abre o app ou o Telegram Web).
+    if (info.telegram) $('tg').classList.remove('hidden');
     emit('ready', info);
     return loadConversations();
   }).then(function () {
     if (state.conversationId) return showHistory(state.conversationId);
+  }).then(function () {
+    var open = remembered();
+    if (open && open.id && !state.busy) dispatch({ retomar: open.id }, null, null, true);
   }).catch(function (err) { if (!$('locked').classList.contains('hidden')) return; renderReply(addAssistant(), { erro: '⚠️ ' + err.message }); });
 })();
 </script>

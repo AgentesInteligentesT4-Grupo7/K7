@@ -6,7 +6,8 @@ import { showcaseTapes } from './showcase.js';
 /**
  * Site do K7: `npm run site`. Mostra as fitas com `vitrine: true` no perfil.yaml e abre o chat da escolhida
  * pelo mesmo endereço. SITE_HOST (padrão 127.0.0.1; 0.0.0.0 abre na rede), SITE_PORT (padrão 8780) e
- * SITE_FITA_PORTA_BASE (padrão 8800: portas internas, só 127.0.0.1, dos chats das fitas).
+ * SITE_FITA_PORTA_BASE (padrão 8800: portas internas, só 127.0.0.1, dos chats das fitas). SITE_DOMINIO: cada fita
+ * da vitrine abre também em <fita>.<domínio> (com um curinga *.<domínio> no túnel, nada a configurar por fita).
  */
 const positive = (value: string | undefined, fallback: number) => {
   const n = Number(value);
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
     port: positive(process.env.SITE_PORT, 8780),
     tapeBasePort: positive(process.env.SITE_FITA_PORTA_BASE, 8800),
     listTapes: () => showcaseTapes(),
+    ...(process.env.SITE_DOMINIO?.trim() ? { dominio: process.env.SITE_DOMINIO.trim().toLowerCase() } : {}),
   });
   await site.start();
   process.stdout.write(`\n📼 K7 no navegador: ${site.url}\n\n`);

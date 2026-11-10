@@ -1,53 +1,92 @@
-# K7 no Docker.
-#   Subir o bot:        docker compose up -d --build
-#   Logs:               docker compose logs -f
-#   Chat no terminal:   docker compose run --rm k7 node dist/canais/terminal/chat.js
-#   Chat no navegador:  CHANNELS=telegram,web no .env (ou no perfil) → http://127.0.0.1:8787/#t=<token do log>
-#   Com perfil:         PERFIL=promo docker compose up -d   (ou --perfil promo no chat)
-#   Avaliar modelos:    docker compose run --rm k7 node dist/cli/eval.js pesquisa
+# K7 no Docker: Central (administração, fitas e bots), site (vitrine e chat das fitas) e túnel da Cloudflare.
+#   Subir tudo:         docker compose up -d --build
+#   Logs:               docker compose logs -f central   (o endereço da administração com o token sai aqui)
+#   Parar:              docker compose down
+#   Chat no terminal:   docker compose run --rm central node --import tsx src/canais/terminal/chat.ts --perfil <fita>
 #
-# ATENÇÃO: não rode o bot aqui e o `npm run dev` ao mesmo tempo (o Telegram aceita
-# uma única conexão por bot → erro 409).
+# Endereços (o túnel publica; nada abre porta no roteador):
+#   https://parreiratecnologia.com.br         → site       (qualquer pessoa; visitantes isolados e com limites)
+#   https://<fita>.parreiratecnologia.com.br  → chat da fita (curinga *: fita nova na vitrine já tem endereço)
+#   https://admin.parreiratecnologia.com.br   → Central    (só pelo Cloudflare Access, com papéis na aba Pessoas)
+#   No próprio PC: http://127.0.0.1:8770 (Central) e http://127.0.0.1:8780 (site).
+#
+# ATENÇÃO: não rode as fitas aqui e no Windows (`npm run admin`/`npm run dev`) ao mesmo tempo: o Telegram aceita
+# um programa por bot (erro 409).
+
+x-env: &env
+  # Serviços que rodam no PC (Ollama) ou em outros containers com porta publicada (yt-dlp da Rebobina, Kokoro,
+  # Whisper, ComfyUI, SearXNG) são alcançados por host.docker.internal.
+  OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+  KOKORO_BASE_URL: http://host.docker.internal:8880/v1
+  WHISPER_BASE_URL: http://host.docker.internal:8890/v1
+  CHATTERBOX_BASE_URL: http://host.docker.internal:8004
+  COMFYUI_BASE_URL: http://host.docker.internal:8188
+  SEARXNG_BASE_URL: http://host.docker.internal:8888
+  YTDLP_BASE_URL: http://host.docker.internal:8899
+  # Bancos SQLite num volume Docker (o modo WAL não é confiável em pasta do Windows montada).
+  # O nome do arquivo é de antes da troca de nome (ParreiraClaw → K7): é ele que guarda o histórico.
+  DB_PATH: /app/state/parreiraclaw.db
+  PERFIS_DIR: /app/perfis
+  DADOS_DIR: /app/state/dados
+  WEB_HOST: 0.0.0.0
+  TZ: America/Sao_Paulo
+
+x-k7: &k7
+  build: .
+  image: k7:local
+  env_file: .env
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - k7-state:/app/state                        # bancos das fitas + backups
+    - ./data:/app/data                           # vozes clonadas, cache do catálogo
+    - ./workspace:/app/workspace                 # arquivos e imagens criados pelas fitas
+    - ./.agents/skills:/app/.agents/skills       # skills com hot-reload: edite no Windows
+    - ./modulos:/app/modulos
+    - ./evals:/app/evals
+    - ${PERFIS_DIR_HOST:-../ParreiraClaw-perfis}:/app/perfis   # fitas (perfil.yaml, skills, .env de cada uma)
+    - ./dados/rebobina/web:/app/state/dados/rebobina/web       # vídeos e músicas da Rebobina (arquivos, não banco)
+  restart: unless-stopped
+
 services:
-  k7:
-    build: .
-    image: k7:local
-    container_name: k7
-    env_file: .env
+  central:
+    <<: *k7
+    container_name: k7-central
     environment:
-      # Serviços que rodam no host (Ollama) ou em outros containers com porta publicada
-      # (Kokoro, Whisper, Chatterbox) são alcançados por host.docker.internal.
-      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
-      KOKORO_BASE_URL: http://host.docker.internal:8880/v1
-      WHISPER_BASE_URL: http://host.docker.internal:8890/v1
-      CHATTERBOX_BASE_URL: http://host.docker.internal:8004
-      COMFYUI_BASE_URL: http://host.docker.internal:8188
-      SEARXNG_BASE_URL: http://host.docker.internal:8888
-      # Banco SQLite num volume Docker (o modo WAL não é confiável em pasta do Windows montada).
-      # O nome do arquivo é de antes da troca de nome (ParreiraClaw → K7): é ele que guarda o histórico.
-      DB_PATH: /app/state/parreiraclaw.db
-      # Perfis: a pasta ParreiraClaw-perfis é montada em /app/perfis; dados de cada perfil no volume.
-      PERFIS_DIR: /app/perfis
-      DADOS_DIR: /app/state/dados
-      PERFIL: ${PERFIL:-}
-      # Canal web: dentro do container escuta em todas as interfaces; a porta só é publicada no 127.0.0.1 do PC.
-      WEB_HOST: 0.0.0.0
-      TZ: America/Sao_Paulo
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - k7-state:/app/state      # banco + backups diários
-      - ./data:/app/data                   # vozes clonadas, cache do catálogo, saídas do terminal
-      - ./workspace:/app/workspace         # arquivos criados pelas ferramentas do agente
-      - ./.agents/skills:/app/.agents/skills   # skills com hot-reload: edite no Windows
-      - ./evals:/app/evals                 # conjuntos de avaliação dos modelos
-      - ./modulos:/app/modulos             # skills dos módulos (hot-reload)
-      - ${PERFIS_DIR_HOST:-../ParreiraClaw-perfis}:/app/perfis   # fitas (perfil.yaml, skills, .env)
+      <<: *env
+      # Dentro do container escuta em todas as interfaces; fora, só o 127.0.0.1 do PC e o túnel chegam.
+      ADMIN_HOST: 0.0.0.0
+      ADMIN_DOMINIOS: ${ADMIN_DOMINIOS:-admin.parreiratecnologia.com.br}
+      # Fitas que ligam junto com a Central (separadas por vírgula).
+      ADMIN_LIGAR: ${ADMIN_LIGAR:-}
     ports:
-      - "127.0.0.1:${WEB_PORT:-8787}:${WEB_PORT:-8787}"
+      - "127.0.0.1:8770:8770"
+
+  site:
+    <<: *k7
+    container_name: k7-site
+    command: ["node", "--import", "tsx", "src/canais/site/site.ts"]
+    environment:
+      <<: *env
+      SITE_HOST: 0.0.0.0
+      SITE_PORT: "8780"
+      # Cada fita da vitrine abre também em <fita>.parreiratecnologia.com.br (curinga no túnel).
+      SITE_DOMINIO: ${SITE_DOMINIO:-parreiratecnologia.com.br}
+    ports:
+      - "127.0.0.1:8780:8780"
+
+  tunel:
+    image: cloudflare/cloudflared:2026.10.1
+    container_name: k7-tunel
+    # Túnel criado no painel da Cloudflare (Zero Trust → Networks → Tunnels); os endereços públicos ficam lá:
+    #   admin.parreiratecnologia.com.br → http://central:8770   (primeiro: o específico vence o curinga)
+    #   parreiratecnologia.com.br e *.parreiratecnologia.com.br → http://site:8780
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      # Vazio: o túnel não sobe e o log diz que falta o token (CLOUDFLARE_TUNNEL_TOKEN no .env do K7).
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [central, site]
     restart: unless-stopped
-    stdin_open: true                       # permite o chat no terminal via `docker compose run`
-    tty: true
 
 volumes:
   k7-state:

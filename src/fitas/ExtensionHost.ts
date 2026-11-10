@@ -96,7 +96,7 @@ class ExtensionTool extends BaseTool {
 export class ExtensionHost {
   readonly routes: ExtensionRoute[] = [];
   readonly commands: ExtensionCommand[] = [];
-  panel?: { script?: string; style?: string };
+  panel?: { script?: string; style?: string; images?: string[]; frames?: string[] };
   private readonly startHooks: Array<() => Promise<void> | void> = [];
   private readonly toolNames: string[] = [];
   private readonly logger: Logger;
@@ -224,7 +224,13 @@ export class ExtensionHost {
             if (!full.startsWith(path.resolve(config.profileDir ?? '') + path.sep)) throw new Error(`Arquivo do painel fora da fita: ${rel}`);
             return full;
           };
-          this.panel = { script: inside(arquivos.script), style: inside(arquivos.estilo) };
+          // Só origens https (sem caminho nem curinga): entram na política de segurança da página.
+          const origins = (list?: string[]) =>
+            (list ?? []).map((origin) => {
+              if (!/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}$/i.test(origin)) throw new Error(`Endereço do painel inválido (só https://dominio): ${origin}`);
+              return origin.toLowerCase();
+            });
+          this.panel = { script: inside(arquivos.script), style: inside(arquivos.estilo), images: origins(arquivos.imagens), frames: origins(arquivos.quadros) };
         },
       },
       comando: (name, description, run) => this.commands.push({ name, description, run }),

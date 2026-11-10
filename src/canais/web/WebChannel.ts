@@ -14,7 +14,10 @@ import { Logger } from '../../utils/Logger.js';
 import { sanitizeText, truncate } from '../../utils/text.js';
 import { AttachmentService } from '../../modules/anexos/AttachmentService.js';
 import { AudioIntentDetector } from '../../voice/AudioIntentDetector.js';
+import { qrDataUrl } from '../telegram/acesso/convite.js';
+import { TelegramBotSetup } from '../telegram/configuracao/TelegramBotSetup.js';
 import { renderPage } from './page.js';
+import { type PendingResult, PendingRequests } from './PendingRequests.js';
 import { type WebReply, WebOutputHandler } from './WebOutputHandler.js';
 import { ZipTooLargeError, writeZip, zipSize } from './ZipStream.js';
 
@@ -91,6 +94,8 @@ export class WebChannel {
   private readonly queues = new Map<string, Promise<unknown>>();
   /** Horários das mensagens recentes por visitante ('*' = todos), para o limite do modo público. */
   private readonly hits = new Map<string, number[]>();
+  /** Pedidos longos respondidos aos poucos (sem conexão aberta por minutos, que o Cloudflare corta com 524). */
+  private readonly pending = new PendingRequests();
 
   constructor(
     private readonly core: Core,
@@ -149,6 +154,7 @@ export class WebChannel {
   }
 
   async stop(): Promise<void> {
+    this.pending.stop();
     await new Promise<void>((resolve) => (this.server ? this.server.close(() => resolve()) : resolve()));
   }
 
@@ -173,7 +179,18 @@ export class WebChannel {
       const extension = this.core.extensions.routes.find((r) => r.method === req.method && r.path.test(url.pathname));
       if (extension) return await this.runExtension(extension, req, res, url);
       const userId = this.userIdFor(req);
+      const pendingId = /^\/api\/pedidos\/([A-Za-z0-9_-]{16,64})$/.exec(url.pathname);
+      if (req.method === 'GET' && pendingId) {
+        const result = await this.pending.wait(userId, pendingId[1]!, 25_000);
+        if (result === undefined) throw new HttpError(404, 'A resposta deste pedido se perdeu (o servidor reiniciou). Mande de novo.');
+        return result ? this.json(res, result.data, result.status) : this.json(res, { pendente: true });
+      }
       if (req.method === 'GET' && url.pathname === '/api/info') return this.json(res, this.info());
+      if (req.method === 'GET' && url.pathname === '/api/telegram') {
+        const telegram = await this.telegramLink();
+        if (!telegram) throw new HttpError(404, 'Esta fita não tem bot do Telegram aberto');
+        return this.json(res, telegram);
+      }
       if (req.method === 'GET' && url.pathname === '/api/progresso') {
         const progress = ProgressBoard.get(userId);
         return this.json(res, { texto: progress?.text ?? null, feitos: progress?.done ?? null, total: progress?.total ?? null });
@@ -195,9 +212,14 @@ export class WebChannel {
         return this.json(res, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/mensagens') {
+        const id = PendingRequests.validId(req.headers['x-pedido']) ? req.headers['x-pedido'] : undefined;
+        // Repetição do mesmo envio (a rede falhou antes da resposta): o pedido já está andando.
+        if (id && this.pending.has(userId, id)) return this.json(res, { pedido: id }, 202);
         const body = (await this.readJson(req)) as MessageBody;
         if (this.options.public) this.checkLimit(userId);
-        return this.json(res, await this.enqueue(userId, () => this.message(body, userId)));
+        if (!id) return this.json(res, await this.enqueue(userId, () => this.message(body, userId)));
+        this.pending.start(userId, id, () => this.asResult(() => this.enqueue(userId, () => this.message(body, userId))));
+        return this.json(res, { pedido: id }, 202);
       }
       if (req.method === 'POST' && url.pathname === '/api/falar') {
         // Voz clonada num endereço aberto deixaria qualquer um falar com a voz do dono.
@@ -208,12 +230,26 @@ export class WebChannel {
       }
       throw new HttpError(404, 'Não encontrado');
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : 500;
-      if (status === 500) this.logger.error(`Falha no canal web: ${errorMessage(error)}`, error);
-      if (!res.headersSent) this.json(res, { erro: status === 500 ? 'Falha interna; veja os logs.' : (error as Error).message }, status);
+      const { status, data } = this.errorResult(error);
+      if (!res.headersSent) this.json(res, data, status);
       // Erro no meio de um envio (ex.: .zip): fecha a conexão para o download falhar em vez de ficar pendurado.
       else res.destroy();
     }
+  }
+
+  /** O que a rota responderia, guardado para a página buscar depois (pedido longo). */
+  private async asResult(task: () => Promise<unknown>): Promise<PendingResult> {
+    try {
+      return { status: 200, data: await task() };
+    } catch (error) {
+      return this.errorResult(error);
+    }
+  }
+
+  private errorResult(error: unknown): PendingResult {
+    const status = error instanceof HttpError ? error.status : 500;
+    if (status === 500) this.logger.error(`Falha no canal web: ${errorMessage(error)}`, error);
+    return { status, data: { erro: status === 500 ? 'Falha interna; veja os logs.' : (error as Error).message } };
   }
 
   private async message(body: MessageBody, userId: string): Promise<WebReply & { modelo?: string; transcricao?: string }> {
@@ -333,7 +369,29 @@ export class WebChannel {
       // Público: os nomes das vozes clonadas do dono não aparecem (e o /api/falar fica desligado).
       vozes: this.options.public ? null : (this.core.voiceClone?.list().map((v) => v.name) ?? null),
       publico: this.options.public === true,
+      telegram: this.telegramAberto(),
     };
+  }
+
+  /** O bot desta fita aceita qualquer pessoa (canal telegram, token e acesso aberto): o chat oferece o link e o QR. */
+  private telegramAberto(): boolean {
+    const { config } = this.core;
+    return config.channels.has('telegram') && Boolean(config.telegramBotToken) && config.telegramAccess.mode === 'aberto';
+  }
+
+  private telegramCache?: { link: string; qr: string; bot: string };
+
+  /** Link https://t.me/<bot> (abre o app ou o Telegram Web) e o QR dele; o @ vem do Telegram (getMe) uma vez. */
+  private async telegramLink(): Promise<{ link: string; qr: string; bot: string } | null> {
+    if (!this.telegramAberto()) return null;
+    if (!this.telegramCache) {
+      const apiRoot = process.env.TELEGRAM_API_ROOT?.trim();
+      const { username } = await new TelegramBotSetup(apiRoot ? { apiRoot } : {}).info(this.core.config.telegramBotToken);
+      if (!username) return null;
+      const link = `https://t.me/${username}`;
+      this.telegramCache = { link, qr: await qrDataUrl(link), bot: username };
+    }
+    return this.telegramCache;
   }
 
   private conversations(userId: string) {
@@ -424,6 +482,23 @@ export class WebChannel {
     }
   }
 
+  /** Política da página: só o próprio K7, mais as origens que o painel da fita declarou (miniaturas, player). */
+  private contentSecurityPolicy(nonce: string): string {
+    const { images = [], frames = [] } = this.core.extensions.panel ?? {};
+    return [
+      "default-src 'none'",
+      `script-src 'nonce-${nonce}'`,
+      `style-src 'nonce-${nonce}'`,
+      "connect-src 'self'",
+      "media-src 'self' blob:",
+      ['img-src', "'self'", 'data:', ...images].join(' '),
+      ...(frames.length ? [['frame-src', ...frames].join(' ')] : []),
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+  }
+
   private sendPage(res: http.ServerResponse): void {
     const nonce = randomBytes(16).toString('base64');
     res.writeHead(200, {
@@ -432,7 +507,7 @@ export class WebChannel {
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       'x-frame-options': 'DENY',
-      'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; media-src 'self' blob:; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      'content-security-policy': this.contentSecurityPolicy(nonce),
     });
     res.end(renderPage(nonce, this.core.extensions.panel));
   }
@@ -440,6 +515,8 @@ export class WebChannel {
   /** Rota de uma extensão: recebe os mesmos recursos que as rotas do tocador (visitante, mídia, .zip, fila). */
   private async runExtension(route: ExtensionRoute, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const userId = route.visitor ? this.userIdFor(req) : '';
+    const header = req.headers['x-pedido'];
+    if (req.method !== 'GET' && userId && PendingRequests.validId(header)) return this.runExtensionLater(route, req, res, url, userId, header);
     const ctx: WebRotaCtx = {
       req,
       res,
@@ -468,6 +545,51 @@ export class WebChannel {
       if (error instanceof UserFacingError) throw new HttpError(422, error.userMessage);
       throw error;
     }
+  }
+
+  /**
+   * Rota da fita como pedido longo (X-Pedido): responde 202 na hora e roda a rota guardando o JSON que ela daria.
+   * Só para rotas que respondem com ctx.json (as que escrevem direto em ctx.res, como nivelar um arquivo, não usam).
+   * `saiu` dispara quando a página para de perguntar pela resposta (fechou a aba).
+   */
+  private async runExtensionLater(route: ExtensionRoute, req: http.IncomingMessage, res: http.ServerResponse, url: URL, userId: string, id: string): Promise<void> {
+    if (this.pending.has(userId, id)) return this.json(res, { pedido: id }, 202);
+    // O corpo é lido antes do 202: depois da resposta, a conexão pode ser reaproveitada e o corpo, descartado.
+    const hasBody = Number(req.headers['content-length'] ?? 0) > 0 || req.headers['transfer-encoding'] !== undefined;
+    const body = hasBody ? await this.readJson(req) : undefined;
+    const notHere = () => {
+      throw new HttpError(400, 'Esta rota não responde como pedido longo');
+    };
+    this.pending.start(userId, id, async (abandoned) => {
+      let answer: PendingResult = { status: 204, data: {} };
+      const ctx: WebRotaCtx = {
+        req,
+        res,
+        url,
+        params: route.path.exec(url.pathname)!.slice(1),
+        userId,
+        publico: this.options.public === true,
+        saiu: abandoned,
+        json: (data, status) => void (answer = { status: status ?? 200, data }),
+        midia: notHere,
+        zip: async () => notHere(),
+        lerJson: () => Promise.resolve(body ?? {}),
+        falhar: (status, message) => {
+          throw new HttpError(status, message);
+        },
+        emFila: (task) => this.enqueue(userId, task),
+        progresso: (text, counts) => ProgressBoard.set(userId, text, counts),
+        limparProgresso: () => ProgressBoard.clear(userId),
+      };
+      try {
+        await route.handler(ctx);
+        return answer;
+      } catch (caught) {
+        const error = fromExtension(caught);
+        return this.errorResult(error instanceof UserFacingError ? new HttpError(422, error.userMessage) : error);
+      }
+    });
+    this.json(res, { pedido: id }, 202);
   }
 
   /** Sinal que dispara se a conexão cair antes da resposta terminar (a pessoa fechou a página ou a aba). */
