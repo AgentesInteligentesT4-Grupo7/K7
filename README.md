@@ -2,12 +2,47 @@
 
 Tocador de fitas de agentes de IA, criado por **Danillo Tomaz Parreira** — Agentes Inteligentes T4, Grupo 7 (o 7 do K7).
 
-Agente pessoal de IA que roda **100% local** no seu desktop e é controlado **exclusivamente pelo Telegram**.
+Agente de IA que roda no seu computador e conversa pelo **Telegram**, pelo **terminal** e pelo **navegador**.
 Pipeline ReAct com LLMs intercambiáveis (Gemini, DeepSeek, Groq ou Ollama local), memória persistente em SQLite,
 skills em Markdown com hot-reload (incluindo loops criador ↔ crítico com modelos diferentes) e entrada/saída
 multimodal (texto, PDF, `.md`, voz com Whisper local e Kokoro TTS na GPU).
 
+**O K7 é um tocador de fitas.** Sozinho, ele é um agente genérico. Cada projeto vira uma **fita**: uma pasta com a
+identidade do agente, as skills, as regras e, se precisar, código próprio, num repositório separado. Cada pessoa
+instala as fitas que quiser, ajusta cada uma à sua realidade e cria as suas, sem mexer no tocador.
+
 Especificações em [`specs/`](specs/).
+
+## Começo rápido
+
+```bash
+git clone https://github.com/AgentesInteligentesT4-Grupo7/K7.git
+cd K7
+npm install                 # se der erro de "gyp"/compilação no better-sqlite3: npm ci --ignore-scripts
+cp .env.example .env        # preencha a chave de um modelo (ex.: GEMINI_API_KEY) e TELEGRAM_ALLOWED_USER_IDS
+
+npm run perfil -- instalar AgentesInteligentesT4-Grupo7/agrominds   # instala uma fita do GitHub (pede confirmação do código)
+npm run dev -- --perfil agrominds                                   # liga a fita (Telegram, alertas, painel)
+npm run admin -- --abrir                                            # ou: página de administração para ligar, criar o bot, convidar...
+```
+
+Cada fita tem o seu README com o passo a passo completo (o que configurar, serviços extras, o bot do Telegram).
+
+## Fitas do grupo
+
+| Fita | O que faz | Instalar |
+|---|---|---|
+| [🌱 AgroMinds](https://github.com/AgentesInteligentesT4-Grupo7/agrominds) | Tempo, chuva (previsão e radar), época de plantio (ZARC) e alertas para quem planta | `npm run perfil -- instalar AgentesInteligentesT4-Grupo7/agrominds` |
+| [🎧 Rebobina](https://github.com/AgentesInteligentesT4-Grupo7/rebobina) | Baixa músicas e playlists do YouTube (MP3, WAV, vídeo), com nomes padronizados e volume nivelado; precisa do Docker | `npm run perfil -- instalar AgentesInteligentesT4-Grupo7/rebobina` |
+
+Fez uma fita? Publique num repositório do GitHub (o atalho `usuario/nome` procura `perfil-nome` e depois `nome`) e
+acrescente-a aqui. Para criar uma: `npm run perfil -- novo minha-fita` ou peça ao agente (skill `criador-de-fitas`);
+o passo a passo está em [docs/criar-fita.md](docs/criar-fita.md).
+
+**Ajustar uma fita instalada:** opções, chaves e o bot ficam no `.env` da fita, que nunca se perde. Regras, skills,
+`perfil.yaml` e código são trocados por `npm run perfil -- atualizar <fita>`: para mudar esses arquivos sem perder
+nada, instale de um *fork* seu da fita, ou clone a fita com `git clone` dentro da pasta de fitas (aí `atualizar` faz
+um `git pull`).
 
 ## Arquitetura
 
@@ -87,41 +122,47 @@ Usuários fora de `TELEGRAM_ALLOWED_USER_IDS` são ignorados silenciosamente.
 
 ## Rodando no Docker
 
+O `docker-compose.yml` sobe três containers:
+
+| Container | O que é | Endereço no PC |
+|---|---|---|
+| `central` | Página de administração e as fitas ligadas por `ADMIN_LIGAR` (bots do Telegram, alertas, painéis) | http://127.0.0.1:8770 |
+| `site` | Vitrine das fitas e o chat de cada uma no navegador | http://127.0.0.1:8780 |
+| `tunel` | Túnel da Cloudflare que publica o site e a administração num domínio (só sobe com `CLOUDFLARE_TUNNEL_TOKEN`) | — |
+
 ```bash
-docker compose up -d --build     # sobe o bot (reinicia sozinho com o Docker)
-docker compose logs -f           # acompanha os logs
-docker compose down              # para o bot
+# No .env do K7: onde estão as fitas e quais ligam junto com a Central
+#   PERFIS_DIR_HOST=./perfis
+#   ADMIN_LIGAR=agrominds,rebobina
+docker compose up -d --build                 # sobe tudo (reinicia sozinho com o Docker)
+docker compose logs -f central               # acompanha a Central (o endereço da administração com o token sai aqui)
+docker compose restart central site          # depois de mudar uma fita (código, skills, perfil.yaml)
+docker compose down                          # para tudo
 
-docker compose run --rm k7 node dist/canais/terminal/chat.js   # chat no terminal
-docker compose run --rm k7 node dist/cli/eval.js pesquisa      # avalia os modelos
-
-PERFIL=promo docker compose up -d                                         # bot de um perfil
-docker compose run --rm k7 node dist/canais/terminal/chat.js --perfil historias
+docker compose run --rm central node --import tsx src/canais/terminal/chat.ts --perfil <fita>   # chat no terminal
 ```
 
-- **Perfis no Docker:** a pasta `../ParreiraClaw-perfis` (ou `PERFIS_DIR_HOST`) é montada em `/app/perfis`
-  e os dados de cada perfil ficam no volume, em `/app/state/dados/<perfil>/`. Caminhos que o `.env` de um
-  perfil fixa (como `DB_PATH=./data/...` no `pessoal`) apontam para a pasta montada `data/`.
-
-- **Não rode o bot no Docker e o `npm run dev` ao mesmo tempo:** o Telegram aceita uma conexão por bot (erro 409).
-- **Serviços no host:** Ollama, Kokoro (8880), Whisper (8890) e Chatterbox (8004) são alcançados por
-  `host.docker.internal`. Os endereços do `docker-compose.yml` sobrescrevem os do `.env`. Ligue os
-  containers de voz antes: `docker start kokoro-tts whisper-stt chatterbox-tts-server-chatterbox-tts-server-1`.
-- **Banco SQLite num volume Docker (`k7-state`)**, porque o modo WAL não é confiável numa pasta do
-  Windows montada no container. Por isso o Docker tem **memória, notas de avaliação e histórico próprios**,
-  separados do `npm run dev`. Para levar o banco do Windows para o Docker uma vez (com os dois parados):
-  ```bash
-  docker run --rm -v k7_k7-state:/state -v "%cd%/data:/src" alpine cp /src/k7.db /state/
-  ```
-- **Pastas montadas do Windows** (edite normalmente): `data/` (vozes, cache, saídas do terminal), `workspace/`,
-  `.agents/skills/` (com hot-reload) e `evals/`.
-- O container não enxerga a GPU diretamente: os modelos locais continuam rodando no Ollama do Windows, que usa a GPU.
+- **Fitas no Docker:** a pasta das fitas do PC (`PERFIS_DIR_HOST`; sem ela, `../ParreiraClaw-perfis`) é montada em
+  `/app/perfis`, e os dados de cada fita ficam no volume, em `/app/state/dados/<fita>/`.
+- **Serviços das fitas e do PC** (yt-dlp da Rebobina na porta 8899, Ollama, Kokoro 8880, Whisper 8890, Chatterbox
+  8004, ComfyUI 8188, SearXNG 8888) são alcançados por `host.docker.internal`; os endereços do `docker-compose.yml`
+  sobrescrevem os do `.env`. Suba esses containers antes (o da Rebobina: veja o README dela).
+- **Publicar num domínio** (opcional): `CLOUDFLARE_TUNNEL_TOKEN`, `SITE_DOMINIO` e `ADMIN_DOMINIOS` no `.env`; a
+  administração pelo domínio exige o login do Cloudflare Access (`CF_ACCESS_EQUIPE`, `CF_ACCESS_AUD`, `ADMIN_DONOS`).
+  O `.env.example` explica cada uma.
+- **Não rode a mesma fita no Docker e no Windows** (`npm run dev`, `npm run admin`) ao mesmo tempo: o Telegram aceita
+  um programa por bot (erro 409).
+- **Bancos SQLite num volume Docker**, porque o modo WAL não é confiável numa pasta do Windows montada no container.
+  Por isso o Docker tem **memória e histórico próprios**, separados do `npm run dev`.
+- **Pastas montadas do PC** (edite normalmente): `data/` (vozes, cache), `workspace/`, `.agents/skills/` (com
+  hot-reload), `modulos/` e `evals/`.
+- O container não enxerga a GPU diretamente: os modelos locais continuam rodando no Ollama do PC, que usa a GPU.
 
 ## Perfis: um tocador, várias fitas
 
 O K7 é o **tocador** (núcleo + módulos + canais). Cada finalidade é um **perfil** — uma pasta
 com `perfil.yaml` (identidade, módulos, canais, privacidade), `skills/` e `.env` próprios, **sem código**.
-Os perfis ficam fora deste repositório, em `PERFIS_DIR` (aqui: `../ParreiraClaw-perfis`).
+Os perfis ficam fora do Git do K7, na pasta de `PERFIS_DIR` (padrão: `perfis/`, ignorada pelo Git).
 
 **Passo a passo para criar uma fita:** [docs/criar-fita.md](docs/criar-fita.md).
 **Ativar, desativar e remover cada parte de uma fita (roteiro para vídeo):** [docs/ativar-desativar-fitas.md](docs/ativar-desativar-fitas.md).
@@ -164,8 +205,10 @@ npm run perfil -- remover <nome>      # pede confirmação; --apagar-dados apaga
   ```
   Garantias: só o host declarado, nunca endereços da rede local (DNS validado na conexão), sem
   redirecionamentos, timeout de 15 s, resposta limitada e marcada como dado externo, chave nunca exposta ao LLM.
-- **Instalação segura:** o instalador recusa perfis com código ou links (`.js`, `.ts`, `.py`, `.sh`, `.ps1`,
-  `package.json`…), baixa pacotes npm com `--ignore-scripts` e nunca executa nada do perfil.
+- **Instalação segura:** o instalador nunca executa nada da fita e baixa pacotes npm com `--ignore-scripts`. Fita com
+  código (`.js`, `.ts`, `.py`, `.sh`, `.ps1`, `package.json`, `Dockerfile`…) só entra depois de listar esses arquivos
+  e você digitar `sim` (`--confiar` pula a pergunta); a pergunta se repete a cada atualização. Links simbólicos são
+  recusados.
 
 Spec: [specs/profiles-modules.md](specs/profiles-modules.md).
 
